@@ -34,9 +34,13 @@ const initialState = {
     bankName: null,
     barterID: null,
     referralLink: null,
+    refferalsCount: 0,
   },
   transactions: {
+    billerType: "",
     bonusToEarn: "",
+    banks: null,
+    bankCode: "",
     plan: "",
     cashbackAmount: "",
     price: "",
@@ -80,8 +84,8 @@ const userSlice = createSlice({
       state.transactions = { ...state.transactions, ...action.payload };
     },
     clearState: (state, action) => {
-      state.transactions = {};
-      state.user = {};
+      state.transactions = initialState.transactions;
+      state.user = initialState.user;
     },
   },
 });

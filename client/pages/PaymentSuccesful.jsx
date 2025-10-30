@@ -24,6 +24,9 @@ import ErrorFeedback from "@/components/Alert";
 
 export default function PaymentSuccesful({ onClose }) {
   const paymentInfo = useSelector((state) => state.user.transactions);
+  const [mount,setMount] = useState(false);
+
+ 
   const { tel, network, price, productName, billerCode, itemCode } =
     paymentInfo;
   const [error, setError] = useState(null);
@@ -34,6 +37,9 @@ export default function PaymentSuccesful({ onClose }) {
   });
 
   const { appContext, setAppContext } = useSpinner();
+   useEffect(() => {
+     setMount(true);
+   }, []);
 
   //emulators
   useEffect(() => {
@@ -92,6 +98,7 @@ export default function PaymentSuccesful({ onClose }) {
   const payout = async () => {
     try {
       const res = await payoutBill({
+        billType,
         country: "NG",
         customerID: paymentInfo.customerID,
         amount: paymentInfo.price,
@@ -104,7 +111,7 @@ export default function PaymentSuccesful({ onClose }) {
         setError(res.data?.message);
       } else if (res.data?.status === "error") {
         setError(res.data?.message);
-      } else setPaymentState((prev) => ({ ...prev, payout: true }));
+      } else if (res.data.status === "successful") setPaymentState((prev) => ({ ...prev, payout: true }));
       console.log("Bill payment response:", res);
     } catch (error) {
       setError("Error in Bill payment");

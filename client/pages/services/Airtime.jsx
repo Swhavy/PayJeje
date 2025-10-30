@@ -133,6 +133,7 @@ export default function AirtimePage() {
 
       dispatch(
         selectedPrice({
+          billType: "airtime",
           price,
           customerID: phoneNumber,
           bonusToEarn: "100 NGN",

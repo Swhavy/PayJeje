@@ -1,6 +1,6 @@
-import { configureStore } from '@reduxjs/toolkit'
-import userReducer from './userSlice'
-import logger from 'redux-logger'
+import { configureStore } from "@reduxjs/toolkit";
+import userReducer from "./userSlice";
+import logger from "redux-logger";
 import {
   persistStore,
   persistReducer,
@@ -10,20 +10,22 @@ import {
   PERSIST,
   PURGE,
   REGISTER,
-} from 'redux-persist'
-import storageSession from 'redux-persist/lib/storage/session' // defaults to storageSession for web
-import { combineReducers } from 'redux'
+} from "redux-persist";
+import storageSession from "redux-persist/lib/storage/session"; // defaults to storageSession for web
+import { combineReducers } from "redux";
+import autoMergeLevel2 from "redux-persist/lib/stateReconciler/autoMergeLevel2";
 
 const persistConfig = {
-  key: 'root',
+  key: "root",
   storage: storageSession,
-}
+  stateReconciler: autoMergeLevel2, // ✅ merges nested state instead of overwriting
+};
 const rootReducer = combineReducers({
   user: userReducer,
-})
+});
 
-const persistedReducer = persistReducer(persistConfig, rootReducer)
-const user = persistedReducer
+const persistedReducer = persistReducer(persistConfig, rootReducer);
+const user = persistedReducer;
 const store = configureStore({
   reducer: user,
   middleware: (getDefaultMiddleware) =>
@@ -33,7 +35,7 @@ const store = configureStore({
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
       },
     }).concat(logger),
-})
+});
 
-export const persistor = persistStore(store)
-export default store
+export const persistor = persistStore(store);
+export default store;

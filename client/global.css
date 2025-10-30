@@ -334,3 +334,32 @@ input[type="number"]::-webkit-outer-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+[data-radix-select-viewport] ~ div[data-radix-popper-content-wrapper] {
+  /* Your overlay styles */
+  background: red;
+}
+
+/* Or target the overlay directly */
+.fixed.inset-0[style*="pointer-events"] {
+  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+  backdrop-filter: blur(4px); /* Optional blur effect */
+}
+
+.bg {
+  /* animation: pulse-glow 2s ease-in-out infinite; */
+  color: yellow;
+  animation-name: width-expand;
+  animation-iteration-count: infinite;
+  animation-delay: 500ms;
+  animation-timing-function: ease-in-out;
+}
+
+@keyframes width-expand {
+  from{
+    width: 20%;
+  }
+  to{
+    width: 80%;
+  }
+}

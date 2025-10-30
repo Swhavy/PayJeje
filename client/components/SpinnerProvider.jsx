@@ -1,24 +1,22 @@
-import { createContext, useContext, useState } from "react";
-// import SettingsModule from "../Components/Settings Module/SettingsModule";
-// import ServiceListingsModule from "./ServiceListingsModule";
-// import UserAccountModule from "../Components/Settings Module/UserAccountModule";
-// import DataListingsModule from "./DataListingsModule";
-// import SecurityModule from "./Settings Module/SecurityModule";
-// import PaymentConfirmationModule from "./PaymentConfirmationModule";
-// import PaymentSuccessfullModule from "./PaymentSuccessfullModule";
-// import PinInput from "./PinInput";
-// import BankInfo from "./BankInfo";
-// import Electricity from "./Electricity";
+import { createContext, useContext, useState } from 'react'
+import FeedbackAlert from '@/components/Alert'
 
-const SpinnerContext = createContext();
+const SpinnerContext = createContext()
 
 const SpinnerProvider = ({ children }) => {
   const [appContext, setAppContext] = useState({
     spinner: false,
-  });
-
+  })
+  const [alertMsg, setAlertMsg] = useState({
+    open: false,
+    status: false,
+    msg: null,
+    statusMsg: null,
+  })
   return (
-    <SpinnerContext.Provider value={{ appContext, setAppContext }}>
+    <SpinnerContext.Provider
+      value={{ appContext, setAppContext, alertMsg, setAlertMsg }}
+    >
       {children}
       {appContext.spinner && (
         <div className="spin w-screen h-screen  overflow-hidden bg-black/40 backdrop-blur-md absolute top-0 z-50 flex flex-auto gap-5">
@@ -29,59 +27,22 @@ const SpinnerProvider = ({ children }) => {
           </span>
         </div>
       )}
-      {/* {appContext.settings.modalDisplay && (
-        <div className="w-full h-screen absolute inset-0 pb-4 bg-black/40 backdrop-blur-md z-50">
-          <SettingsModule />
-        </div>
+      {alertMsg.open && (
+        <FeedbackAlert
+          isOpen={alertMsg.open}
+          isClose={() =>
+            setAlertMsg((prev) => ({ ...prev, open: !alertMsg.open }))
+          }
+          message={{
+            status: alertMsg.status,
+            statusMsg: alertMsg.statusMsg,
+            message: alertMsg.msg,
+          }}
+        />
       )}
-      {appContext.settings.serviceListings && (
-        <div className="w-full h-screen absolute inset-0 pb-4 bg-black/40 backdrop-blur-md z-50">
-          <ServiceListingsModule />
-        </div>
-      )}
-      {appContext.settings.userAccount && (
-        <div className="w-full h-screen absolute inset-0 pb-4 bg-black/40 backdrop-blur-md z-50">
-          <UserAccountModule />
-        </div>
-      )}
-      {appContext.data && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <DataListingsModule />
-        </div>
-      )}
-      {appContext.electricity && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <Electricity />
-        </div>
-      )}
-      {appContext.settings.securityModule && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <SecurityModule />
-        </div>
-      )}
-      {appContext.paymentconfirmationmodule && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <PaymentConfirmationModule />
-        </div>
-      )}
-      {appContext.paymentsuccessfullmodule && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <PaymentSuccessfullModule />
-        </div>
-      )}
-      {appContext.pinModule && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <PinInput />
-        </div>
-      )}
-      {appContext.bankInfoModule && (
-        <div className="w-screen h-screen absolute inset-0 z-50">
-          <BankInfo />
-        </div>
-      )} */}
     </SpinnerContext.Provider>
   );
-};
+}
 
-export default SpinnerProvider;
-export const useSpinner = () => useContext(SpinnerContext);
+export default SpinnerProvider
+export const useSpinner = () => useContext(SpinnerContext)

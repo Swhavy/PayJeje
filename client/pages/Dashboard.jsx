@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import Tooltip from "@/components/ui/tip";
 
 import {
   Star,
@@ -19,6 +20,7 @@ import {
   Users,
   Wallet,
   TrendingUp,
+  TrendingDown,
   ArrowUpRight,
   ArrowDownLeft,
   Plus,
@@ -31,15 +33,30 @@ import { ThreeDAnimation } from "../components/3DAnimation";
 import TopEarnersCarousel from "../components/TopEarnersCarousel";
 import { useSelector } from "react-redux";
 import useTransactionFetch from "@/components/useTransactionFetch";
+import { useInflowData } from "@/components/useTransactionFetch";
+import TransactionChart from "@/components/HistoryChart.jsx";
+import {useSpinner} from "@/components/SpinnerProvider";
 
 export default function DashboardPage() {
+  const {setAppContext, appContext, alertMsg, setAlertMsg} = useSpinner();
   const [mounted, setMounted] = useState(false);
   const user = useSelector((state) => state.user.user);
-  const { userName, walletBalance } = user;
+  const { inflowData, loading, error } = useInflowData(user.uid);
+  const { userName, walletBalance, refferalsCount } = user;
   const { trxn, loadMore } = useTransactionFetch();
+
+  
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+     loading ? setAppContext({ ...appContext, spinner: true }) : setAppContext({ ...appContext, spinner: false });
+     if (error) return setAlertMsg({open: true,
+       status: false,
+       msg: error,
+       statusMsg: "some of your transactions might appear incorrect as there was an error in displaying",});
+  }, [loading, error]);
 
   const stats = [
     {
@@ -58,17 +75,17 @@ export default function DashboardPage() {
       color: "text-green-600 dark:text-green-400",
       bgColor: "bg-green-100 dark:bg-green-900",
     },
-    {
-      title: "This Month",
-      value: "₦3,200",
-      change: "+15%",
-      icon: TrendingUp,
-      color: "text-blue-600 dark:text-blue-400",
-      bgColor: "bg-blue-100 dark:bg-blue-900",
-    },
+    // {
+    //   title: "This Month",
+    //   value: "₦3,200",
+    //   change: "+15%",
+    //   icon: TrendingUp,
+    //   color: "text-blue-600 dark:text-blue-400",
+    //   bgColor: "bg-blue-100 dark:bg-blue-900",
+    // },
     {
       title: "Referrals",
-      value: "8",
+      value: refferalsCount,
       change: "+2",
       icon: Users,
       color: "text-purple-600 dark:text-purple-400",
@@ -202,7 +219,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 cursor-default">
           {stats.map((stat, index) => (
             <Card
               key={index}
@@ -233,23 +250,65 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           ))}
+          {/* monthly stats */}
+          <Card className="bg-card border-border hover:shadow-lg transition-all duration-300">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    This Month
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-foreground w-24 truncate">
+                    <Tooltip
+                      content={`₦${inflowData?.currentAmount} received this month`}
+                    >
+                      ₦{inflowData?.currentAmount}
+                    </Tooltip>
+                  </p>
+                  <Tooltip
+                    content={
+                      inflowData?.isIncrease
+                        ? "Inflow Increased This Past 3months"
+                        : "Inflow Decreased  This Past 3months"
+                    }
+                  >
+                    <p
+                      className={`text-xs ${inflowData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"} flex items-center mt-1`}
+                    >
+                      {inflowData?.isIncrease ? (
+                        <TrendingUp className="h-3 w-3 mr-1" />
+                      ) : (
+                        <TrendingDown className="h-3 w-3 mr-1" />
+                      )}
+                      {inflowData?.isIncrease
+                        ? `+${inflowData?.percentageChange}%`
+                        : `${inflowData?.percentageChange == 0 ? 0 : -inflowData?.percentageChange}%`}
+                    </p>
+                  </Tooltip>
+                </div>
+                <div
+                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full ${inflowData?.isIncrease ? "bg-blue-100 dark:bg-blue-900" : "bg-rose-100 dark:bg-rose-900"} flex items-center justify-center`}
+                >
+                  {inflowData?.isIncrease ? (
+                    <TrendingUp
+                      className={`h-5 w-5 sm:h-6 sm:w-6 text-blue-600 dark:text-blue-400`}
+                    />
+                  ) : (
+                    <TrendingDown
+                      className={`h-5 w-5 sm:h-6 sm:w-6 text-red-600 dark:text-red-400`}
+                    />
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* 3D Animation */}
         <Card className="bg-card border-border overflow-hidden">
           <CardContent className="p-0">
-            <div className="h-64 sm:h-80 relative">
-              <ThreeDAnimation />
-              <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent flex items-end">
-                <div className="p-4 sm:p-6">
-                  <h3 className="text-lg sm:text-xl font-bold text-foreground mb-2">
-                    Earn More with Paywaka
-                  </h3>
-                  <p className="text-muted-foreground text-sm sm:text-base">
-                    Complete tasks, refer friends, and watch your earnings grow!
-                  </p>
-                </div>
-              </div>
+            <div className="h-72 sm:h-80 relative">
+              <TransactionChart />
             </div>
           </CardContent>
         </Card>

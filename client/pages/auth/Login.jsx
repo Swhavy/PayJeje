@@ -87,9 +87,10 @@ export default function LoginPage() {
     setField(enter);
   };
 
-  //function that logs in a user account
+  //function that logs into a user account
   const handleSubmit = async (e) => {
     setIsLoading(true);
+    setAppContext({ ...appContext, spinner: true });
     console.log("loginnng in...");
     e.preventDefault();
     const email = field.email;
@@ -102,6 +103,13 @@ export default function LoginPage() {
         password,
       );
       const user = userCredential.user;
+      //  user ? "" : setInterval(() => {
+      //     return user
+      //       ? ""
+      //       : toast.warning(
+      //           "Authentication taking long, please have patience with us",
+      //         );
+      //   }, 3000);
 
       //console.log("user details", user);
 
@@ -118,7 +126,7 @@ export default function LoginPage() {
         dispatch(addUserCred({ walletBalance: wallet.walletBalance }));
       } else {
         console.log("error fetching wallet balance", wallet);
-        dispatch(addUserCred({ walletBalance: "error" }));
+        dispatch(addUserCred({ walletBalance: "null" }));
       }
       const payload = {
         firstName: docRef?.firstName,
@@ -135,6 +143,7 @@ export default function LoginPage() {
         bankName: docRef?.bankName,
         barterID: docRef?.barter_id,
         referralLink: docRef?.referralCode,
+        refferalsCount: docRef?.refferalsCount,
       };
       dispatch(addUserCred({ ...payload, uid }));
       //if the user has profile pic, dispatch it to the state if not dispatch null to the userPhoto state
@@ -142,15 +151,25 @@ export default function LoginPage() {
         dispatch(changeUserPhoto({ userPhoto: docRef.userPhoto || null }));
       }
 
-      navigate("/dashboard");
+      await userEmailVerified();
       setIsLoading(false);
+      setAppContext({ ...appContext, spinner: false });
     } catch (error) {
       setIsLoading(false);
+      setAppContext({ ...appContext, spinner: false });
       console.log("there's an error:", error);
-      alert(
+      if (error.code === "auth/user-not-found") {
+        return toast.error(
+          "No user found with this email. Please check and try again.",
+        );
+      } else if (error.code === "auth/wrong-password") {
+        return toast.error(
+          "Hmmm.. we don't think that's the right password please recheck an then try again.",
+        );
+      }
+      return toast.error(
         "An error occurred this might be to an invalid credential or an unverified email",
       );
-      setAppContext({ ...appContext, spinner: false });
     }
   };
 
@@ -170,27 +189,33 @@ export default function LoginPage() {
   // };
 
   //checks if the user Email is verified
-  const userEmailVerified = () => {
+  const userEmailVerified = async () => {
     onAuthStateChanged(auth, async (user) => {
       try {
         if (user) {
           await user.reload();
           if (user.emailVerified) {
             console.log("email verified...login successful");
-            navigate("/dashboard");
-            if (navigate !== "loading") {
-              setAppContext({ ...appContext, spinner: false });
-            } else {
-              setAppContext({ ...appContext, spinner: true });
-            }
+            return navigate("/dashboard");
+            // if (navigate !== "loading") {
+            //   setAppContext({ ...appContext, spinner: false });
+            // } else {
+            //   setAppContext({ ...appContext, spinner: true });
+            // }
           } else {
-            toast.error("Please verify your email before logging in.");
+            navigate("/auth/login");
             auth.signOut();
-            setAppContext({ ...appContext, spinner: false });
+            toast.error("Please verify your email before logging in.");
           }
         }
       } catch (error) {
-        console.log("error occured internally", error);
+        toast.error(
+          "An internal error occurred while checking your email verification. Please try again later.",
+        );
+        console.log(
+          "error occured internally when verifying email verification",
+          error,
+        );
       }
     });
   };
@@ -228,10 +253,26 @@ export default function LoginPage() {
       //if the user exists in the database login the user
       else {
         const userData = docSnap.data();
-        dispatch(addUserCred({ ...userData, uid }));
+         const payload = {
+           firstName: userData?.firstName,
+           lastName: userData?.lastName,
+           userName: userData?.userName,
+           userEmail: userData?.userEmail,
+           userState: userData?.userState,
+           userCountry: userData?.userCountry,
+           userGender: userData?.userGender,
+           userPhone: userData?.userPhone,
+           userPhoto: userData?.userPhoto,
+           accountReference: userData?.accountReference,
+           accountNumber: userData?.accountNumber,
+           bankName: userData?.bankName,
+           barterID: userData?.barter_id,
+           referralLink: userData?.referralCode,
+           refferalsCount: userData?.refferalsCount,
+         };
+        dispatch(addUserCred({ ...payload, uid }));
         console.log("pinpoint", userData);
         userEmailVerified();
-        //navigate('/useraccount')
       }
       setOauthLoading(null);
     } catch (error) {
@@ -242,15 +283,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div
+      className={`min-h-screen bg-background flex items-center justify-center p-4 overflow-hidden ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
+    >
+      <div className="w-full max-w-md overflow-hidden">
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-3 mb-6">
             <img
-              src="/logo.png"
+              src="/logo.svg"
               alt="Paywaka Logo"
-              width={40}
-              height={40}
+              width={120}
+              height={120}
               className="rounded-full"
             />
             <span className="text-2xl font-bold text-foreground">

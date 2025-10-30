@@ -132,6 +132,7 @@ export default function DataPlans() {
 
       dispatch(
         selectedPrice({
+          billType: "data",
           price,
           customerID: phoneNumber,
           bonusToEarn: "100 NGN",

@@ -10,13 +10,15 @@ import { Provider } from "react-redux";
 import store, { persistor } from "@/Features/store.js";
 import { PersistGate } from "redux-persist/integration/react";
 import AccountDetailsCard from "@/components/AccountDetailsCard.jsx";
+import BillHistory from "@/pages/BillHistory.jsx";
+import TransactionChart from "@/components/HistoryChart.jsx";
 
 // Components
 import { AuthProvider } from "@/components/AuthProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import DashboardLayout from "@/components/DashboardLayout";
-import SpinnerProvider from "@/Components/SpinnerProvider";
+import SpinnerProvider from "@/components/SpinnerProvider";
 import Transactions from "@/Components/Transactions";
 import useTransactionFetch from "@/Components/useTransactionFetch";
 
@@ -28,6 +30,7 @@ import Register from "./pages/auth/Register";
 import Dashboard from "./pages/Dashboard";
 import PaymentConfirmation from "./pages/PaymentConfirmation";
 import Wallet from "./pages/Wallet";
+import BankCombobox from "./pages/wall";
 import Earn from "./pages/Earn";
 import Referrals from "./pages/Referrals";
 import Settings from "./pages/Settings";
@@ -69,40 +72,161 @@ const App = () => (
                   <Routes>
                     {/* Public Routes */}
                     <Route path="/" element={<Index />} />
-                    <Route path="/services/airtime" element={<Airtime />} />
-                    <Route path="/feedbackAlert" element={<FeedbackAlert />} />
-                    <Route path="/services/data" element={<DataPlans />} />
-                    <Route path="/Receipts/:id/:uid" element={<Receipts />} />
-                    <Route path="/services/giftcards" element={<GiftCards />} />
-                    <Route path="/Transactions" element={<Transactions />} />
-                    <Route
-                      path="/PaymentConfirmation"
-                      element={<PaymentConfirmation />}
-                    />
-                    <Route
-                      path="/PaymentSuccesful"
-                      element={<PaymentSuccesful />}
-                    />
-                    <Route path="/services/bills" element={<Bills />} />
-                    <Route path="/services/meals" element={<Meals />} />
                     <Route path="/auth/login" element={<Login />} />
-                    <Route path="/referrals" element={<Referrals />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route
-                      path="/settings/DataPreference"
-                      element={<DataPreference />}
-                    />
                     <Route
                       path="/auth/register/:referredBy?"
                       element={<Register />}
                     />
-                    <Route path="/earn" element={<Earn />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/wallet" element={<Wallet />} />
+                    {/* Protected Routes */}
                     <Route
-                      path="/accountDetailsCard"
-                      element={<AccountDetailsCard />}
+                      path="/earn"
+                      element={
+                        <ProtectedRoute>
+                          <Earn />
+                        </ProtectedRoute>
+                      }
                     />
+
+                    <Route
+                      path="/services/airtime"
+                      element={
+                        <ProtectedRoute>
+                          <Airtime />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/data"
+                      element={
+                        <ProtectedRoute>
+                          <DataPlans />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/Receipts/:id/:uid"
+                      element={
+                        <ProtectedRoute>
+                          <Receipts />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/giftcards"
+                      element={
+                        <ProtectedRoute>
+                          <GiftCards />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/Transactions"
+                      element={
+                        <ProtectedRoute>
+                          <Transactions />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/billhistory"
+                      element={
+                        <ProtectedRoute>
+                          <BillHistory />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/transactionChart"
+                      element={
+                        <ProtectedRoute>
+                          <TransactionChart />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/PaymentConfirmation"
+                      element={
+                        <ProtectedRoute>
+                          <PaymentConfirmation />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/PaymentSuccesful"
+                      element={
+                        <ProtectedRoute>
+                          <PaymentSuccesful />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/services/bills"
+                      element={
+                        <ProtectedRoute>
+                          <Bills />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/services/meals"
+                      element={
+                        <ProtectedRoute>
+                          <Meals />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/referrals"
+                      element={
+                        <ProtectedRoute>
+                          <Referrals />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/settings"
+                      element={
+                        <ProtectedRoute>
+                          <Settings />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/settings/DataPreference"
+                      element={
+                        <ProtectedRoute>
+                          <DataPreference />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/dashboard"
+                      element={
+                        <ProtectedRoute>
+                          <Dashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route
+                      path="/wallet"
+                      element={
+                        <ProtectedRoute>
+                          <Wallet />
+                        </ProtectedRoute>
+                      }
+                    />
+
                     {/*  <Route path="airtime" element={<Airtime />} /> */}
                     {/* Protected Routes with Dashboard Layout */}
                     {/* Catch-all route */}

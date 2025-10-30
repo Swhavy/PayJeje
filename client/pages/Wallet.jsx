@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useDispatch } from "react-redux";
+import { selectedPrice } from "@/Features/userSlice";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Wallet as WalletIcon,
   TrendingUp,
@@ -17,17 +26,54 @@ import {
   ArrowDownLeft,
   CreditCard,
   DollarSign,
+  Building2,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import DashboardLayout from "../components/DashboardLayout";
 import { useSelector } from "react-redux";
 import AccountDetailsCard from "@/components/AccountDetailsCard";
+import useCloudfunc from "@/components/useCloudfunc";
+import { toast } from "sonner";
+import { useSpinner } from "@/components/SpinnerProvider";
 
 const Wallet = () => {
+  const bankz = useSelector((state) => state.user.transactions);
+  const { banks, bankCode } = bankz;
+  const bankData = banks;
+  const { appContext, setAppContext } = useSpinner();
+  const dispatch = useDispatch();
   const userDetails = useSelector((state) => state?.user?.user);
-  const { walletBalance, accountNumber, bankName } = userDetails;
+  const { walletBalance, bankName, accountReference } = userDetails;
   const { user } = useAuth();
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState("");
+  const [selectedValue, setSelectedValue] = useState("");
+  const [selectedBank, setSelectedBank] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [accountPopup, setAccountPopup] = useState(false);
+  const { fetchBanks, withdraw } = useCloudfunc();
+  const [accountDetails, setAccountDetails] = useState({
+    accountNumber: "",
+    amount: "",
+  });
+
+  const handleInput = (e) => {
+    setAccountDetails((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
 
   // Mock transaction data
   const transactions = [
@@ -76,6 +122,63 @@ const Wallet = () => {
   const totalSpent = 32500;
   const pending = 0;
 
+  useEffect(() => {
+    search != "" ? setOpen(true) : "";
+  }, [search]);
+
+  const handleSelect = (bank) => {
+    setSelectedValue(bank.name);
+    setSelectedBank(bank);
+    setOpen(false);
+    console.log("Selected Bank:", bank);
+    console.log("Bank Code:", bank.code);
+    dispatch(selectedPrice({ bankCode: bank.code }));
+  };
+
+  const withdrawFunds = async () => {
+    toast.message("Your request is processing....");
+    setAppContext({ ...appContext, spinner: true });
+    const transfer = await withdraw({
+      account_bank: bankCode,
+      account_number: accountDetails.accountNumber,
+      amount: accountDetails.amount,
+      debit_subaccount: accountReference,
+    });
+    if (transfer.data.status == "success") {
+      setAppContext({ ...appContext, spinner: false });
+      toast.success(transfer.data.message);
+    } else {
+      setAppContext({ ...appContext, spinner: false });
+      toast.error(transfer.data.message);
+      console.log("details: ", transfer);
+    }
+  };
+
+  // Function to handle fetching banks (example usage)
+  const handleFetchBanks = async () => {
+    console.log("Fetching banks...");
+    //logic to avoid multiple fetches
+
+    console.log("Current bank data:", bankData);
+    if (bankData === null) {
+      setTimeout(() => {
+        setAppContext({ ...appContext, spinner: false });
+      }, 6000);
+      setAppContext({ ...appContext, spinner: true });
+      const response = await fetchBanks();
+      if (response.data.status === "success") {
+        let bankDetails = response.data.bankDetails;
+        console.log("Fetched Banks successfully:");
+        dispatch(selectedPrice({ banks: bankDetails }));
+        setAppContext({ ...appContext, spinner: false });
+      } else {
+        setAppContext({ ...appContext, spinner: false });
+        toast.error("An error occured. Please try again.");
+        console.error("Error fetching banks:", response.data.message);
+      }
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -110,14 +213,14 @@ const Wallet = () => {
                 <div>
                   <p className="text-paywaka-100 text-sm">Total Balance</p>
                   <h2 className="text-3xl font-bold">
-                    ₦ {totalBalance.toLocaleString()}
+                    ₦ {totalBalance?.toLocaleString()}
                   </h2>
                 </div>
               </div>
               <div className="text-right">
                 <p className="text-paywaka-100 text-sm">Available</p>
                 <p className="text-lg font-semibold">
-                  ₦ {(totalBalance - pending).toLocaleString()}
+                  ₦ {(totalBalance - pending)?.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -170,14 +273,16 @@ const Wallet = () => {
         >
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="withdraw">Withdraw</TabsTrigger>
+            <TabsTrigger value="withdraw" onClick={() => handleFetchBanks()}>
+              Withdraw
+            </TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="p-6 cursor-pointer">
+              <Card className="p-6 cursor-pointer hover:scale-105 transition-transform duration-300 ease-in-out">
                 <div
                   className="flex items-center space-x-4"
                   onClick={() => setAccountPopup(!accountPopup)}
@@ -194,7 +299,10 @@ const Wallet = () => {
                 </div>
               </Card>
 
-              <Card className="p-6 relative">
+              <Card
+                className="p-6 relative cursor-pointer hover:scale-105 transition-transform duration-300 ease-in-out"
+                title="Coming Soon"
+              >
                 <div className="absolute w-full h-full inset-0 rounded-lg bg-black/40 backdrop-blur-md z-[100] text-white text-sm flex justify-center items-center">
                   Coming Soon
                 </div>
@@ -211,7 +319,7 @@ const Wallet = () => {
                 </div>
               </Card>
 
-              <Card className="p-6">
+              <Card className="p-6 cursor-pointer hover:scale-105 transition-transform duration-300 ease-in-out">
                 <div className="flex items-center space-x-4">
                   <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-full">
                     <DollarSign className="h-6 w-6 text-purple-600" />
@@ -291,29 +399,182 @@ const Wallet = () => {
             <Card>
               <CardContent className="p-6">
                 <h3 className="text-lg font-semibold mb-4">Withdraw Funds</h3>
-                <div className="space-y-4">
+                <div className="space-y-4 h-fit w-full flex flex-col gap-5">
                   <div>
                     <Label htmlFor="amount">Amount</Label>
                     <Input
                       id="amount"
+                      name="amount"
+                      value={accountDetails.amount}
+                      onChange={(e) => handleInput(e)}
+                      type="number"
                       placeholder="Enter amount to withdraw"
                       className="mt-1"
                     />
                     <p className="text-sm text-muted-foreground mt-1">
-                      Available: ₦{(totalBalance - pending).toLocaleString()}
+                      Available: ₦{(totalBalance - pending)?.toLocaleString()}
                     </p>
                   </div>
 
                   <div>
-                    <Label htmlFor="bank">Bank Account</Label>
-                    <select className="w-full mt-1 px-3 py-2 border border-input bg-background rounded-md">
-                      <option>Select bank account</option>
-                      <option>GTBank - 0123456789</option>
-                      <option>Access Bank - 0987654321</option>
-                    </select>
+                    <Label htmlFor="amount">Account Number</Label>
+                    <Input
+                      id="accountNumber"
+                      name="accountNumber"
+                      value={accountDetails.accountNumber}
+                      onChange={(e) => handleInput(e)}
+                      type="number"
+                      placeholder="Enter Account Number to withdraw to"
+                      className="mt-1"
+                    />
                   </div>
 
-                  <Button className="w-full bg-paywaka-500 hover:bg-paywaka-600">
+                  <div>
+                    {/* <div className="w-3/3 flex justify-between items-center mb-10">
+                      <Label htmlFor="bank">Bank Account</Label>
+                      <Input
+                        id="search"
+                        type="text"
+                        onChange={(e) => {
+                          setSearch(e.target.value);
+                        }}
+                        placeholder="Search your preferred bank"
+                        className="w-[55%] max-w-[350px] min-w-[100px]"
+                      />
+                    </div> */}
+                    {/* Select component */}
+                    <div className="w-full space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="bank" className="text-sm font-medium">
+                          Select Your Bank
+                        </Label>
+                        <Popover open={open} onOpenChange={setOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              id="bank"
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={open}
+                              className="w-full h-12 justify-between text-base"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-4 w-4 text-muted-foreground" />
+                                <span
+                                  className={cn(
+                                    !selectedValue && "text-muted-foreground",
+                                  )}
+                                >
+                                  {selectedValue || "Select your bank"}
+                                </span>
+                              </div>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            className="w-full p-0 h-40 bg-black"
+                            align="start"
+                          >
+                            <Command>
+                              <CommandInput
+                                placeholder="Search bank..."
+                                className="h-12 text-base"
+                              />
+                              <CommandEmpty>No bank found.</CommandEmpty>
+                              <CommandGroup className="max-h-[300px] overflow-auto">
+                                {bankData && bankData.length > 0 ? (
+                                  bankData.map((bank) => (
+                                    <CommandItem
+                                      key={bank.id}
+                                      value={bank.name}
+                                      onSelect={() => handleSelect(bank)}
+                                      className="text-foreground hover:bg-muted cursor-pointer"
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          selectedValue === bank.name
+                                            ? "opacity-100"
+                                            : "opacity-0",
+                                        )}
+                                      />
+                                      <div className="flex flex-col">
+                                        <span>{bank.name}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {bank.code}
+                                        </span>
+                                      </div>
+                                    </CommandItem>
+                                  ))
+                                ) : (
+                                  <CommandItem disabled>
+                                    No banks available
+                                  </CommandItem>
+                                )}
+                              </CommandGroup>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      {/* Display selected bank info */}
+                      {selectedBank && (
+                        <div className="p-4 rounded-lg bg-muted">
+                          <p className="text-sm font-medium">
+                            Selected Bank Details:
+                          </p>
+                          <p className="text-sm">Name: {selectedBank.name}</p>
+                          <p className="text-sm">Code: {selectedBank.code}</p>
+                        </div>
+                      )}
+                    </div>
+                    {/* Select component */}
+                    {/*  <select
+                      className="w-full mt-10 px-3 py-2 border border-input bg-background rounded-md"
+                      onChange={(e) => {
+                        let selectedIndex = e.target.selectedIndex;
+                        let optionElement = e.target.options[selectedIndex];
+                        let bankName = optionElement.value;
+                        let bankCode = optionElement.id;
+                        console.log("Selected bank:", bankName, bankCode);
+                        dispatch(selectedPrice({ bankCode }));
+                      }}
+                    >
+                      <option>Select bank account</option>
+                      {bankData ? (
+                        bankData
+                          .filter((item) => {
+                            return search.toLowerCase() === ""
+                              ? item
+                              : item.name
+                                  .toLowerCase()
+                                  .includes(search.toLowerCase());
+                          })
+                          .map((bank) => {
+                            return (
+                              <option
+                                key={bank.id}
+                                value={bank.name}
+                                id={bank.code}
+                              >
+                                {bank.name}
+                              </option>
+                            );
+                          })
+                      ) : (
+                        <option>No banks available</option>
+                      )}
+                    </select> */}
+                  </div>
+
+                  <Button
+                    onClick={withdrawFunds}
+                    disabled={
+                      !accountDetails.accountNumber ||
+                      !accountDetails.amount ||
+                      !selectedValue
+                    }
+                    className="w-full bg-paywaka-500 hover:bg-paywaka-600"
+                  >
                     Withdraw Funds
                   </Button>
                 </div>

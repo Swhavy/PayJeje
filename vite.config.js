@@ -3,17 +3,23 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { createServer } from "./server/index.js";
 
+const _dirname = path.dirname(new URL(import.meta.url).pathname);
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     allowedHosts: [
       "all",
-      "8e1eedb2e578.ngrok-free.app", // 👈 add your ngrok subdomain here
+      "9b72192842c7.ngrok-free.app", // 👈 add your ngrok subdomain here
     ],
     host: "::",
     port: 8080,
     fs: {
-      allow: ["./client", "./shared"],
+      allow: [
+        path.resolve(_dirname, "client"),
+        path.resolve(_dirname, "shared"),
+        path.resolve(__dirname, ".."),
+      ],
       deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "server/**"],
     },
   },

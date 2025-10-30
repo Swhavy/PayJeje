@@ -5,8 +5,15 @@ import { toast } from "sonner";
 
 const useClientWebHook = (userID, tx_ref) => {
   const [status, setStatus] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    let unsub = () => {};
+   if (mounted) {
     if (!userID || !tx_ref) {
       toast.error("Invalid userID or tx_ref");
       console.error("Invalid userID or tx_ref");
@@ -14,7 +21,7 @@ const useClientWebHook = (userID, tx_ref) => {
       return;
     }
 
-    const unsub = onSnapshot(
+    unsub = onSnapshot(
       doc(db, "users", userID, "Transactions", tx_ref),
       (docSnapshot) => {
         if (docSnapshot.exists()) {
@@ -32,7 +39,7 @@ const useClientWebHook = (userID, tx_ref) => {
         toast.error("Error fetching tx document -swhay:", error);
         console.error("Error fetching tx document -swhay:", error);
       },
-    );
+    );}
     return () => unsub();
   }, [userID]);
   return status;

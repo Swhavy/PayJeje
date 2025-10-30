@@ -1,18 +1,11 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import { useSelector } from "react-redux";
 
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const uid = useSelector((state) => state.user.user.uid);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-paywaka-500"></div>
-      </div>
-    );
-  }
-
-  return isAuthenticated ? <Navigate to="/auth/login" replace /> : children;
+  return uid ? children : <Navigate to="/auth/login" replace />;
 };
 
 export default ProtectedRoute;

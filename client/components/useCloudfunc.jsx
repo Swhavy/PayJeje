@@ -9,8 +9,10 @@ const useCloudfunc = () => {
   const { accountReference } = user;
   const dispatch = useDispatch();
   //cloud function to fetch bills
-  connectFunctionsEmulator(functions, "localHost", 5001);
+  connectFunctionsEmulator(functions, "localhost", 5001);
   const billsFetch = httpsCallable(functions, "billsFetch");
+  const fetchBanks = httpsCallable(functions, "fetchBanks");
+  const withdraw = httpsCallable(functions, "withdraw");
 
   //fetch biller details and dispatch network details
   const biller = async (network, productName) => {
@@ -187,6 +189,6 @@ const useCloudfunc = () => {
   //     }),
   //   );
   // };
-  return { biller, cable, getWalletBalance };
+  return { biller, cable, getWalletBalance, fetchBanks, withdraw };
 };
 export default useCloudfunc;

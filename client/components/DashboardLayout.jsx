@@ -18,6 +18,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,7 @@ export default function DashboardLayout({ children }) {
       href: "/services/data",
     },
     { id: "bills", label: "Pay Bills", icon: Zap, href: "/services/bills" },
+    { id: "history", label: "Transactions", icon: History, href: "/billhistory" },
     {
       id: "giftcards",
       label: "Gift Cards",

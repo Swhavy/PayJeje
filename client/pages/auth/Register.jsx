@@ -32,11 +32,7 @@ import {
   signInWithPopup,
 } from "firebase/auth";
 import { setDoc, doc, getDoc } from "firebase/firestore";
-import {
-  addUserCred,
-  addUserInfo,
-  changeUserPhoto,
-} from "@/Features/userSlice";
+import { addUserCred, changeUserPhoto } from "@/Features/userSlice";
 import { auth, db } from "@/firebaseConfig";
 import { toast, Toaster } from "sonner";
 
@@ -46,10 +42,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 // Regular img tag instead of next/image
 const Logo = () => (
   <img
-    src="/logo.png"
+    src="/logo.svg"
     alt="Paywaka Logo"
-    width={40}
-    height={40}
+    width={120}
+    height={120}
     className="rounded-full"
   />
 );
@@ -141,11 +137,12 @@ export default function RegisterPage() {
           if (user.emailVerified) {
             console.log("email verified...login successful");
             navigate("/dashboard");
-            if (navigate !== "loading") {
-              setAppContext({ ...appContext, spinner: false });
-            } else {
-              setAppContext({ ...appContext, spinner: true });
-            }
+            setAppContext({ ...appContext, spinner: false });
+            // if (navigate !== "loading") {
+            //   setAppContext({ ...appContext, spinner: false });
+            // } else {
+            //   setAppContext({ ...appContext, spinner: true });
+            // }
           }
         }
       } catch (error) {
@@ -179,6 +176,9 @@ export default function RegisterPage() {
         dispatch(changeUserPhoto({ userPhoto: user.user.photoURL }));
         setDoc(userRef, { ...userData, referredBy: field.refLink });
         await sendEmailVerification(auth.currentUser);
+
+        setOauthLoading(null);
+        setAppContext({ ...appContext, spinner: false });
         //navigate("/useraccount");
       }
       //if the user exists in the database login the user
@@ -187,6 +187,7 @@ export default function RegisterPage() {
         dispatch(addUserCred(userData));
         console.log(userData);
         userEmailVerified;
+
         //navigate('/useraccount')
       }
       setOauthLoading(null);
@@ -243,6 +244,7 @@ export default function RegisterPage() {
       console.log("sucessfully signed up");
       await sendEmailVerification(auth.currentUser);
       setIsLoading(false);
+      setAppContext({ ...appContext, spinner: false });
       setVerifiedEmail((prev) => (prev = true));
       //navigate("/successfulsignup");
       //setSpin(false);
@@ -268,7 +270,9 @@ export default function RegisterPage() {
     }
   };
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div
+      className={`min-h-screen bg-background flex items-center justify-center p-4 ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
+    >
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-3 mb-6">
