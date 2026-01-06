@@ -167,7 +167,13 @@ export default function RegisterPage() {
 
       const uid = user.user.uid;
       const userRef = doc(db, "users", uid);
-      const achievements = collection(db, "users", uid, "achievements");
+      const achievements = doc(
+        db,
+        "users",
+        uid,
+        "achievements",
+        "stats",
+      );
       const achievementsData = {
         firstSurvey: 0,
         pointsEarned: 0,
@@ -242,7 +248,13 @@ export default function RegisterPage() {
 
       const user = userCredential.user;
       const userID = user.uid;
-      const achievements = collection(db, "users", uid, "achievements");
+      const achievements = doc(
+        db,
+        "users",
+        userID,
+        "achievements",
+        "stats",
+      );
       const achievementsData = {
         firstSurvey: 0,
         pointsEarned: 0,
@@ -293,6 +305,7 @@ export default function RegisterPage() {
       } else if (error.code === "auth/weak-password") {
         toast.error("Password should be at least 6 characters.");
       } else {
+        console.log("Error signing up user:", error);
         toast.error(error.message); // fallback
       }
       console.error("error signing up user", error.FirebaseError);

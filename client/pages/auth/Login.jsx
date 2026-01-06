@@ -123,7 +123,7 @@ export default function LoginPage() {
       const uid = user.uid;
       //fetch user data from firestore
       const userRef = doc(db, "users", uid);
-      const achievements = collection(db, "users", uid, "achievements");
+      const achievements = doc(db, "users", uid, "achievements", "stats");
       const userAchievements = await getDoc(achievements);
 
       const userData = await getDoc(userRef);
@@ -239,7 +239,7 @@ export default function LoginPage() {
       console.log(`${providerName} OAuth login successful`, user);
       const uid = user.user?.uid;
       const userRef = doc(db, "users", uid);
-      const achievements = collection(db, "users", uid, "achievements");
+      const achievements = doc(db, "users", uid, "achievements", "stats");
 
       // "userPersonalizations",
       //   "userSettings",
@@ -253,7 +253,7 @@ export default function LoginPage() {
           userPhoto: user.user.photoURL,
           points: 0,
         };
-        const achievements = collection(db, "users", uid, "achievements");
+        const achievements = doc(db, "users", uid, "achievements", "stats");
         const achievementsData = {
           firstSurvey: 0,
           pointsEarned: 0,

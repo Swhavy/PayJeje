@@ -71,8 +71,9 @@ export default function DashboardPage() {
   }, [invites]);
 
   useEffect(() => {
-    const userAchievement = collection(db, "users", uid, "achievements");
+    const userAchievement = doc(db, "users", uid, "achievements", "stats");
     const subscribe = onSnapshot(userAchievement, (snapshot) => {
+      console.log("achievement data snapshot", snapshot.data());
       const { firstSurvey, pointsEarned, billPayer } = snapshot.data();
       const firstSurveyPercentage = Math.ceil((firstSurvey / 1) * 100);
       const pointsEarnedPercentage = Math.ceil((pointsEarned / 1000) * 100);
@@ -91,7 +92,7 @@ export default function DashboardPage() {
       });
     });
     return () => subscribe();
-  }, [invites]);
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -228,25 +229,25 @@ export default function DashboardPage() {
     {
       title: "First Survey",
       description: "Complete your first survey",
-      progress: achievementsState.firstSurvey.firstSurveyPercentage,
+      progress: achievementsState?.firstSurvey?.rate,
       icon: "🎯",
     },
     {
       title: "Point Collector",
       description: "Earn 1,000 points",
-      progress: achievementsState.pointsEarned.pointsEarnedPercentage,
+      progress: achievementsState?.pointsEarned?.rate,
       icon: "⭐",
     },
     {
       title: "Bill Payer",
       description: "Pay 5 bills successfully",
-      progress: achievementsState.billPayer.billPayerPercentage,
+      progress: achievementsState?.billPayer?.rate,
       icon: "⚡",
     },
     {
       title: "Referral Master",
       description: "Refer 10 friends",
-      progress: invites.rate,
+      progress: invites?.rate,
       icon: "👥",
     },
   ];
