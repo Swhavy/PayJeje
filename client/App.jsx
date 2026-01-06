@@ -12,6 +12,7 @@ import { PersistGate } from "redux-persist/integration/react";
 import AccountDetailsCard from "@/components/AccountDetailsCard.jsx";
 import BillHistory from "@/pages/BillHistory.jsx";
 import TransactionChart from "@/components/HistoryChart.jsx";
+import ProposalDocument from "@/pages/pitch.jsx";
 
 // Components
 import { AuthProvider } from "@/components/AuthProvider";
@@ -76,6 +77,10 @@ const App = () => (
                     <Route
                       path="/auth/register/:referredBy?"
                       element={<Register />}
+                    />
+                    <Route
+                      path="pitch"
+                      element={<ProposalDocument />}
                     />
                     {/* Protected Routes */}
                     <Route

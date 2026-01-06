@@ -31,8 +31,12 @@ import {
   setPersistence,
   signInWithPopup,
 } from "firebase/auth";
-import { setDoc, doc, getDoc } from "firebase/firestore";
-import { addUserCred, changeUserPhoto } from "@/Features/userSlice";
+import { setDoc, doc, getDoc, collection } from "firebase/firestore";
+import {
+  addUserCred,
+  changeUserPhoto,
+  updateAchievement,
+} from "@/Features/userSlice";
 import { auth, db } from "@/firebaseConfig";
 import { toast, Toaster } from "sonner";
 
@@ -163,18 +167,30 @@ export default function RegisterPage() {
 
       const uid = user.user.uid;
       const userRef = doc(db, "users", uid);
+      const achievements = collection(db, "users", uid, "achievements");
+      const achievementsData = {
+        firstSurvey: 0,
+        pointsEarned: 0,
+        billPayer: 0,
+        referralMaster: 0,
+      };
 
       const docSnap = await getDoc(userRef);
+      const achievementSnap = await getDoc(achievements);
       //if the user does not exist in the database create a new user
       if (!docSnap.exists()) {
         const userData = {
           userName: user.user.displayName,
           userEmail: user.user.email,
           userPhoto: user.user.photoURL,
+          refferalsCount: 0,
+          points: 0,
         };
         dispatch(addUserCred(userData));
+        dispatch(updateAchievement(achievementsData));
         dispatch(changeUserPhoto({ userPhoto: user.user.photoURL }));
         setDoc(userRef, { ...userData, referredBy: field.refLink });
+        setDoc(achievements, achievementsData);
         await sendEmailVerification(auth.currentUser);
 
         setOauthLoading(null);
@@ -185,6 +201,7 @@ export default function RegisterPage() {
       else {
         const userData = docSnap.data();
         dispatch(addUserCred(userData));
+        dispatch(updateAchievement(achievementSnap.data()));
         console.log(userData);
         userEmailVerified;
 
@@ -195,7 +212,7 @@ export default function RegisterPage() {
       setOauthLoading(null);
       setAppContext({ ...appContext, spinner: false });
       console.log("error occurred while logging in with google", error);
-      alert(`An error occurred while logging in with ${providerName}`);
+      toast.error(`An error occurred while logging in with ${providerName}`);
     }
   };
 
@@ -225,6 +242,13 @@ export default function RegisterPage() {
 
       const user = userCredential.user;
       const userID = user.uid;
+      const achievements = collection(db, "users", uid, "achievements");
+      const achievementsData = {
+        firstSurvey: 0,
+        pointsEarned: 0,
+        billPayer: 0,
+        referralMaster: 0,
+      };
 
       const userData = {
         firstName: field["first-name"],
@@ -233,13 +257,18 @@ export default function RegisterPage() {
         userPhone: field.phone,
         userGender: field.gender,
         userName: field.userName,
+        refferalsCount: 0,
+        points: 0,
       };
 
       await setDoc(doc(db, "users", userID), {
         ...userData,
         referredBy: field.refLink,
       });
+      await setDoc(achievements, achievementsData);
+
       dispatch(addUserCred(userData));
+      dispatch(updateAchievement(achievementsData));
 
       console.log("sucessfully signed up");
       await sendEmailVerification(auth.currentUser);
@@ -266,7 +295,7 @@ export default function RegisterPage() {
       } else {
         toast.error(error.message); // fallback
       }
-      console.error("error signing up user", error.FirebaseError.Firebase);
+      console.error("error signing up user", error.FirebaseError);
     }
   };
   return (
@@ -331,6 +360,7 @@ export default function RegisterPage() {
                 variant="outline"
                 className="w-full h-11 border-border hover:bg-accent"
                 onClick={() => handleOAuthSignup("twitter")}
+                onPointer
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "twitter" ? (

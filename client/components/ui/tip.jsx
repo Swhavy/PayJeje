@@ -30,7 +30,7 @@ const Tooltip = ({
             `}
           >
             {title && <div className="font-semibold mb-1">{title}</div>}
-            <div className="text-sm text-slate-300">{content}</div>
+            <div className="text-sm text-slate-300 text-nowrap">{content}</div>
             <TooltipPrimitive.Arrow className="fill-slate-900" />
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>

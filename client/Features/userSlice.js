@@ -33,16 +33,17 @@ const initialState = {
     accountNumber: null,
     bankName: null,
     barterID: null,
-    referralLink: null,
-    refferalsCount: 0,
+    referralCode: null,
+    refferalsCount: null,
+    points: null,
   },
   transactions: {
-    billerType: "",
+    billType: "",
     bonusToEarn: "",
     banks: null,
     bankCode: "",
     plan: "",
-    cashbackAmount: "",
+    cashbackAmount: 0,
     price: "",
     productName: "",
     network: "",
@@ -55,6 +56,11 @@ const initialState = {
     tx_ref: "",
     billerCode: "",
     itemCode: "",
+  },
+  achievementsData: {
+    firstSurvey: 0,
+    pointsEarned: 0,
+    billPayer: 0,
   },
 };
 
@@ -80,11 +86,15 @@ const userSlice = createSlice({
     selectedPrice: (state, action) => {
       state.transactions = { ...state.transactions, ...action.payload };
     },
+    updateAchievement: (state, action) => {
+      state.achievementsData = { ...state.achievementsData, ...action.payload };
+    },
     billerInfo: (state, action) => {
       state.transactions = { ...state.transactions, ...action.payload };
     },
     clearState: (state, action) => {
       state.transactions = initialState.transactions;
+      state.achievementsData = initialState.achievementsData;
       state.user = initialState.user;
     },
   },
@@ -95,6 +105,7 @@ export const {
   changeUserPhoto,
   addUserCred,
   selectedPrice,
+  updateAchievement,
   billerInfo,
   clearState,
 } = userSlice.actions;

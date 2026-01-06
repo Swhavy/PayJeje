@@ -25,11 +25,18 @@ import {
   FacebookAuthProvider,
   sendEmailVerification,
 } from "firebase/auth";
-import { doc, getFirestore, getDoc, setDoc } from "firebase/firestore";
+import {
+  doc,
+  getFirestore,
+  getDoc,
+  setDoc,
+  collection,
+} from "firebase/firestore";
 import {
   addUserCred,
   addUserInfo,
   changeUserPhoto,
+  updateAchievement,
 } from "@/Features/userSlice";
 import { auth } from "@/firebaseConfig";
 import { toast } from "sonner";
@@ -116,6 +123,8 @@ export default function LoginPage() {
       const uid = user.uid;
       //fetch user data from firestore
       const userRef = doc(db, "users", uid);
+      const achievements = collection(db, "users", uid, "achievements");
+      const userAchievements = await getDoc(achievements);
 
       const userData = await getDoc(userRef);
       const docRef = userData.data();
@@ -142,10 +151,12 @@ export default function LoginPage() {
         accountNumber: docRef?.accountNumber,
         bankName: docRef?.bankName,
         barterID: docRef?.barter_id,
-        referralLink: docRef?.referralCode,
+        referralCode: docRef?.referralCode,
         refferalsCount: docRef?.refferalsCount,
+        points: 0,
       };
       dispatch(addUserCred({ ...payload, uid }));
+      dispatch(updateAchievement(userAchievements.data()));
       //if the user has profile pic, dispatch it to the state if not dispatch null to the userPhoto state
       if (docRef?.userPhoto) {
         dispatch(changeUserPhoto({ userPhoto: docRef.userPhoto || null }));
@@ -228,6 +239,8 @@ export default function LoginPage() {
       console.log(`${providerName} OAuth login successful`, user);
       const uid = user.user?.uid;
       const userRef = doc(db, "users", uid);
+      const achievements = collection(db, "users", uid, "achievements");
+
       // "userPersonalizations",
       //   "userSettings",
 
@@ -238,10 +251,20 @@ export default function LoginPage() {
           userName: user.user.displayName,
           userEmail: user.user.email,
           userPhoto: user.user.photoURL,
+          points: 0,
+        };
+        const achievements = collection(db, "users", uid, "achievements");
+        const achievementsData = {
+          firstSurvey: 0,
+          pointsEarned: 0,
+          billPayer: 0,
+          referralMaster: 0,
         };
         dispatch(addUserCred({ ...userData, uid }));
+        dispatch(updateAchievement(achievementsData));
         dispatch(changeUserPhoto({ userPhoto: user.user.photoURL }));
         setDoc(userRef, userData);
+        setDoc(achievements, achievementsData);
         //userEmailVerified();
         sendEmailVerification(auth.currentUser);
         toast.success(
@@ -252,25 +275,28 @@ export default function LoginPage() {
       }
       //if the user exists in the database login the user
       else {
+        const userAchievements = await getDoc(achievements);
         const userData = docSnap.data();
-         const payload = {
-           firstName: userData?.firstName,
-           lastName: userData?.lastName,
-           userName: userData?.userName,
-           userEmail: userData?.userEmail,
-           userState: userData?.userState,
-           userCountry: userData?.userCountry,
-           userGender: userData?.userGender,
-           userPhone: userData?.userPhone,
-           userPhoto: userData?.userPhoto,
-           accountReference: userData?.accountReference,
-           accountNumber: userData?.accountNumber,
-           bankName: userData?.bankName,
-           barterID: userData?.barter_id,
-           referralLink: userData?.referralCode,
-           refferalsCount: userData?.refferalsCount,
-         };
+        const payload = {
+          firstName: userData?.firstName,
+          lastName: userData?.lastName,
+          userName: userData?.userName,
+          userEmail: userData?.userEmail,
+          userState: userData?.userState,
+          userCountry: userData?.userCountry,
+          userGender: userData?.userGender,
+          userPhone: userData?.userPhone,
+          userPhoto: userData?.userPhoto,
+          accountReference: userData?.accountReference,
+          accountNumber: userData?.accountNumber,
+          bankName: userData?.bankName,
+          barterID: userData?.barter_id,
+          referralCode: userData?.referralCode,
+          refferalsCount: userData?.refferalsCount,
+          points: 0,
+        };
         dispatch(addUserCred({ ...payload, uid }));
+        dispatch(updateAchievement(userAchievements.data()));
         console.log("pinpoint", userData);
         userEmailVerified();
       }

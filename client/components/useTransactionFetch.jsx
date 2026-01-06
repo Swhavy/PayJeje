@@ -4,6 +4,7 @@ import {
   query,
   orderBy,
   limit,
+  doc,
   onSnapshot,
   startAfter,
   getDocs,
@@ -22,7 +23,6 @@ import { useSpinner } from "@/components/SpinnerProvider";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/firebaseConfig";
 
-
 const useTransactionFetch = () => {
   const [cursors, setCursors] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -36,30 +36,29 @@ const useTransactionFetch = () => {
   useEffect(() => {
     setAppContext({ ...appContext, spinner: true });
     let unsubscribe = () => {};
-      if (!user) {
+    if (!user) {
+      setAppContext({ ...appContext, spinner: false });
+      toast.error("no user signed in");
+      return navigate("/auth/login");
+    }
+    const transactions = collection(db, "users", user, "Transactions");
+    const q = query(transactions, limit(10));
+    unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const tx = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setTrxn(tx); //set transaction data in state
         setAppContext({ ...appContext, spinner: false });
-         toast.error("no user signed in");
-         return navigate("/auth/login");
-      }
-       const transactions = collection(db, "users", user, "Transactions");
-       const q = query(transactions, limit(10));
-        unsubscribe = onSnapshot(
-         q,
-         (snap) => {
-           const tx = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-           setTrxn(tx); //set transaction data in state
-           setAppContext({ ...appContext, spinner: false });
-           console.log("doc", tx);
-           // console.log("yeah", snap.docs);
-           setLast(snap.docs[snap.docs.length - 1]); // keep the last document for pagination
-         },
-         (error) => {
-           setAppContext({ ...appContext, spinner: false });
-           toast.error("trxn", error);
-           console.error("Error fetching tx document -swhay:", error);
-         },
-       );
-   
+        console.log("doc", tx);
+        // console.log("yeah", snap.docs);
+        setLast(snap.docs[snap.docs.length - 1]); // keep the last document for pagination
+      },
+      (error) => {
+        setAppContext({ ...appContext, spinner: false });
+        toast.error("trxn", error);
+        console.error("Error fetching tx document -swhay:", error);
+      },
+    );
 
     return () => unsubscribe();
   }, [User]);
@@ -184,8 +183,6 @@ const useTransactionFetch = () => {
     }
   };
 
-
-
   return { trxn, loadMore, getTransactionData };
 };
 
@@ -226,7 +223,7 @@ export const useInflowData = (userId) => {
           }));
 
           const monthlyData = getMonthlyInflows(transactions);
-          const result = calculateInflowChange(monthlyData);
+          const result = calculateInflowChange(monthlyData, null);
           setInflowData(result);
           setError(null);
         } catch (err) {
@@ -253,6 +250,8 @@ export const useInflowData = (userId) => {
 const getMonthlyInflows = (transactions) => {
   const now = new Date();
   const monthsData = {};
+  const pointsData = {};
+  let monthlyData
 
   for (let i = 0; i < 4; i++) {
     const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -268,14 +267,41 @@ const getMonthlyInflows = (transactions) => {
         monthsData[key] += t.amount;
       }
     });
-
-  return monthsData;
+   monthlyData = monthsData 
+  return {monthlyData, pointsData};
 };
 
-const calculateInflowChange = (monthlyData) => {
+const calculateInflowChange =  (inflow, pnts) => {
+  const {monthlyData, pointsData} = inflow
   const months = Object.keys(monthlyData).sort().reverse();
   const currentMonth = monthlyData[months[0]];
-console.log("Current Month Inflow:", currentMonth);
+  let pntsData = {}
+  console.log("pnts:", pnts);
+   if (pnts) {
+     const previousAvg =
+     (pointsData[months[1]] + pointsData[months[2]] + pointsData[months[3]]) /
+     3;
+   console.log("Previous Months Average pnts:", pnts);
+   switch (previousAvg) {
+    case 0:
+     pntsData = {
+       currentAmount: pnts,
+       percentageChange: pnts > 0 ? 100 : 0,
+       isIncrease: pnts > 0,
+     };
+     break;
+
+     default:
+   const percentChange =
+     ((pnts - previousAvg) / previousAvg) * 100;
+     pntsData = {
+     currentAmount: pnts,
+     percentageChange: Math.round(percentChange * 10) / 10,
+     isIncrease: percentChange > 0,
+     }
+     break;
+   }
+   }
   const previousAverage =
     (monthlyData[months[1]] + monthlyData[months[2]] + monthlyData[months[3]]) /
     3;
@@ -285,17 +311,141 @@ console.log("Current Month Inflow:", currentMonth);
       currentAmount: currentMonth,
       percentageChange: currentMonth > 0 ? 100 : 0,
       isIncrease: currentMonth > 0,
+      pntsData,
     };
   }
 
   const percentageChange =
     ((currentMonth - previousAverage) / previousAverage) * 100;
 
+  //  if(pntsData){
+  //    return {
+  //    currentAmount: currentMonth,
+  //    percentageChange: Math.round(percentageChange * 10) / 10,
+  //    isIncrease: percentageChange > 0,
+  //    pntsData,
+  //    }
+  //  }
   return {
     currentAmount: currentMonth,
     percentageChange: Math.round(percentageChange * 10) / 10,
     isIncrease: percentageChange > 0,
+    pntsData,
   };
+};
+
+export const useReferallData = (userId) => {
+  const [referralData, setReferralData] = useState(null);
+  const [isloading, setLoading] = useState(true);
+  const [iserror, setError] = useState(null);
+  const [pntsErr, setPntsErr] = useState(null);
+  const [pnts, setPnts] = useState(20);
+
+  useEffect(() => {
+     if (!userId) {
+      setLoading(false);
+      return;
+    }
+    const userPntsRef = doc(db, "users", userId)
+    const snap = onSnapshot(userPntsRef, (snapshots) => {
+      let points
+     try{
+      console.log("Hi mahn",snapshots.data()?.points )
+      points = snapshots.data()?.points
+       setPnts(points)
+     }
+     catch(err){
+      console.log(err)
+      setPntsErr(err)
+     }
+    },(err) =>{
+      console.log(err)
+      setPntsErr(err)
+    } )
+  return () => snap()
+  }, [userId, pnts])
+
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    // Calculate date 4 months ago as ISO string
+    const fourMonthsAgo = new Date();
+    fourMonthsAgo.setMonth(fourMonthsAgo.getMonth() - 4);
+    fourMonthsAgo.setDate(1);
+    fourMonthsAgo.setHours(0, 0, 0, 0);
+    const fourMonthsAgoTS = Timestamp.fromDate(fourMonthsAgo);
+    console.log("time", fourMonthsAgoTS);
+
+    const referralsRef = collection(db, "users", userId, "referrals");
+    const q = query(
+      referralsRef,
+      where("createdAt", ">=", fourMonthsAgoTS), // Compare Timestamp strings directly
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        try {
+          const transactions = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+            // Convert Timestamp string to Date object for calculations
+            date: new Date(doc.data()["createdAt"].toDate()),
+          }));
+          console.log("trx", transactions);
+          const monthlyData = getMonthlyReferrals(transactions);
+          console.log("montlyData", monthlyData)
+          const result = calculateInflowChange(monthlyData,pnts);
+          console.log("hey gee", result);
+          setReferralData(result);
+          setError(null);
+        } catch (err) {
+          console.error("Error processing Referrals:", err);
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      },
+      (err) => {
+        console.error("Error listening to Referrals:", err);
+        setError(err.message);
+        setLoading(false);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [userId, pnts]);
+
+  return { referralData, isloading, iserror };
+};
+
+const getMonthlyReferrals = (transactions) => {
+  const now = new Date();
+  const monthsData = {};
+  const pointsData = {};
+  let monthlyData
+
+  for (let i = 0; i < 4; i++) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    monthsData[key] = 0;
+    pointsData[key] = 0;
+  }
+  transactions.forEach((t) => {
+    // t.date is already a Date object from the conversion above
+    const key = `${t.date.getFullYear()}-${String(t.date.getMonth() + 1).padStart(2, "0")}`;
+    if (monthsData[key] !== undefined) {
+      monthsData[key] += 1;
+      pointsData[key] += 20;
+    }
+  });
+
+  monthlyData = monthsData
+
+  return {monthlyData, pointsData};
 };
 
 export default useTransactionFetch;

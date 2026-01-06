@@ -10,7 +10,10 @@ import {
   Filler,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
+import useGetMonthlyTrx from "./useGetMonthlyTrx";
 import { useEffect, useState } from "react";
+import { use } from "react";
+
 
 // Register ChartJS components
 ChartJS.register(
@@ -24,8 +27,16 @@ ChartJS.register(
   Filler,
 );
 
-export default function TransactionChart() {
+const TransactionChart = () => {
   const [isMobile, setIsMobile] = useState(false);
+  const [max, setMax] = useState(null)
+  const {inflow, expenses, dateLabel} = useGetMonthlyTrx()
+
+useEffect(() => {
+  const calc = Math.max(...inflow, ...expenses)
+  const maxVal = Math.ceil(calc * 1.5)
+  setMax(maxVal)
+}, [inflow, expenses, dateLabel])
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -34,21 +45,26 @@ export default function TransactionChart() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+
+
+
   // Sample transaction data - replace with your actual data
   const transactionData = {
-    labels: [
-      "Jan 1",
-      "Jan 5",
-      "Jan 10",
-      "Jan 15",
-      "Jan 20",
-      "Jan 25",
-      "Jan 30",
-    ],
+    // labels: [
+    //   "Jan 1",
+    //   "Jan 5",
+    //   "Jan 10",
+    //   "Jan 15",
+    //   "Jan 20",
+    //   "Jan 25",
+    //   "Jan 30",
+    // ],
+    labels: dateLabel,
     datasets: [
       {
         label: "Income",
-        data: [2500, 3200, 2800, 4100, 3500, 4200, 3800],
+        //data: [2500, 3200, 2800, 4100, 3500, 4200, 3800],
+        data: inflow,
         borderColor: "#10b981",
         backgroundColor: "rgba(16, 185, 129, 0.1)",
         borderWidth: 2.5,
@@ -62,7 +78,8 @@ export default function TransactionChart() {
       },
       {
         label: "Expenses",
-        data: [1200, 1500, 1800, 1300, 1600, 1400, 1700],
+        //data: [1200, 1500, 1800, 1300, 1600, 1400, 1700],
+        data: expenses,
         borderColor: "#ef4444",
         backgroundColor: "rgba(239, 68, 68, 0.1)",
         borderWidth: 2.5,
@@ -125,7 +142,7 @@ export default function TransactionChart() {
     scales: {
       y: {
         beginAtZero: true,
-        max: 5000,
+        max: max,
         ticks: {
           color: "#9ca3af",
           font: {
@@ -163,3 +180,5 @@ export default function TransactionChart() {
     </div>
   );
 }
+
+export default TransactionChart

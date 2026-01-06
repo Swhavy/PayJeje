@@ -136,8 +136,8 @@ export default function AirtimePage() {
           billType: "airtime",
           price,
           customerID: phoneNumber,
-          bonusToEarn: "100 NGN",
-          cashbackAmount: "50 NGN",
+          bonusToEarn: ((2 / price) * 100).toFixed(2) + " NGN",
+          // cashbackAmount: transactions.cashbackAmount,
           //initialUseCashback: false,
         }),
       );
@@ -293,7 +293,7 @@ export default function AirtimePage() {
                         ₦{Number.parseInt(amount || "0").toLocaleString()}
                       </span>
                     </div>
-                    <div className="flex justify-between text-sm">
+                    {/*  <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Discount:</span>
                       <span className="text-green-600 dark:text-green-400 font-medium">
                         -
@@ -302,14 +302,11 @@ export default function AirtimePage() {
                             ?.discount
                         }
                       </span>
-                    </div>
+                    </div> */}
                     <div className="flex justify-between text-sm font-semibold pt-2 border-t border-border">
                       <span className="text-foreground">Total:</span>
                       <span className="text-foreground">
-                        ₦
-                        {(
-                          Number.parseInt(amount || "0") * 0.98
-                        ).toLocaleString()}
+                        ₦{Number.parseInt(amount || "0").toLocaleString()}
                       </span>
                     </div>
                   </div>

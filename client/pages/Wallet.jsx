@@ -57,7 +57,7 @@ const Wallet = () => {
   const { appContext, setAppContext } = useSpinner();
   const dispatch = useDispatch();
   const userDetails = useSelector((state) => state?.user?.user);
-  const { walletBalance, bankName, accountReference } = userDetails;
+  const { walletBalance, bankName, accountReference, accountNumber:account } = userDetails;
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState("");
@@ -67,7 +67,7 @@ const Wallet = () => {
   const [accountPopup, setAccountPopup] = useState(false);
   const { fetchBanks, withdraw } = useCloudfunc();
   const [accountDetails, setAccountDetails] = useState({
-    accountNumber: "",
+    accountNumber: "500000wqj",
     amount: "",
   });
 
@@ -652,7 +652,7 @@ const Wallet = () => {
         </Tabs>
         {accountPopup && (
           <AccountDetailsCard
-            accountNumber={accountNumber || "0000000000"}
+            accountNumber={account || "0000000000"}
             bankName={bankName || "Your Bank"}
             open={accountPopup}
             isClose={() => setAccountPopup(false)}

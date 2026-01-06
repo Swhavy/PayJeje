@@ -116,7 +116,8 @@ export default function PaymentConfirmation({
 }) {
   //start
   const user = useSelector((state) => state.user.user);
-  const { userName, userEmail } = user;
+  const transactions = useSelector((state) => state.user.transactions);
+  const { userName, userEmail, uid } = user;
   //const [mounted, setMounted] = useState(false);
   const [userID, setUserID] = useState("");
   const [redirect, setRedirect] = useState(false);
@@ -128,19 +129,18 @@ export default function PaymentConfirmation({
   const [details, setDetails] = useState(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUserID(user.uid);
-      } else {
-        console.log("No user is signed in");
-        navigate("/auth/login");
-      }
-    });
+    // const unsub = onAuthStateChanged(auth, async (user) => {
+    //   if (uid) {
+    //     setUserID(uid);
+    //   } else {
+    //     console.log("No user is signed in");
+    //     navigate("/auth/login");
+    //   }
+    // });
     if (callBackUrl) {
       window.location.href = callBackUrl;
       //setAppContext({ ...appContext, spinner: false })
     }
-    return () => unsub();
   }, [callBackUrl]);
 
   useEffect(() => {
@@ -248,7 +248,7 @@ export default function PaymentConfirmation({
                 </Label>
                 <div className="flex items-center gap-2">
                   <span className="text-base font-semibold">
-                    {details?.cashbackAmount}
+                    {transactions?.cashbackAmount}
                   </span>
                   <Switch
                     id="use-cashback"

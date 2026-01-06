@@ -290,6 +290,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   touch-action: manipulation;
 }
 
+.animate-gradient-flow {
+    background-size: 200% 200%;
+    animation: gradient-flow 3s ease infinite;
+  }
+
 .safe-area-inset {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
