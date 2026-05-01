@@ -29,7 +29,7 @@ import { useSelector } from "react-redux";
 
 export default function ReferralsPage() {
   const reflink = useSelector((state) => state.user.user);
-  const ReferralLink = reflink.referralCode || null;
+  const ReferralLink = reflink?.referralCode ? reflink.referralCode : null;
   const [referralLink] = useState(
     `http://localhost:8080/auth/register/${ReferralLink}`,
   );

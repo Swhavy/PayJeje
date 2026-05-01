@@ -3,6 +3,9 @@ import { X, Gift, Users, Zap, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CheckInCalendar from "./CheckinModal";
 import { useState } from "react";
+import { toast } from "sonner";
+import { useSelector } from "react-redux";
+import { useNavigate } from "react-router";
 
 const quickActions = [
   {
@@ -36,10 +39,20 @@ const quickActions = [
 ];
 
 const QuickEarnModal = ({ isOpen, onClose }) => {
+  const navigate = useNavigate();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const handleAction = (action) => {
     console.log(`Action triggered: ${action}`);
     // Handle action logic here
+  };
+  const reflink = useSelector((state) => state.user.user);
+  const ReferralLink = reflink?.referralCode ? reflink.referralCode : null;
+  const [referralLink] = useState(
+    `http://localhost:8080/auth/register/${ReferralLink}`,
+  );
+  const copyReferralLink = () => {
+    navigator.clipboard.writeText(referralLink);
+    toast.success("Referral link copied to clipboard!");
   };
 
   return (
@@ -134,6 +147,10 @@ const QuickEarnModal = ({ isOpen, onClose }) => {
                             onClick={() => {
                               if (action.buttonText == "Claim Now") {
                                 setIsCalendarOpen(!isCalendarOpen);
+                              } else if (action.buttonText == "Refer Now") {
+                                copyReferralLink();
+                              } else if (action.buttonText == "Start Earning") {
+                                navigate("/services/data");
                               }
                               handleAction(action.action);
                             }}

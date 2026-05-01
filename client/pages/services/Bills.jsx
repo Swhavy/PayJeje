@@ -27,8 +27,11 @@ import PaymentConfirmation from "../PaymentConfirmation";
 import { connectFunctionsEmulator, httpsCallable } from "firebase/functions";
 import { functions } from "@/firebaseConfig";
 import { toast } from "sonner";
+import { useBillsStat } from "../../components/useTransactionFetch";
+import { interval } from "../../components/functionalities";
 
 export default function BillsPage() {
+  const { timeAgo, now } = interval();
   const [selectedBillType, setSelectedBillType] = useState("");
   const [money, setMoney] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
@@ -41,6 +44,7 @@ export default function BillsPage() {
   const transactions = useSelector((state) => state.user.transactions);
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
   const { cable } = useCloudfunc();
+  const { utilityData, utilityMonthlyData } = useBillsStat();
   const dispatch = useDispatch();
 
   useEffect(() => {
@@ -376,7 +380,7 @@ export default function BillsPage() {
                           <SelectValue placeholder="Select provider" />
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border">
-                          {transactions?.billsInfo?.map((packages) => (
+                          {transactions?.billsInfo.map((packages) => (
                             <SelectItem
                               key={packages.id}
                               value={packages.short_name}
@@ -483,12 +487,17 @@ export default function BillsPage() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Bills Paid</span>
-                    <span className="font-semibold text-foreground">8</span>
+                    <span className="font-semibold text-foreground">
+                      {utilityMonthlyData.noTransactions}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Total Amount</span>
                     <span className="font-semibold text-foreground">
-                      ₦45,200
+                      {utilityMonthlyData.amount.toLocaleString("en-NG", {
+                        style: "currency",
+                        currency: "NGN",
+                      })}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -509,7 +518,7 @@ export default function BillsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {recentBills.map((bill) => (
+                  {utilityData.map((bill) => (
                     <div
                       key={bill.id}
                       className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
@@ -522,12 +531,15 @@ export default function BillsPage() {
                           {bill.provider}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {bill.time}
+                          {timeAgo(bill.createdAt, now)}
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="font-medium text-foreground">
-                          {bill.amount}
+                          {bill.amount.toLocaleString("en-NG", {
+                            style: "currency",
+                            currency: "NGN",
+                          })}
                         </div>
                         <Badge
                           className={

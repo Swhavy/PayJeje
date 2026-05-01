@@ -42,8 +42,11 @@ import { useSpinner } from "@/components/SpinnerProvider";
 import { db } from "@/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 import QuickEarnModal from "@/components/QuickEarn";
+import { addUserCred } from "../Features/userSlice";
+import { useDispatch } from "react-redux";
 
 export default function DashboardPage() {
+  const dispatch = useDispatch();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { setAppContext, appContext, alertMsg, setAlertMsg } = useSpinner();
   const uid = useSelector((state) => state.user.user.uid);
@@ -51,7 +54,7 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const user = useSelector((state) => state.user.user);
   const { inflowData, loading, error } = useInflowData(user.uid);
-  const { referralData, isloading, iserror } = useReferallData(user.uid);
+  const { PointsData, refData, isloading, iserror } = useReferallData(user.uid);
   const { userName, walletBalance, refferalsCount } = user;
   const { trxn, loadMore } = useTransactionFetch();
   const [invites, setInvites] = useState({ count: 0, rate: 0 });
@@ -61,6 +64,8 @@ export default function DashboardPage() {
     const userDBref = doc(db, "users", uid);
     const subscribe = onSnapshot(userDBref, (snapshot) => {
       const inviteCount = snapshot.data().refferalsCount;
+      const points = snapshot.data()?.points ? snapshot.data().points : 0;
+      dispatch(addUserCred({ points: points }));
       const percentage = Math.ceil((inviteCount / 10) * 100);
       setInvites((prev) => {
         prev = { count: inviteCount, rate: percentage };
@@ -68,10 +73,26 @@ export default function DashboardPage() {
       });
     });
     return () => subscribe();
-  }, [invites]);
+  }, []);
 
   useEffect(() => {
     const userAchievement = doc(db, "users", uid, "achievements", "stats");
+    const userData = doc(db, "users", uid);
+    const subscribeStreak = onSnapshot(
+      userData,
+      (snapshot) => {
+        const streakCount = snapshot.data().streak;
+        const streakPercentage = (streakCount / 20) * 100;
+        console.log("streak", streakCount);
+        setAchievementsState((prev) => ({
+          ...prev,
+          streak: { counts: streakCount, rate: streakPercentage },
+        }));
+      },
+      (error) => {
+        console.log("error fetching user data for streak: ", error);
+      },
+    );
     const subscribe = onSnapshot(userAchievement, (snapshot) => {
       console.log("achievement data snapshot", snapshot.data());
       const { firstSurvey, pointsEarned, billPayer } = snapshot.data();
@@ -80,18 +101,23 @@ export default function DashboardPage() {
       const billPayerPercentage = Math.ceil((billPayer / 5) * 100);
       setAchievementsState((prev) => {
         prev = {
+          ...prev,
           firstSurvey: { counts: firstSurvey, rate: firstSurveyPercentage },
           pointsEarned: { counts: pointsEarned, rate: pointsEarnedPercentage },
           billPayer: { counts: billPayer, rate: billPayerPercentage },
         };
         return {
+          ...prev,
           firstSurvey: { counts: firstSurvey, rate: firstSurveyPercentage },
           pointsEarned: { counts: pointsEarned, rate: pointsEarnedPercentage },
           billPayer: { counts: billPayer, rate: billPayerPercentage },
         };
       });
     });
-    return () => subscribe();
+    return () => {
+      subscribe();
+      subscribeStreak();
+    };
   }, []);
 
   useEffect(() => {
@@ -99,7 +125,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (mounted) console.log("hey", referralData);
+    if (mounted) console.log("hey", PointsData);
   }, [mounted]);
 
   useEffect(() => {
@@ -119,13 +145,13 @@ export default function DashboardPage() {
   const stats = [
     {
       title: "Total Points",
-      value: referralData?.pntsData?.currentAmount,
-      change: `${referralData?.pntsData?.percentageChange}%`,
+      value: PointsData?.pntsData?.currentAmount,
+      change: `${PointsData?.pntsData?.percentageChange}%`,
       icon: Star,
-      color: referralData?.pntsData?.isIncrease
+      color: PointsData?.pntsData?.isIncrease
         ? "text-yellow-600 dark:text-yellow-400"
         : "text-red-600 dark:text-red-400",
-      bgColor: referralData?.pntsData?.isIncrease
+      bgColor: PointsData?.pntsData?.isIncrease
         ? "bg-yellow-100 dark:bg-yellow-900"
         : "bg-red-100 dark:bg-red-900",
     },
@@ -147,13 +173,13 @@ export default function DashboardPage() {
     // },
     {
       title: "Referrals",
-      value: referralData?.currentAmount,
-      change: `${referralData?.percentageChange}%`,
+      value: refData?.currentAmount,
+      change: `${refData?.percentageChange}%`,
       icon: Users,
-      color: referralData?.isIncrease
+      color: refData?.isIncrease
         ? "text-purple-600 dark:text-purple-400"
         : "text-red-600 dark:text-red-400",
-      bgColor: referralData?.isIncrease
+      bgColor: refData?.isIncrease
         ? "bg-purple-100 dark:bg-purple-900"
         : "bg-red-100 dark:bg-red-900",
     },
@@ -250,6 +276,12 @@ export default function DashboardPage() {
       progress: invites?.rate,
       icon: "👥",
     },
+    {
+      title: "Streak Master",
+      description: "Checkin 20 days straight to earn 2000 points",
+      progress: achievementsState?.streak?.rate,
+      icon: "🔥",
+    },
   ];
 
   const actions = [
@@ -342,18 +374,18 @@ export default function DashboardPage() {
                     {stat.title == "Wallet Balance" ? null : stat.title ==
                       "Referrals" ? (
                       <p
-                        className={`text-xs ${referralData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"} flex items-center mt-1`}
+                        className={`text-xs ${refData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"} flex items-center mt-1`}
                       >
                         <Tooltip
                           content={
-                            referralData?.isIncrease
+                            refData?.isIncrease
                               ? `referrals increased this past 3months`
                               : `You are down at compared to the past 3 months`
                           }
                           className="flex flex-col"
                         >
                           <div className="flex justify-center items-center">
-                            {referralData?.isIncrease ? (
+                            {refData?.isIncrease ? (
                               <TrendingUp className="h-3 w-3 mr-1" />
                             ) : (
                               <TrendingDown className="h-3 w-3 mr-1" />
@@ -364,18 +396,18 @@ export default function DashboardPage() {
                       </p>
                     ) : (
                       <p
-                        className={`text-xs ${referralData?.pntsData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}  flex items-center mt-1`}
+                        className={`text-xs ${PointsData?.pntsData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}  flex items-center mt-1`}
                       >
                         <Tooltip
                           content={
-                            referralData?.pntsData?.isIncrease
+                            PointsData?.pntsData?.isIncrease
                               ? `points increased by ${stat.change} this past 3months`
                               : `points decreased by ${stat.change} this past 3 months`
                           }
                           className="flex flex-col"
                         >
                           <div className="flex justify-center items-center">
-                            {referralData?.pntsData?.isIncrease ? (
+                            {PointsData?.pntsData?.isIncrease ? (
                               <TrendingUp className="h-3 w-3 mr-1" />
                             ) : (
                               <TrendingDown className="h-3 w-3 mr-1" />
@@ -603,7 +635,7 @@ export default function DashboardPage() {
                             {transaction.narration}
                           </p>
                           <p className="text-xs sm:text-sm text-muted-foreground">
-                            {new Date(transaction.created_at).toLocaleString(
+                            {new Date(transaction.createdAt).toLocaleString(
                               "en-NG",
                               {
                                 dateStyle: "medium", // "Sep 3, 2025"

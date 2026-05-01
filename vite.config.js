@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     allowedHosts: [
       "all",
-      "9b72192842c7.ngrok-free.app", // 👈 add your ngrok subdomain here
+      "37d4-197-211-52-73.ngrok-free.app", // 👈 add your ngrok subdomain here
     ],
     host: "::",
     port: 8080,

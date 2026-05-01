@@ -97,7 +97,7 @@ const Transactions = () => {
                         {transaction.narration}
                       </p>
                       <p className="text-xs sm:text-sm text-muted-foreground">
-                        {new Date(transaction.created_at).toLocaleString(
+                        {new Date(transaction.createdAt).toLocaleString(
                           "en-NG",
                           {
                             dateStyle: "medium", // "Sep 3, 2025"

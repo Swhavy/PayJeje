@@ -153,6 +153,7 @@ export default function LoginPage() {
         barterID: docRef?.barter_id,
         referralCode: docRef?.referralCode,
         refferalsCount: docRef?.refferalsCount,
+        streak: docRef?.streak,
         points: 0,
       };
       dispatch(addUserCred({ ...payload, uid }));
@@ -251,6 +252,7 @@ export default function LoginPage() {
           userName: user.user.displayName,
           userEmail: user.user.email,
           userPhoto: user.user.photoURL,
+          streak: 0,
           points: 0,
         };
         const achievements = doc(db, "users", uid, "achievements", "stats");
@@ -293,6 +295,7 @@ export default function LoginPage() {
           barterID: userData?.barter_id,
           referralCode: userData?.referralCode,
           refferalsCount: userData?.refferalsCount,
+          streak: userData?.streak,
           points: 0,
         };
         dispatch(addUserCred({ ...payload, uid }));

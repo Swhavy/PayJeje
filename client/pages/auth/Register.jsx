@@ -167,13 +167,7 @@ export default function RegisterPage() {
 
       const uid = user.user.uid;
       const userRef = doc(db, "users", uid);
-      const achievements = doc(
-        db,
-        "users",
-        uid,
-        "achievements",
-        "stats",
-      );
+      const achievements = doc(db, "users", uid, "achievements", "stats");
       const achievementsData = {
         firstSurvey: 0,
         pointsEarned: 0,
@@ -190,6 +184,7 @@ export default function RegisterPage() {
           userEmail: user.user.email,
           userPhoto: user.user.photoURL,
           refferalsCount: 0,
+          streak: 0,
           points: 0,
         };
         dispatch(addUserCred(userData));
@@ -248,13 +243,7 @@ export default function RegisterPage() {
 
       const user = userCredential.user;
       const userID = user.uid;
-      const achievements = doc(
-        db,
-        "users",
-        userID,
-        "achievements",
-        "stats",
-      );
+      const achievements = doc(db, "users", userID, "achievements", "stats");
       const achievementsData = {
         firstSurvey: 0,
         pointsEarned: 0,
@@ -270,6 +259,7 @@ export default function RegisterPage() {
         userGender: field.gender,
         userName: field.userName,
         refferalsCount: 0,
+        streak: 0,
         points: 0,
       };
 
@@ -514,6 +504,7 @@ export default function RegisterPage() {
                     id="refLink"
                     value={field.refLink}
                     onChange={(e) => controlledInput(e)}
+                    disabled
                     type="tel"
                     placeholder="the code of the person that referred you"
                     className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
@@ -636,16 +627,18 @@ export default function RegisterPage() {
       </div>
       {/*  <Toaster position="top-center" richColors /> */}
       {verifiedEmail && (
-        <FeedbackAlert
-          isOpen={verifiedEmail}
-          isClose={() => setVerifiedEmail((prev) => (prev = false))}
-          message={{
-            status: true,
-            statusMsg: "Email Verification Link Sent",
-            message:
-              "A verification link has been sent to your email. Please verify your email to complete the registration process.",
-          }}
-        />
+        <div className="h-1/2">
+          <FeedbackAlert
+            isOpen={verifiedEmail}
+            isClose={() => setVerifiedEmail((prev) => (prev = false))}
+            message={{
+              status: true,
+              statusMsg: "Email Verification Link Sent",
+              message:
+                "A verification link has been sent to your email. Please verify your email to complete the registration process.",
+            }}
+          />
+        </div>
       )}
     </div>
   );

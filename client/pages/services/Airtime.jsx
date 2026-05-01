@@ -20,8 +20,14 @@ import { useNavigate } from "react-router-dom";
 import { connectFunctionsEmulator, httpsCallable } from "firebase/functions";
 import { functions } from "@/firebaseConfig";
 import { toast } from "sonner";
+import { useBillsStat } from "../../components/useTransactionFetch";
+import { interval } from "../../components/functionalities";
 
 export default function AirtimePage() {
+  //use This to update Recent Transactions in the sidebar with real data from Firestore
+  //weeklyData contains the total amount of transactions for the week and amount spent so far
+  const { airtimeData, weeklyData } = useBillsStat();
+
   const transactions = useSelector((state) => state.user.transactions);
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
   const [currentPaymentDetails, setCurrentPaymentDetails] = useState({
@@ -40,12 +46,21 @@ export default function AirtimePage() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const { timeAgo, now } = interval();
+
 
   //initialize emulator once
   useEffect(() => {
     //cloud function to fetch bills
     connectFunctionsEmulator(functions, "localHost", 5001);
   }, []);
+
+
+  //used to mask phone number in recent transactions
+  function maskPhone(phone) {
+    const str = String(phone);
+    return str.slice(0, 3) + "****" + str.slice(-4);
+  }
 
   const validateCustomer = httpsCallable(functions, "validateCustomer");
   const networks = [
@@ -339,11 +354,15 @@ export default function AirtimePage() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">This Month</span>
-                  <span className="font-semibold text-foreground">₦15,000</span>
+                  <span className="font-semibold text-foreground">
+                    ₦ {weeklyData.amount}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Transactions</span>
-                  <span className="font-semibold text-foreground">23</span>
+                  <span className="font-semibold text-foreground">
+                    {weeklyData.noTransactions}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Savings</span>
@@ -363,29 +382,35 @@ export default function AirtimePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {recentTransactions.map((transaction) => (
+                {airtimeData.map((transaction) => (
                   <div
                     key={transaction.id}
                     className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
                   >
                     <div>
                       <div className="font-medium text-foreground">
-                        {transaction.network}
+                        {transaction.network === "MTN"
+                          ? "MTN🟡"
+                          : transaction.network === "Glo"
+                            ? "Glo🟢"
+                            : transaction.network === "Airtel"
+                              ? "Airtel🔴"
+                              : "9mobile🟣"}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {transaction.phone}
+                        {maskPhone(transaction.phone)}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {transaction.time}
+                        {timeAgo(transaction.createdAt, now)}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-medium text-foreground">
-                        {transaction.amount}
+                        ₦ {transaction.amount}
                       </div>
                       <Badge
                         className={
-                          transaction.status === "Completed"
+                          transaction.status == "completed"
                             ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
                             : transaction.status === "Failed"
                               ? "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200"

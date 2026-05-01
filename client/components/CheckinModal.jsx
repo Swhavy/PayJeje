@@ -1,18 +1,98 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Check, X } from "lucide-react";
+import { useSelector } from "react-redux";
+import {
+  setDoc,
+  doc,
+  arrayUnion,
+  query,
+  where,
+  getDoc,
+  getDocs,
+  orderBy,
+  collection,
+  onSnapshot,
+} from "firebase/firestore";
+import { db } from "../firebaseConfig";
+import { functions } from "@/firebaseConfig";
+import { connectFunctionsEmulator, httpsCallable } from "firebase/functions";
+import { useSpinner } from "./SpinnerProvider";
 
 export default function CheckInCalendar({ isOpen = true, onClose }) {
-  const [checkedInDates, setCheckedInDates] = useState(
-    new Set([1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 14, 15, 16, 18, 20, 21]),
-  );
+  const { appContext, setAppContext } = useSpinner();
+  const [checkedInDates, setCheckedInDates] = useState(new Set([]));
+  const UID = useSelector((state) => state.user.user);
+  const [today, setToday] = useState(new Date());
+  const [streakCount, setStreakCount] = useState(0);
 
-  const today = new Date();
+  useEffect(() => {
+    const getServerTime = httpsCallable(functions, "getServerTime");
+    const fetchCheckIns = async () => {
+      await getServerTime()
+        .then((result) => {
+          setToday(new Date(result.data.serverDate));
+          console.log("Today: ", today);
+          setAppContext({ ...appContext, spinner: false });
+          //setCheckedInDates(new Set(userCheckIns));
+        })
+        .catch((error) => {
+          console.error("Error fetching server time:", error);
+        });
+    };
+    fetchCheckIns();
+    //return () => fetchCheckIns()
+  }, []);
+
+  useEffect(() => {
+    const checkinRef = collection(db, "users", UID.uid, "points");
+    const userDoc = doc(db, "users", UID.uid);
+    const now = new Date();
+
+    const q = query(
+      checkinRef,
+      where("type", "==", "checkin"),
+      where("month", "==", now.getMonth() + 1),
+      where("year", "==", now.getFullYear()),
+    );
+    //function to collect the checkinn data in the initial login
+    const updateStreak = async () => {
+      const userstreak = await getDoc(userDoc);
+      const userData = userstreak.data();
+      setStreakCount(userData.streak || 0);
+      // const querySnapshot = await getDocs(q);
+      // const userCheckIns = querySnapshot.docs.map((doc) => doc.data().day);
+      // setCheckedInDates(new Set(userCheckIns));
+      // console.log("userCheckIns: ", userCheckIns);
+    };
+    updateStreak();
+
+    //event listener to provide real time data update of checkin data
+    const subscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const days = snapshot.docs.map((d) => d.data().day);
+        setCheckedInDates(new Set(days));
+        updateStreak();
+      },
+      (err) => {
+        console.error("Error fetching check-ins:", err);
+      },
+    );
+    return () => {
+      subscribe();
+    };
+  }, [UID.uid]);
+  const checkin = httpsCallable(functions, "checkin");
+
+  // const today = new Date();
+  if (!today) return null;
   const currentMonth = today.getMonth();
   const currentYear = today.getFullYear();
   const currentDay = today.getDate();
 
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth =
+    new Date(currentYear, currentMonth + 1, 0).getDate() || [];
+  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay() || [];
 
   const calendarDays = useMemo(() => {
     const days = [];
@@ -45,30 +125,39 @@ export default function CheckInCalendar({ isOpen = true, onClose }) {
     return days;
   }, [checkedInDates, currentDay, daysInMonth, firstDayOfMonth]);
 
-  const handleDayClick = (date) => {
+  const monthName =
+    new Date(currentYear, currentMonth).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    }) || [];
+
+  const handleDayClick = async (date) => {
     if (date === 0 || date > currentDay) return;
 
     const newCheckedIn = new Set(checkedInDates);
     if (newCheckedIn.has(date)) {
-      newCheckedIn.delete(date);
+      // newCheckedIn.delete(date);
+      return; // Prevent unchecking
     } else {
       newCheckedIn.add(date);
+      // await setDoc(
+      //   doc(db, "users", uid, "activities", "checkins"),
+      //   { [monthName]: arrayUnion(date) },
+      //   { merge: true },
+      // );
+      const activity = await checkin();
+      console.log("activity: " + activity);
     }
     setCheckedInDates(newCheckedIn);
   };
 
-  const monthName = new Date(currentYear, currentMonth).toLocaleDateString(
-    "en-US",
-    { month: "long", year: "numeric" },
-  );
-
-  const streakCount = Array.from(checkedInDates)
-    .sort((a, b) => b - a)
-    .reduce((streak, date, index, arr) => {
-      if (index === 0) return 1;
-      if (arr[index - 1] - date === 1) return streak + 1;
-      return streak;
-    }, 0);
+  // const streakCount = Array.from(checkedInDates)
+  //   .sort((a, b) => b - a)
+  //   .reduce((streak, date, index, arr) => {
+  //     if (index === 0) return 1;
+  //     if (arr[index - 1] - date === 1) return streak + 1;
+  //     return streak;
+  //   }, 0);
 
   if (!isOpen) return null;
 
@@ -120,12 +209,20 @@ export default function CheckInCalendar({ isOpen = true, onClose }) {
         <div className="p-6">
           {/* Day labels */}
           <div className="grid grid-cols-7 gap-2 mb-4">
-            {["S", "M", "T", "W", "T", "F", "S"].map((day) => (
+            {[
+              { day: "S", id: `${Date.now()}-${Math.random()}` },
+              { day: "M", id: `${Date.now()}-${Math.random()}` },
+              { day: "T", id: `${Date.now()}-${Math.random()}` },
+              { day: "W", id: `${Date.now()}-${Math.random()}` },
+              { day: "T", id: `${Date.now()}-${Math.random()}` },
+              { day: "F", id: `${Date.now()}-${Math.random()}` },
+              { day: "S", id: `${Date.now()}-${Math.random()}` },
+            ].map((day) => (
               <div
-                key={day}
+                key={day.id}
                 className="text-center text-xs font-bold text-[#00FF41] h-8 flex items-center justify-center"
               >
-                {day}
+                {day.day}
               </div>
             ))}
           </div>
