@@ -57,7 +57,12 @@ const Wallet = () => {
   const { appContext, setAppContext } = useSpinner();
   const dispatch = useDispatch();
   const userDetails = useSelector((state) => state?.user?.user);
-  const { walletBalance, bankName, accountReference, accountNumber:account } = userDetails;
+  const {
+    walletBalance,
+    bankName,
+    accountReference,
+    accountNumber: account,
+  } = userDetails;
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState("");
@@ -335,7 +340,7 @@ const Wallet = () => {
             </div>
 
             {/* Recent Transactions */}
-            <Card>
+            {/*  <Card>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">Recent Transactions</h3>
@@ -392,7 +397,7 @@ const Wallet = () => {
                   ))}
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
           </TabsContent>
 
           <TabsContent value="withdraw" className="space-y-6">

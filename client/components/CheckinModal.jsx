@@ -145,7 +145,7 @@ export default function CheckInCalendar({ isOpen = true, onClose }) {
       //   { [monthName]: arrayUnion(date) },
       //   { merge: true },
       // );
-      const activity = await checkin();
+      const activity = await checkin({id:UID.uid});
       console.log("activity: " + activity);
     }
     setCheckedInDates(newCheckedIn);

@@ -14,9 +14,11 @@ import { useSelector } from "react-redux";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import CheckInCalendar from "../components/CheckinModal";
+import { useBillsStat } from "../components/useTransactionFetch";
 
 export default function EarnPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const { pointsData } = useBillsStat();
   const userPoints = useSelector((state) => state.user.user.points);
   const [points, setPoints] = useState(userPoints ? userPoints : 0);
   const navigate = useNavigate();
@@ -153,7 +155,7 @@ export default function EarnPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-green-100 mb-2">This Week</div>
-                  <div className="text-xl font-bold">+320</div>
+                  <div className="text-xl font-bold">+{pointsData.amount}</div>
                   <Badge className="bg-white/20 text-white border-white/30 mt-2">
                     <Zap className="h-3 w-3 mr-1" />
                     On Fire!

@@ -209,6 +209,16 @@ export default function RegisterPage() {
         //navigate('/useraccount')
       }
       setOauthLoading(null);
+      await setDoc(
+        userRef,
+        { lastLogin: Timestamp.fromDate(Date.now()) },
+        { merge: true },
+      );
+      await setDoc(
+        doc(db, "users", uid, "lastLogin", "details01"),
+        { lastLogin: Timestamp.fromDate(Date.now()) },
+        { merge: true },
+      );
     } catch (error) {
       setOauthLoading(null);
       setAppContext({ ...appContext, spinner: false });
@@ -229,7 +239,7 @@ export default function RegisterPage() {
       if (field.password !== field.cpassword) {
         toast.error("Passwords do not match");
         setIsLoading(false);
-        return;
+        throw new Error("Passwords do not match");
       } //else if (field.gender !== "male" || field.gender !== "female") {
       //   toast.error("Please specify your gender");
       //   setIsLoading(false);
@@ -290,6 +300,8 @@ export default function RegisterPage() {
         setTimeout(() => {
           navigate("/auth/login");
         }, 3000);
+      } else if (error.message === "Passwords do not match") {
+        console.log("Passwords do not match");
       } else if (error.code === "auth/invalid-email") {
         toast.error("Invalid email format.");
       } else if (error.code === "auth/weak-password") {

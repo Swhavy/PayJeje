@@ -31,6 +31,7 @@ import {
   getDoc,
   setDoc,
   collection,
+  Timestamp,
 } from "firebase/firestore";
 import {
   addUserCred,
@@ -163,7 +164,18 @@ export default function LoginPage() {
         dispatch(changeUserPhoto({ userPhoto: docRef.userPhoto || null }));
       }
 
+      await setDoc(
+        userRef,
+        { lastLogin: Timestamp.fromDate(new Date()) },
+        { merge: true },
+      );
+      await setDoc(
+        doc(db, "users", uid, "lastLogin", "details01"),
+        { lastLogin: Timestamp.fromDate(new Date()) },
+        { merge: true },
+      );
       await userEmailVerified();
+
       setIsLoading(false);
       setAppContext({ ...appContext, spinner: false });
     } catch (error) {
@@ -302,6 +314,17 @@ export default function LoginPage() {
         dispatch(updateAchievement(userAchievements.data()));
         console.log("pinpoint", userData);
         userEmailVerified();
+        //set Last Login
+        await setDoc(
+          userRef,
+          { lastLogin: Timestamp.fromDate(Date.now()) },
+          { merge: true },
+        );
+        await setDoc(
+          doc(db, "users", uid, "lastLogin", "details01"),
+          { lastLogin: Timestamp.fromDate(Date.now()) },
+          { merge: true },
+        );
       }
       setOauthLoading(null);
     } catch (error) {

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
@@ -45,6 +45,8 @@ import { Link } from "react-router-dom";
 import { auth } from "@/firebaseConfig";
 import { useSetting } from "@/components/customHook";
 import { toast } from "sonner";
+import { functions } from "@/firebaseConfig";
+import { httpsCallable } from "firebase/functions";
 
 export default function SettingsPage() {
   const fileInputRef = useRef(null);
@@ -55,6 +57,8 @@ export default function SettingsPage() {
   const userData = useSelector((state) => state.user.user);
   const { userPhoto } = userData;
   const dispatch = useDispatch();
+  //call function to update referrer's referrals doc data for this particular user
+  const userDPUpdate = httpsCallable(functions, "userDPUpdate");
 
   //Programatically click an input field
   const handleButtonClick = () => {
@@ -98,12 +102,12 @@ export default function SettingsPage() {
 
   const handleSaveProfile = () => {
     console.log("Saving profile:", profile);
-    alert("Profile updated successfully!");
+    toast.success("Profile updated successfully!");
   };
 
   const handleSaveNotifications = () => {
     console.log("Saving notifications:", notifications);
-    alert("Notification preferences updated!");
+    toast.success("Notification preferences updated!");
   };
 
   const handleSaveSecurity = () => {
@@ -128,11 +132,17 @@ export default function SettingsPage() {
       );
       const result = await res.json();
       //stores the users profile pic in the DB
-      updateDB("userPhoto", result.url);
-      dispatch(addUserCred({ userPhoto: result.url }));
-      setUploading(false);
-      console.log("upload to cloudibary", result);
-      toast.success("photo upload successful");
+      const call = await userDPUpdate({ uid: userData.uid, DP: result.url });
+      console.log("call", call);
+      if (call.data?.status === "success") {
+        updateDB("userPhoto", result.url);
+        dispatch(addUserCred({ userPhoto: result.url }));
+        setUploading(false);
+        console.log("upload to cloudibary", result);
+        return toast.success("photo upload successful");
+      } else {
+        toast.error(call.data.message);
+      }
     } catch (error) {
       setUploading(false);
       toast.error("An error occurred while uploading the image");

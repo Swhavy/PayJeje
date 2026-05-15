@@ -18,7 +18,7 @@ import {
   Sun,
   Moon,
   Monitor,
-  History
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,7 +74,12 @@ export default function DashboardLayout({ children }) {
       href: "/services/data",
     },
     { id: "bills", label: "Pay Bills", icon: Zap, href: "/services/bills" },
-    { id: "history", label: "Transactions", icon: History, href: "/billhistory" },
+    {
+      id: "history",
+      label: "Transactions",
+      icon: History,
+      href: "/billhistory",
+    },
     {
       id: "giftcards",
       label: "Gift Cards",
@@ -218,7 +223,10 @@ export default function DashboardLayout({ children }) {
                 align="end"
                 className="bg-card border-border"
               >
-                <DropdownMenuItem className="text-foreground hover:bg-muted">
+                <DropdownMenuItem
+                  className="text-foreground hover:bg-muted"
+                  onClick={() => navigate("/settings")}
+                >
                   <User className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </DropdownMenuItem>
@@ -275,7 +283,7 @@ export default function DashboardLayout({ children }) {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Points</span>
                 <Badge className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                  2,450
+                  {user?.points}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">

@@ -527,6 +527,10 @@ export const useBillsStat = () => {
     amount: 0,
     noTransactions: 0,
   });
+  const [pointsData, setPointsData] = useState({
+    amount: 0,
+    noTransactions: 0,
+  });
   useEffect(() => {
     const now = new Date();
     const sevenDaysAgo = new Date();
@@ -535,14 +539,16 @@ export const useBillsStat = () => {
     const sevenDaysAgoTS = Timestamp.fromDate(sevenDaysAgo);
     let airtimeSub = () => {};
     let utilitySub = () => {};
+    let pointsSub = () => {};
 
-    const thisMonth = new Date()
+    const thisMonth = new Date();
     thisMonth.setDate(1);
     thisMonth.setHours(0, 0, 0, 0);
     const thisMonthTS = Timestamp.fromDate(thisMonth);
 
     const airtimeRef = collection(db, "users", uid, "airtime");
     const utilityRef = collection(db, "users", uid, "utility");
+    const pointsRef = collection(db, "users", uid, "points");
 
     const airtimeQuery = query(
       airtimeRef,
@@ -552,6 +558,11 @@ export const useBillsStat = () => {
     const utilityQuery = query(
       utilityRef,
       where("createdAt", ">=", thisMonthTS),
+      orderBy("createdAt", "desc"),
+    );
+    const pointsQuery = query(
+      pointsRef,
+      where("createdAt", ">=", sevenDaysAgoTS),
       orderBy("createdAt", "desc"),
     );
 
@@ -615,12 +626,48 @@ export const useBillsStat = () => {
         console.error("Error listening to Utility transactions:", err);
       },
     );
+
+    pointsSub = onSnapshot(
+      pointsQuery,
+      (snapshot) => {
+        let amount = 0;
+        if (snapshot.empty) {
+          setPointsData([]);
+          return;
+        }
+        const transactions = snapshot.docs
+          ? snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+              date: new Date(doc.data()["createdAt"].toDate()),
+            }))
+          : [];
+        for (let i = 0; i < transactions.length; i++) {
+          amount += transactions[i].points;
+        }
+        setPointsData({
+          amount: amount,
+          noTransactions: transactions.length,
+        });
+        console.log("points-trx", transactions);
+      },
+      (err) => {
+        console.error("Error listening to Points transactions:", err);
+      },
+    );
     return () => {
       airtimeSub();
       utilitySub();
+      pointsSub();
     };
   }, [uid]);
-  return { airtimeData, weeklyData, utilityData, utilityMonthlyData };
+  return {
+    airtimeData,
+    weeklyData,
+    utilityData,
+    utilityMonthlyData,
+    pointsData,
+  };
 };
 
 const getMonthlyReferrals = (transactions, ref) => {

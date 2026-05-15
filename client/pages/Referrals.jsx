@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
@@ -26,20 +26,33 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
+import referralsSnapshot from "@/components/referralsSnapshot";
+import { set } from "react-hook-form";
 
 export default function ReferralsPage() {
   const reflink = useSelector((state) => state.user.user);
+  const [activeRefs, setActiveRefs] = useState(new Set());
+  const [refs, setRefs] = useState(null);
+  const { activeRefIds, referrals } = referralsSnapshot();
   const ReferralLink = reflink?.referralCode ? reflink.referralCode : null;
   const [referralLink] = useState(
     `http://localhost:8080/auth/register/${ReferralLink}`,
   );
   const [emailInvite, setEmailInvite] = useState("");
 
+  console.log("details from the referral page", activeRefIds);
+
+  useEffect(() => {
+    setActiveRefs(new Set(activeRefIds));
+    setRefs(referrals);
+    console.log("active referrals from the referral page", activeRefIds);
+  }, [activeRefIds, referrals]);
+
   const referralStats = {
-    totalReferrals: 8,
-    activeReferrals: 6,
-    totalEarned: 2400,
-    pendingRewards: 300,
+    totalReferrals: refs ? refs.length : 0,
+    activeReferrals: activeRefs ? activeRefs.size : 0,
+    totalEarned: refs ? ((referrals.length * 20) / 100).toFixed(1) : 0,
+    pendingRewards: 0,
   };
 
   const rewardTiers = [
@@ -502,56 +515,75 @@ export default function ReferralsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {referralHistory.map((referral) => (
-                    <div
-                      key={referral.id}
-                      className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <span className="text-2xl">{referral.avatar}</span>
-                        <div>
-                          <h4 className="font-medium text-foreground">
-                            {referral.name}
-                          </h4>
-                          <p className="text-sm text-muted-foreground">
-                            {referral.email}
+                  {refs &&
+                    refs.map((referral) => (
+                      <div
+                        key={referral.id}
+                        className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/50"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="text-2xl">
+                            {referral?.dp ? (
+                              <img
+                                src={referral?.dp}
+                                className="w-10 h-10 rounded-full"
+                              />
+                            ) : (
+                              "🟢"
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-foreground">
+                              {referral?.name}
+                            </h4>
+                            <p className="text-sm text-muted-foreground">
+                              {referral?.email}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Joined:{" "}
+                              {referral?.referredOn
+                                ?.toDate()
+                                ?.toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right flex flex-col justify-center items-center">
+                          <p className="font-semibold text-green-600 dark:text-green-400">
+                            ₦{referral.points.toLocaleString()}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Joined: {referral.joinDate}
-                          </p>
+                          <Badge
+                            variant={
+                              activeRefs.has(
+                                referral.id,
+                              ) /* referral.status === "active" */
+                                ? "default"
+                                : "secondary"
+                            }
+                            className={
+                              activeRefs.has(
+                                referral.id,
+                              ) /* referral.status === "active" */
+                                ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
+                                : "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
+                            }
+                          >
+                            {activeRefs.has(
+                              referral.id,
+                            ) /* referral.status === "active" */ ? (
+                              <>
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Active
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="h-3 w-3 mr-1" />
+                                Pending
+                              </>
+                            )}
+                          </Badge>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-green-600 dark:text-green-400">
-                          ₦{referral.earned.toLocaleString()}
-                        </p>
-                        <Badge
-                          variant={
-                            referral.status === "active"
-                              ? "default"
-                              : "secondary"
-                          }
-                          className={
-                            referral.status === "active"
-                              ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
-                              : "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
-                          }
-                        >
-                          {referral.status === "active" ? (
-                            <>
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Active
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="h-3 w-3 mr-1" />
-                              Pending
-                            </>
-                          )}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </CardContent>
             </Card>
