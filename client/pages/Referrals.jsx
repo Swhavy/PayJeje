@@ -20,14 +20,16 @@ import {
   MessageCircle,
   Gift,
   Star,
-  Trophy,
+  Activity,
   CheckCircle,
   Clock,
+  Sparkles,
+  Gem,
+  Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
 import referralsSnapshot from "@/components/referralsSnapshot";
-import { set } from "react-hook-form";
 
 export default function ReferralsPage() {
   const reflink = useSelector((state) => state.user.user);
@@ -189,8 +191,27 @@ export default function ReferralsPage() {
             </p>
           </div>
           <Badge className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 w-fit">
-            <Trophy className="h-4 w-4 mr-2" />
-            Silver Tier
+            {refs?.length >= 30 ? (
+              <>
+                {" "}
+                <Gem /> Referral Pro
+              </>
+            ) : refs?.length >= 15 ? (
+              <>
+                {" "}
+                <Rocket /> Referral Star
+              </>
+            ) : refs?.length >= 1 ? (
+              <>
+                {" "}
+                <Activity /> Hustle Mode{" "}
+              </>
+            ) : (
+              <>
+                {" "}
+                <Sparkles className="text-yellow-500" /> Let's Grow
+              </>
+            )}
           </Badge>
         </div>
 
@@ -271,19 +292,19 @@ export default function ReferralsPage() {
 
         {/* Main Content */}
         <Tabs defaultValue="invite" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 bg-muted">
+          <TabsList className="grid w-full grid-cols-2 bg-muted">
             <TabsTrigger
               value="invite"
               className="data-[state=active]:bg-background"
             >
               Invite Friends
             </TabsTrigger>
-            <TabsTrigger
+            {/*  <TabsTrigger
               value="rewards"
               className="data-[state=active]:bg-background"
             >
               Reward Tiers
-            </TabsTrigger>
+            </TabsTrigger> */}
             <TabsTrigger
               value="history"
               className="data-[state=active]:bg-background"
@@ -426,7 +447,7 @@ export default function ReferralsPage() {
           </TabsContent>
 
           {/* Rewards Tab */}
-          <TabsContent value="rewards" className="space-y-6">
+          {/* <TabsContent value="rewards" className="space-y-6">
             <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="text-foreground">
@@ -502,7 +523,7 @@ export default function ReferralsPage() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          </TabsContent> */}
 
           {/* History Tab */}
           <TabsContent value="history" className="space-y-6">

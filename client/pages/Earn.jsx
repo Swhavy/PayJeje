@@ -9,7 +9,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Star, Clock, Gift, Users, Zap, CheckCircle, Play } from "lucide-react";
+import {
+  Star,
+  Clock,
+  Gift,
+  Users,
+  Zap,
+  CheckCircle,
+  Play,
+  Meh,
+} from "lucide-react";
 import { useSelector } from "react-redux";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -155,10 +164,26 @@ export default function EarnPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-green-100 mb-2">This Week</div>
-                  <div className="text-xl font-bold">+{pointsData.amount}</div>
-                  <Badge className="bg-white/20 text-white border-white/30 mt-2">
-                    <Zap className="h-3 w-3 mr-1" />
-                    On Fire!
+                  <div className="text-xl font-bold">
+                    {pointsData.amount === 0 ? 0 : `+${pointsData.amount}`}
+                  </div>
+                  <Badge
+                    className={
+                      pointsData.amount >= 50
+                        ? "bg-white/20 text-white border-white/30 mt-2"
+                        : "bg-red-300/20 text-red-700 border-red-700/30 mt-2"
+                    }
+                  >
+                    {pointsData.amount >= 50 ? (
+                      <>
+                        <Zap className="h-3 w-3 mr-1 text-green-500" /> On Fire!
+                      </>
+                    ) : (
+                      <>
+                        <Meh className="h-3 w-3 mr-1 text-red-700" /> Push
+                        harder!
+                      </>
+                    )}
                   </Badge>
                 </div>
               </div>

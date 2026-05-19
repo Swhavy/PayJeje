@@ -585,7 +585,10 @@ export const useBillsStat = () => {
         for (let i = 0; i < transactions.length; i++) {
           amount += transactions[i].amount;
         }
-        setWeeklyData({ amount: amount, noTransactions: transactions.length });
+        setWeeklyData({
+          amount: amount ? amount : 0,
+          noTransactions: transactions.length,
+        });
         setAirtimeData(transactions);
         console.log("airtime-trx", transactions);
       },
@@ -632,7 +635,7 @@ export const useBillsStat = () => {
       (snapshot) => {
         let amount = 0;
         if (snapshot.empty) {
-          setPointsData([]);
+          setPointsData({ amount: 0, noTransactions: 0 });
           return;
         }
         const transactions = snapshot.docs
@@ -646,7 +649,7 @@ export const useBillsStat = () => {
           amount += transactions[i].points;
         }
         setPointsData({
-          amount: amount,
+          amount: amount ? amount : 0,
           noTransactions: transactions.length,
         });
         console.log("points-trx", transactions);
