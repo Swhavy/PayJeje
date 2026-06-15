@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
@@ -7,10 +7,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  updatePassword as firebaseUpdatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  onAuthStateChanged,
+} from "firebase/auth";
 
 import { addUserCred, changeUserPhoto } from "@/Features/userSlice";
 import { useDispatch, useSelector } from "react-redux";
-import { db } from "@/firebaseConfig";
+import { db, auth, functions } from "@/firebaseConfig";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -42,23 +48,100 @@ import {
   Calendar,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { auth } from "@/firebaseConfig";
 import { useSetting } from "@/components/customHook";
 import { toast } from "sonner";
-import { functions } from "@/firebaseConfig";
 import { httpsCallable } from "firebase/functions";
+import PasswordResetModal from "@/components/confirmPasswordModal";
+import { setDoc, doc } from "firebase/firestore";
 
 export default function SettingsPage() {
   const fileInputRef = useRef(null);
   const { setContext, updateDB } = useSetting();
+  const [credentialSet, setCredentialSet] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [buttonLoading, setButtonLoading] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [prefButton, setPrefButton] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [updatePasswordVisibilty, setUpdatePasswordVisibility] =
+    useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const userData = useSelector((state) => state.user.user);
-  const { userPhoto } = userData;
+  const { userPhoto, uid } = userData;
   const dispatch = useDispatch();
   //call function to update referrer's referrals doc data for this particular user
   const userDPUpdate = httpsCallable(functions, "userDPUpdate");
+
+  const preferenceUpdate = useCallback(
+    async (notification, uid) => {
+      setPrefButton(true);
+      try {
+        const res = await setDoc(
+          doc(db, "users", uid, "preferences", uid),
+          { ...notification },
+          { merge: true },
+        );
+        toast.success("Notification preferences updated!");
+        console.log("preference update", res);
+      } catch (err) {
+        toast.error("An error occurred while updating preferences");
+        console.log("preference update error", err);
+      } finally {
+        setPrefButton(false);
+      }
+    },
+    [uid],
+  );
+
+  useEffect(() => {
+    const unsubScribe = onAuthStateChanged(auth, (user) => {
+      const credentialProvider = user?.providerData[0]?.providerId;
+      if (credentialProvider === "password") setUpdatePasswordVisibility(true);
+      else setUpdatePasswordVisibility(false);
+    });
+    return () => unsubScribe();
+  }, []);
+
+  const handlePasswordUpdate = async (currentPassword, newPassword) => {
+    console.log(`current: ${currentPassword} 
+      new: ${newPassword}`);
+    const User = auth?.currentUser;
+    if (newPassword !== credentialSet.confirmPassword) {
+      toast.error("New password and confirm password do not match");
+      return;
+    }
+    setButtonLoading(true);
+    try {
+      const userCredential = EmailAuthProvider.credential(
+        profile.email,
+        currentPassword,
+      );
+      const reauthResult = await reauthenticateWithCredential(
+        User,
+        userCredential,
+      );
+      const res = await firebaseUpdatePassword(User, newPassword);
+      toast.success("Password Successfully Reset");
+    } catch (err) {
+      if (err.code === "auth/wrong-password") {
+        toast.error("Current password is incorrect");
+      } else {
+        toast.error("Something went wrong, please try again later");
+      }
+    } finally {
+      setButtonLoading(false);
+    }
+  };
+
+  //controlled Input
+  const controlledInput = (e) => {
+    const { name, value } = e.target;
+    setCredentialSet((prev) => ({ ...prev, [name]: value }));
+  };
 
   //Programatically click an input field
   const handleButtonClick = () => {
@@ -73,8 +156,6 @@ export default function SettingsPage() {
     dateOfBirth: "1990-01-15",
     location: userData ? userData.userState : "Lagos, Nigeria",
   });
-
-  console.log("auth", auth);
 
   const [notifications, setNotifications] = useState({
     email: true,
@@ -105,9 +186,8 @@ export default function SettingsPage() {
     toast.success("Profile updated successfully!");
   };
 
-  const handleSaveNotifications = () => {
-    console.log("Saving notifications:", notifications);
-    toast.success("Notification preferences updated!");
+  const handleSaveNotifications = async () => {
+    await preferenceUpdate(notifications, uid);
   };
 
   const handleSaveSecurity = () => {
@@ -399,106 +479,135 @@ export default function SettingsPage() {
             </Card>
 
             {/* Change Password */}
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="text-foreground">
-                  Change Password
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Update your password to keep your account secure
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="currentPassword" className="text-foreground">
-                    Current Password
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="currentPassword"
-                      type={showCurrentPassword ? "text" : "password"}
-                      className="pr-10 bg-background border-border text-foreground"
-                    />
+            {updatePasswordVisibilty && (
+              <Card className="bg-card border-border">
+                <CardHeader>
+                  <CardTitle className="text-foreground">
+                    Change Password
+                  </CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    Update your password to keep your account secure
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="currentPassword"
+                      className="text-foreground"
+                    >
+                      Current Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="currentPassword"
+                        name="currentPassword"
+                        value={credentialSet.currentPassword}
+                        onChange={controlledInput}
+                        type={showCurrentPassword ? "text" : "password"}
+                        className="pr-10 bg-background border-border text-foreground"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setShowCurrentPassword(!showCurrentPassword)
+                        }
+                      >
+                        {showCurrentPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="newPassword" className="text-foreground">
+                      New Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="newPassword"
+                        name="newPassword"
+                        value={credentialSet.newPassword}
+                        type={showNewPassword ? "text" : "password"}
+                        onChange={controlledInput}
+                        className="pr-10 bg-background border-border text-foreground"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="confirmPassword"
+                      className="text-foreground"
+                    >
+                      Confirm New Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        value={credentialSet.confirmPassword}
+                        type={showConfirmPassword ? "text" : "password"}
+                        onChange={controlledInput}
+                        className="pr-10 bg-background border-border text-foreground"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setShowConfirmPassword(!showConfirmPassword)
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
-                      onClick={() =>
-                        setShowCurrentPassword(!showCurrentPassword)
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => {
+                        setIsModalOpen(true);
+                      }}
+                      disabled={
+                        buttonLoading ||
+                        !credentialSet.currentPassword ||
+                        !credentialSet.newPassword ||
+                        !credentialSet.confirmPassword
                       }
                     >
-                      {showCurrentPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
+                      <Lock className="h-4 w-4 mr-2" />
+                      Update Password
                     </Button>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="newPassword" className="text-foreground">
-                    New Password
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="newPassword"
-                      type={showNewPassword ? "text" : "password"}
-                      className="pr-10 bg-background border-border text-foreground"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                    >
-                      {showNewPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword" className="text-foreground">
-                    Confirm New Password
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      className="pr-10 bg-background border-border text-foreground"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
-                      onClick={() =>
-                        setShowConfirmPassword(!showConfirmPassword)
-                      }
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button className="bg-green-600 hover:bg-green-700 text-white">
-                    <Lock className="h-4 w-4 mr-2" />
-                    Update Password
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Notifications Tab */}
@@ -528,9 +637,12 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={notifications.email}
-                      onCheckedChange={(checked) =>
-                        setNotifications({ ...notifications, email: checked })
-                      }
+                      onCheckedChange={async (checked) => {
+                        setNotifications((prev) => ({
+                          ...prev,
+                          email: checked,
+                        }));
+                      }}
                     />
                   </div>
 
@@ -548,9 +660,12 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={notifications.push}
-                      onCheckedChange={(checked) =>
-                        setNotifications({ ...notifications, push: checked })
-                      }
+                      onCheckedChange={(checked) => {
+                        setNotifications((prev) => ({
+                          ...prev,
+                          push: checked,
+                        }));
+                      }}
                     />
                   </div>
 
@@ -568,9 +683,12 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={notifications.sms}
-                      onCheckedChange={(checked) =>
-                        setNotifications({ ...notifications, sms: checked })
-                      }
+                      onCheckedChange={(checked) => {
+                        setNotifications((prev) => ({
+                          ...prev,
+                          sms: checked,
+                        }));
+                      }}
                     />
                   </div>
                 </div>
@@ -591,12 +709,12 @@ export default function SettingsPage() {
                       </div>
                       <Switch
                         checked={notifications.marketing}
-                        onCheckedChange={(checked) =>
-                          setNotifications({
-                            ...notifications,
+                        onCheckedChange={(checked) => {
+                          setNotifications((prev) => ({
+                            ...prev,
                             marketing: checked,
-                          })
-                        }
+                          }));
+                        }}
                       />
                     </div>
 
@@ -611,12 +729,12 @@ export default function SettingsPage() {
                       </div>
                       <Switch
                         checked={notifications.surveys}
-                        onCheckedChange={(checked) =>
-                          setNotifications({
-                            ...notifications,
+                        onCheckedChange={(checked) => {
+                          setNotifications((prev) => ({
+                            ...prev,
                             surveys: checked,
-                          })
-                        }
+                          }));
+                        }}
                       />
                     </div>
 
@@ -631,12 +749,12 @@ export default function SettingsPage() {
                       </div>
                       <Switch
                         checked={notifications.rewards}
-                        onCheckedChange={(checked) =>
-                          setNotifications({
-                            ...notifications,
+                        onCheckedChange={(checked) => {
+                          setNotifications((prev) => ({
+                            ...prev,
                             rewards: checked,
-                          })
-                        }
+                          }));
+                        }}
                       />
                     </div>
                   </div>
@@ -645,6 +763,7 @@ export default function SettingsPage() {
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSaveNotifications}
+                    disabled={prefButton}
                     className="bg-green-600 hover:bg-green-700 text-white"
                   >
                     <Bell className="h-4 w-4 mr-2" />
@@ -683,7 +802,7 @@ export default function SettingsPage() {
                     <Switch
                       checked={security.twoFactor}
                       onCheckedChange={(checked) =>
-                        setSecurity({ ...security, twoFactor: checked })
+                        setSecurity((prev) => ({ ...prev, twoFactor: checked }))
                       }
                     />
                   </div>
@@ -703,7 +822,10 @@ export default function SettingsPage() {
                     <Switch
                       checked={security.loginAlerts}
                       onCheckedChange={(checked) =>
-                        setSecurity({ ...security, loginAlerts: checked })
+                        setSecurity((prev) => ({
+                          ...prev,
+                          loginAlerts: checked,
+                        }))
                       }
                     />
                   </div>
@@ -971,6 +1093,18 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+        {/* Password Reset Modal */}
+        <PasswordResetModal
+          isOpen={isModalOpen}
+          onConfirm={() =>
+            handlePasswordUpdate(
+              credentialSet.currentPassword,
+              credentialSet.newPassword,
+            )
+          }
+          onCancel={() => setIsModalOpen(false)}
+          userEmail={profile.email}
+        />
       </div>
     </DashboardLayout>
   );

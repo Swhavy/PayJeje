@@ -156,7 +156,7 @@ export default function PaymentConfirmation({
         name: userName,
         phonenumber: paymentDetails?.customerID,
         amount: paymentDetails?.price,
-        userID,
+        userID: uid,
       });
       if (res.data?.status === "success") {
         toast.success("you are being redirected to payment gateway");

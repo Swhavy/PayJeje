@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
@@ -29,7 +29,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { ThreeDAnimation } from "../components/3DAnimation";
+//import { ThreeDAnimation } from "../components/3DAnimation";
 import TopEarnersCarousel from "../components/TopEarnersCarousel";
 import { useSelector } from "react-redux";
 import useTransactionFetch from "@/components/useTransactionFetch";
@@ -45,17 +45,119 @@ import QuickEarnModal from "@/components/QuickEarn";
 import { addUserCred } from "../Features/userSlice";
 import { useDispatch } from "react-redux";
 
-export default function DashboardPage() {
+const quickActions = [
+  {
+    title: "Earn Points",
+    description: "Complete surveys and tasks",
+    icon: Star,
+    href: "/earn",
+    color: "bg-yellow-600 hover:bg-yellow-700",
+  },
+  {
+    title: "Buy Airtime",
+    description: "Purchase airtime & data",
+    icon: Smartphone,
+    href: "/services/airtime",
+    color: "bg-blue-600 hover:bg-blue-700",
+  },
+  {
+    title: "Pay Bills",
+    description: "Electricity, water & more",
+    icon: Zap,
+    href: "/services/bills",
+    color: "bg-purple-600 hover:bg-purple-700",
+  },
+  {
+    title: "Gift Cards",
+    description: "Redeem amazing rewards",
+    icon: Gift,
+    href: "/services/giftcards",
+    color: "bg-green-600 hover:bg-green-700",
+  },
+];
+
+const recentTransactions = [
+  {
+    id: 1,
+    type: "credit",
+    description: "Survey Completion Reward",
+    amount: 250,
+    date: "Today, 2:30 PM",
+    status: "completed",
+  },
+  {
+    id: 2,
+    type: "debit",
+    description: "Airtime Purchase - MTN",
+    amount: 500,
+    date: "Today, 12:15 PM",
+    status: "completed",
+  },
+  {
+    id: 3,
+    type: "credit",
+    description: "Referral Bonus",
+    amount: 100,
+    date: "Yesterday, 4:45 PM",
+    status: "completed",
+  },
+  {
+    id: 4,
+    type: "debit",
+    description: "Electricity Bill Payment",
+    amount: 1200,
+    date: "Yesterday, 9:20 AM",
+    status: "completed",
+  },
+];
+
+const actions = [
+  {
+    id: 1,
+    state: "coming soon",
+    title: "Complete Survey",
+    subtitle: "5 minutes • +50 points",
+    icon: Star,
+    bgColor: "bg-yellow-100 dark:bg-yellow-900",
+    iconColor: "text-yellow-600 dark:text-yellow-400",
+    buttonText: "Start Now",
+    buttonColor: "bg-yellow-600 hover:bg-yellow-700",
+  },
+  {
+    id: 2,
+    state: "coming soon",
+    title: "Watch Video",
+    subtitle: "2 minutes • +25 points",
+    icon: Eye,
+    bgColor: "bg-blue-100 dark:bg-blue-900",
+    iconColor: "text-blue-600 dark:text-blue-400",
+    buttonText: "Watch Now",
+    buttonColor: "bg-blue-600 hover:bg-blue-700",
+  },
+  {
+    id: 3,
+    state: "available",
+    title: "Invite Friend",
+    subtitle: "Share link • +100 points",
+    icon: Users,
+    bgColor: "bg-purple-100 dark:bg-purple-900",
+    iconColor: "text-purple-600 dark:text-purple-400",
+    buttonText: "Share Link",
+    buttonColor: "bg-purple-600 hover:bg-purple-700",
+  },
+];
+
+const DashboardPage = React.memo(() => {
   const dispatch = useDispatch();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { setAppContext, appContext, alertMsg, setAlertMsg } = useSpinner();
-  const uid = useSelector((state) => state.user.user.uid);
+  // const uid = useSelector((state) => state.user.user.uid);
   const achieve = useSelector((state) => state.user.achievementsData);
   const [mounted, setMounted] = useState(false);
   const user = useSelector((state) => state.user.user);
-  const { inflowData, loading, error } = useInflowData(user.uid);
-  const { PointsData, refData, isloading, iserror } = useReferallData(user.uid);
-  const { userName, walletBalance, refferalsCount } = user;
+  const { userName, walletBalance, refferalsCount, uid } = user;
+  const { inflowData, loading, error } = useInflowData(uid);
+  const { PointsData, refData, isloading, iserror } = useReferallData(uid);
   const { trxn, loadMore } = useTransactionFetch();
   const [invites, setInvites] = useState({ count: 0, rate: 0 });
   const [achievementsState, setAchievementsState] = useState({});
@@ -67,10 +169,7 @@ export default function DashboardPage() {
       const points = snapshot.data()?.points ? snapshot.data().points : 0;
       dispatch(addUserCred({ points: points }));
       const percentage = Math.ceil((inviteCount / 10) * 100);
-      setInvites((prev) => {
-        prev = { count: inviteCount, rate: percentage };
-        return { count: inviteCount, rate: percentage };
-      });
+      setInvites({ count: inviteCount, rate: percentage });
     });
     return () => subscribe();
   }, []);
@@ -99,20 +198,12 @@ export default function DashboardPage() {
       const firstSurveyPercentage = Math.ceil((firstSurvey / 1) * 100);
       const pointsEarnedPercentage = Math.ceil((pointsEarned / 1000) * 100);
       const billPayerPercentage = Math.ceil((billPayer / 5) * 100);
-      setAchievementsState((prev) => {
-        prev = {
-          ...prev,
-          firstSurvey: { counts: firstSurvey, rate: firstSurveyPercentage },
-          pointsEarned: { counts: pointsEarned, rate: pointsEarnedPercentage },
-          billPayer: { counts: billPayer, rate: billPayerPercentage },
-        };
-        return {
-          ...prev,
-          firstSurvey: { counts: firstSurvey, rate: firstSurveyPercentage },
-          pointsEarned: { counts: pointsEarned, rate: pointsEarnedPercentage },
-          billPayer: { counts: billPayer, rate: billPayerPercentage },
-        };
-      });
+      setAchievementsState((prev) => ({
+        ...prev,
+        firstSurvey: { counts: firstSurvey, rate: firstSurveyPercentage },
+        pointsEarned: { counts: pointsEarned, rate: pointsEarnedPercentage },
+        billPayer: { counts: billPayer, rate: billPayerPercentage },
+      }));
     });
     return () => {
       subscribe();
@@ -124,25 +215,23 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (mounted) console.log("hey", PointsData);
-  }, [mounted]);
+  // useEffect(() => {
+  //   if (mounted) console.log("hey", PointsData);
+  // }, [mounted]);
 
-  useEffect(() => {
-    loading
-      ? setAppContext({ ...appContext, spinner: true })
-      : setAppContext({ ...appContext, spinner: false });
+  /*  useEffect(() => {
+    setAppContext((prev) => ({ ...prev, spinner: loading }));
     if (error)
-      return setAlertMsg({
+      setAlertMsg({
         open: true,
         status: false,
         msg: error,
         statusMsg:
           "some of your transactions might appear incorrect as there was an error in displaying",
       });
-  }, [loading, error]);
+  }, [loading, error]); */
 
-  const stats = [
+  const stats = useMemo(() => [
     {
       title: "Total Points",
       value: PointsData?.pntsData?.currentAmount,
@@ -183,75 +272,9 @@ export default function DashboardPage() {
         ? "bg-purple-100 dark:bg-purple-900"
         : "bg-red-100 dark:bg-red-900",
     },
-  ];
+  ]);
 
-  const quickActions = [
-    {
-      title: "Earn Points",
-      description: "Complete surveys and tasks",
-      icon: Star,
-      href: "/earn",
-      color: "bg-yellow-600 hover:bg-yellow-700",
-    },
-    {
-      title: "Buy Airtime",
-      description: "Purchase airtime & data",
-      icon: Smartphone,
-      href: "/services/airtime",
-      color: "bg-blue-600 hover:bg-blue-700",
-    },
-    {
-      title: "Pay Bills",
-      description: "Electricity, water & more",
-      icon: Zap,
-      href: "/services/bills",
-      color: "bg-purple-600 hover:bg-purple-700",
-    },
-    {
-      title: "Gift Cards",
-      description: "Redeem amazing rewards",
-      icon: Gift,
-      href: "/services/giftcards",
-      color: "bg-green-600 hover:bg-green-700",
-    },
-  ];
-
-  const recentTransactions = [
-    {
-      id: 1,
-      type: "credit",
-      description: "Survey Completion Reward",
-      amount: 250,
-      date: "Today, 2:30 PM",
-      status: "completed",
-    },
-    {
-      id: 2,
-      type: "debit",
-      description: "Airtime Purchase - MTN",
-      amount: 500,
-      date: "Today, 12:15 PM",
-      status: "completed",
-    },
-    {
-      id: 3,
-      type: "credit",
-      description: "Referral Bonus",
-      amount: 100,
-      date: "Yesterday, 4:45 PM",
-      status: "completed",
-    },
-    {
-      id: 4,
-      type: "debit",
-      description: "Electricity Bill Payment",
-      amount: 1200,
-      date: "Yesterday, 9:20 AM",
-      status: "completed",
-    },
-  ];
-
-  const achievements = [
+  const achievements = useMemo(() => [
     {
       title: "First Survey",
       description: "Complete your first survey",
@@ -282,43 +305,7 @@ export default function DashboardPage() {
       progress: achievementsState?.streak?.rate,
       icon: "🔥",
     },
-  ];
-
-  const actions = [
-    {
-      id: 1,
-      state: "coming soon",
-      title: "Complete Survey",
-      subtitle: "5 minutes • +50 points",
-      icon: Star,
-      bgColor: "bg-yellow-100 dark:bg-yellow-900",
-      iconColor: "text-yellow-600 dark:text-yellow-400",
-      buttonText: "Start Now",
-      buttonColor: "bg-yellow-600 hover:bg-yellow-700",
-    },
-    {
-      id: 2,
-      state: "coming soon",
-      title: "Watch Video",
-      subtitle: "2 minutes • +25 points",
-      icon: Eye,
-      bgColor: "bg-blue-100 dark:bg-blue-900",
-      iconColor: "text-blue-600 dark:text-blue-400",
-      buttonText: "Watch Now",
-      buttonColor: "bg-blue-600 hover:bg-blue-700",
-    },
-    {
-      id: 3,
-      state: "available",
-      title: "Invite Friend",
-      subtitle: "Share link • +100 points",
-      icon: Users,
-      bgColor: "bg-purple-100 dark:bg-purple-900",
-      iconColor: "text-purple-600 dark:text-purple-400",
-      buttonText: "Share Link",
-      buttonColor: "bg-purple-600 hover:bg-purple-700",
-    },
-  ];
+  ]);
 
   if (!mounted) {
     return null;
@@ -429,8 +416,8 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           ))}
-          {/* monthly stats */}
-          <Card className="bg-card border-border hover:shadow-lg transition-all duration-300">
+
+          <Card className="monthly stats bg-card border-border hover:shadow-lg transition-all duration-300">
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -494,7 +481,7 @@ export default function DashboardPage() {
 
         {/* Top Earners Carousel */}
 
-        <TopEarnersCarousel />
+        {/*    <TopEarnersCarousel /> */}
 
         {/* Quick Actions */}
         <div>
@@ -609,6 +596,7 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div> */}
+
               <div className="space-y-4 h-[60vh] overflow-y-auto">
                 {trxn &&
                   trxn.map((transaction, index) => (
@@ -635,13 +623,12 @@ export default function DashboardPage() {
                             {transaction.narration}
                           </p>
                           <p className="text-xs sm:text-sm text-muted-foreground">
-                            {new Date(transaction.createdAt).toLocaleString(
-                              "en-NG",
-                              {
-                                dateStyle: "medium", // "Sep 3, 2025"
-                                timeStyle: "short", // "1:47 PM"
-                              },
-                            )}
+                            {new Date(
+                              transaction?.createdAt?.toDate(),
+                            ).toLocaleString("en-NG", {
+                              dateStyle: "medium", // "Sep 3, 2025"
+                              timeStyle: "short", // "1:47 PM"
+                            })}
                           </p>
                         </div>
                       </div>
@@ -774,4 +761,6 @@ export default function DashboardPage() {
       </div>
     </DashboardLayout>
   );
-}
+});
+
+export default DashboardPage;

@@ -142,12 +142,13 @@ const Wallet = () => {
 
   const withdrawFunds = async () => {
     toast.message("Your request is processing....");
-    setAppContext({ ...appContext, spinner: true });
+    setAppContext((prev) => ({ ...prev, spinner: true }));
     const transfer = await withdraw({
       account_bank: bankCode,
       account_number: accountDetails.accountNumber,
       amount: accountDetails.amount,
       debit_subaccount: accountReference,
+      narration: `Withdrawal to ${selectedValue} - ${accountDetails.accountNumber}`,
     });
     if (transfer.data.status == "success") {
       setAppContext({ ...appContext, spinner: false });

@@ -15,7 +15,7 @@ import {
   getCountFromServer,
   Timestamp,
 } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
@@ -34,42 +34,53 @@ const useTransactionFetch = () => {
   const [last, setLast] = useState(false);
   const { setAppContext, appContext } = useSpinner();
   useEffect(() => {
-    setAppContext({ ...appContext, spinner: true });
     let unsubscribe = () => {};
-    if (!user) {
-      setAppContext({ ...appContext, spinner: false });
-      toast.error("no user signed in");
-      return navigate("/auth/login");
-    }
-    const transactions = collection(db, "users", user, "Transactions");
-    const q = query(transactions, limit(10));
-    unsubscribe = onSnapshot(
-      q,
-      (snap) => {
-        const tx = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setTrxn(tx); //set transaction data in state
-        setAppContext({ ...appContext, spinner: false });
-        console.log("doc", tx);
-        // console.log("yeah", snap.docs);
-        setLast(snap.docs[snap.docs.length - 1]); // keep the last document for pagination
-      },
-      (error) => {
-        setAppContext({ ...appContext, spinner: false });
-        toast.error("trxn", error);
-        console.error("Error fetching tx document -swhay:", error);
-      },
-    );
+    let onAuth = () => {};
+    onAuth = onAuthStateChanged(auth, async (user) => {
+      setAppContext((prev) => ({ ...prev, spinner: true }));
+      if (!user.uid) {
+        setAppContext((prev) => ({ ...prev, spinner: false }));
+        toast.error("no user signed in");
+        return navigate("/auth/login");
+      }
+      const transactions = collection(db, "users", user.uid, "Transactions");
+      const q = query(transactions, limit(10));
+      unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          const tx = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+          setTrxn(tx); //set transaction data in state
+          setAppContext((prev) => ({ ...prev, spinner: false }));
+          console.log("doc", tx);
+          // console.log("yeah", snap.docs);
+          setLast(snap.docs[snap.docs.length - 1]); // keep the last document for pagination
+        },
+        (error) => {
+          setAppContext((prev) => ({ ...prev, spinner: false }));
+          toast.error("trxn", error);
+          console.error("Error fetching tx document -swhay:", error);
+        },
+      );
+    });
 
-    return () => unsubscribe();
-  }, [User]);
+    return () => {
+      unsubscribe();
+      onAuth();
+    };
+  }, []);
 
   const loadMore = async () => {
     if (!more) {
       return toast.error("no more transaction data");
     }
-    setAppContext({ ...appContext, spinner: true });
+    setAppContext((prev) => ({ ...prev, spinner: true }));
     const transactions = collection(db, "users", user, "Transactions");
-    const q = query(transactions, startAfter(last), limit(10));
+    const q = query(
+      transactions,
+      startAfter(last),
+      limit(10),
+      orderBy("created_at", "desc"),
+    );
 
     const snap = await getDocs(q);
 
@@ -79,9 +90,9 @@ const useTransactionFetch = () => {
       setTrxn((prev) => [...prev, ...older]); //append the previous transaction data to state
       //console.log("older", older, last);
       setLast(snap.docs[snap.docs.length - 1]); // keep the last document for pagination
-      setAppContext({ ...appContext, spinner: false });
+      setAppContext((prev) => ({ ...prev, spinner: false }));
     } else {
-      setAppContext({ ...appContext, spinner: false });
+      setAppContext((prev) => ({ ...prev, spinner: false }));
       toast.error("no more transaction data");
       setMore(false); //no more Pages
     }
@@ -183,7 +194,7 @@ const useTransactionFetch = () => {
     }
   };
 
-  return { trxn, loadMore, getTransactionData };
+  return useMemo(() => ({ trxn, loadMore, getTransactionData }), [trxn]);
 };
 
 export const useInflowData = (userId) => {
@@ -192,6 +203,7 @@ export const useInflowData = (userId) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let unsubscribe = () => {};
     if (!userId) {
       setLoading(false);
       return;
@@ -211,7 +223,7 @@ export const useInflowData = (userId) => {
       where("created_at", ">=", fourMonthsAgoISO), // Compare ISO strings directly
     );
 
-    const unsubscribe = onSnapshot(
+    unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         try {
@@ -240,8 +252,10 @@ export const useInflowData = (userId) => {
       },
     );
 
-    return () => unsubscribe();
-  }, [userId]);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   return { inflowData, loading, error };
 };
@@ -376,13 +390,15 @@ export const useReferallData = (userId) => {
     setError(null);
   };
 
+  //effect that picks up changes in the user's points in real-time and updates the pnts state accordingly. This is important because the points value is used in the calculation of percentage changes in referral stats, so we need to ensure that it is always up-to-date with the latest value from Firestore. The effect also includes error handling to catch any issues that may arise while fetching the points data.
   useEffect(() => {
+    let snap = () => {};
     if (!userId) {
       setLoading(false);
       return;
     }
     const userPntsRef = doc(db, "users", userId);
-    const snap = onSnapshot(
+    snap = onSnapshot(
       userPntsRef,
       (snapshots) => {
         let points;
@@ -400,11 +416,16 @@ export const useReferallData = (userId) => {
         setPntsErr(err);
       },
     );
-    return () => snap();
-  }, [userId, pnts]);
+    return () => {
+      snap();
+    };
+  }, [userId]);
 
   //useEffect for fetching referral and streak data with real-time listeners, error handling, and loading state management. The data is processed to calculate monthly referrals and points, which are then used to calculate the percentage change in referrals and points compared to the previous months(3months ago). The results are stored in state for use in the UI.
   useEffect(() => {
+    let unsubRef = () => {};
+    let unsubStreak = () => {};
+
     if (!userId) {
       setLoading(false);
       return;
@@ -433,9 +454,9 @@ export const useReferallData = (userId) => {
     );
 
     //real-time data listener for referral data over the past 4 months with error handling and loading state management
-    const unsubRef = onSnapshot(
+    unsubRef = onSnapshot(
       refQuery,
-      (snapshot) => {
+      async (snapshot) => {
         try {
           const transactions = snapshot.docs.map((doc) => ({
             id: doc.id,
@@ -445,6 +466,8 @@ export const useReferallData = (userId) => {
             date: new Date(doc.data()["createdAt"].toDate()),
           }));
           setRefDocs(transactions);
+          //update
+          await processRefTransactions(transactions);
           console.log("ref-trx", transactions);
           // const monthlyData = getMonthlyReferrals(transactions);
           // console.log("montlyData", monthlyData);
@@ -467,7 +490,7 @@ export const useReferallData = (userId) => {
     );
 
     //real-time data listener for streak reward data over the past 4 months with error handling and loading state management
-    const unsubStreak = onSnapshot(
+    unsubStreak = onSnapshot(
       streakQuery,
       (snapshot) => {
         try {
@@ -499,18 +522,18 @@ export const useReferallData = (userId) => {
       unsubRef();
       unsubStreak();
     };
-  }, [userId, pnts]);
+  }, [userId]);
 
-  //useEffect to process referral and streak data whenever either of them changes. This ensures that the pointsData state is always up-to-date with the latest transactions from both collections. The processing function combines the referral and streak transactions, calculates the monthly referrals and points, and then computes the percentage change compared to previous months. The results are stored in pointsData state for use in the UI.
-  useEffect(() => {
+  //useMemo to process referral and streak data whenever either of them changes. This ensures that the pointsData state is always up-to-date with the latest transactions from both collections. The processing function combines the referral and streak transactions, calculates the monthly referrals and points, and then computes the percentage change compared to previous months. The results are stored in pointsData state for use in the UI.
+  useMemo(() => {
     //if (refDocs.length === 0 && streakDocs.length === 0) return;
     processTransactions(refDocs, streakDocs);
   }, [refDocs, streakDocs]);
 
-  //useEffect to process RefTransactions to update referrals UI
-  useEffect(() => {
-    processRefTransactions(refDocs);
-  }, [refData]);
+  //useEffect to process RefTransactions to update referrals UI(This effect causes an infinite loop of re-renders💀)
+  // useEffect(() => {
+  //   processRefTransactions(refDocs);
+  // }, [refData]);
 
   return { PointsData, refData, isloading, iserror };
 };
@@ -531,146 +554,164 @@ export const useBillsStat = () => {
     amount: 0,
     noTransactions: 0,
   });
+
   useEffect(() => {
-    const now = new Date();
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(now.getDate() - 7);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
-    const sevenDaysAgoTS = Timestamp.fromDate(sevenDaysAgo);
     let airtimeSub = () => {};
     let utilitySub = () => {};
     let pointsSub = () => {};
+    let onAuth = () => {};
 
-    const thisMonth = new Date();
-    thisMonth.setDate(1);
-    thisMonth.setHours(0, 0, 0, 0);
-    const thisMonthTS = Timestamp.fromDate(thisMonth);
+    onAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        throw new Error("No user signed in");
+        return toast.error("No user signed in");
+      }
 
-    const airtimeRef = collection(db, "users", uid, "airtime");
-    const utilityRef = collection(db, "users", uid, "utility");
-    const pointsRef = collection(db, "users", uid, "points");
+      let airtimeRef;
+      let utilityRef;
+      let pointsRef;
+      const now = new Date();
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      const sevenDaysAgoTS = Timestamp.fromDate(sevenDaysAgo);
 
-    const airtimeQuery = query(
-      airtimeRef,
-      where("createdAt", ">=", sevenDaysAgoTS),
-      orderBy("createdAt", "desc"),
-    );
-    const utilityQuery = query(
-      utilityRef,
-      where("createdAt", ">=", thisMonthTS),
-      orderBy("createdAt", "desc"),
-    );
-    const pointsQuery = query(
-      pointsRef,
-      where("createdAt", ">=", sevenDaysAgoTS),
-      orderBy("createdAt", "desc"),
-    );
+      const thisMonth = new Date();
+      thisMonth.setDate(1);
+      thisMonth.setHours(0, 0, 0, 0);
+      const thisMonthTS = Timestamp.fromDate(thisMonth);
 
-    airtimeSub = onSnapshot(
-      airtimeQuery,
-      (snapshot) => {
-        let amount = 0;
-        if (snapshot.empty) {
-          console.log(snapshot);
-          setAirtimeData([]);
-          return;
-        }
-        const transactions = snapshot.docs
-          ? snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-              date: new Date(doc.data()["createdAt"].toDate()),
-            }))
-          : [];
-        for (let i = 0; i < transactions.length; i++) {
-          amount += transactions[i].amount;
-        }
-        setWeeklyData({
-          amount: amount ? amount : 0,
-          noTransactions: transactions.length,
-        });
-        setAirtimeData(transactions);
-        console.log("airtime-trx", transactions);
-      },
-      (err) => {
-        console.error("Error listening to Airtime transactions:", err);
-      },
-    );
+      airtimeRef = collection(db, "users", user.uid, "airtime");
+      utilityRef = collection(db, "users", user.uid, "utility");
+      pointsRef = collection(db, "users", user.uid, "points");
 
-    //utility Bills Listener
-    utilitySub = onSnapshot(
-      utilityQuery,
-      (snapshot) => {
-        let amount = 0;
-        if (snapshot.empty) {
-          console.log(snapshot);
-          setUtilityData([]);
-          return;
-        }
-        const transactions = snapshot.docs
-          ? snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-              date: new Date(doc.data()["createdAt"].toDate()),
-            }))
-          : [];
-        for (let i = 0; i < transactions.length; i++) {
-          amount += transactions[i].amount;
-          console.log("amount", amount);
-        }
-        setUtilityMonthlyData({
-          amount: amount,
-          noTransactions: transactions.length,
-        });
-        setUtilityData(transactions);
-        console.log("utility-trx", transactions);
-      },
-      (err) => {
-        console.error("Error listening to Utility transactions:", err);
-      },
-    );
+      const airtimeQuery = query(
+        airtimeRef,
+        where("createdAt", ">=", sevenDaysAgoTS),
+        orderBy("createdAt", "desc"),
+      );
+      const utilityQuery = query(
+        utilityRef,
+        where("createdAt", ">=", thisMonthTS),
+        orderBy("createdAt", "desc"),
+      );
+      const pointsQuery = query(
+        pointsRef,
+        where("createdAt", ">=", sevenDaysAgoTS),
+        orderBy("createdAt", "desc"),
+      );
 
-    pointsSub = onSnapshot(
-      pointsQuery,
-      (snapshot) => {
-        let amount = 0;
-        if (snapshot.empty) {
-          setPointsData({ amount: 0, noTransactions: 0 });
-          return;
-        }
-        const transactions = snapshot.docs
-          ? snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-              date: new Date(doc.data()["createdAt"].toDate()),
-            }))
-          : [];
-        for (let i = 0; i < transactions.length; i++) {
-          amount += transactions[i].points;
-        }
-        setPointsData({
-          amount: amount ? amount : 0,
-          noTransactions: transactions.length,
-        });
-        console.log("points-trx", transactions);
-      },
-      (err) => {
-        console.error("Error listening to Points transactions:", err);
-      },
-    );
+      airtimeSub = onSnapshot(
+        airtimeQuery,
+        (snapshot) => {
+          let amount = 0;
+          if (snapshot.empty) {
+            console.log(snapshot);
+            setAirtimeData([]);
+            return;
+          }
+          const transactions = snapshot.docs
+            ? snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                date: new Date(doc.data()["createdAt"].toDate()),
+              }))
+            : [];
+          for (let i = 0; i < transactions.length; i++) {
+            amount += transactions[i].amount;
+          }
+          setWeeklyData({
+            amount: amount ? amount : 0,
+            noTransactions: transactions.length,
+          });
+          setAirtimeData(transactions);
+          console.log("airtime-trx", transactions);
+        },
+        (err) => {
+          console.error("Error listening to Airtime transactions:", err);
+        },
+      );
+
+      //utility Bills Listener
+      utilitySub = onSnapshot(
+        utilityQuery,
+        (snapshot) => {
+          let amount = 0;
+          if (snapshot.empty) {
+            console.log(snapshot);
+            setUtilityData([]);
+            return;
+          }
+          const transactions = snapshot.docs
+            ? snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                date: new Date(doc.data()["createdAt"].toDate()),
+              }))
+            : [];
+          for (let i = 0; i < transactions.length; i++) {
+            amount += transactions[i].amount;
+            console.log("amount", amount);
+          }
+          setUtilityMonthlyData({
+            amount: amount,
+            noTransactions: transactions.length,
+          });
+          setUtilityData(transactions);
+          console.log("utility-trx", transactions);
+        },
+        (err) => {
+          console.error("Error listening to Utility transactions:", err);
+        },
+      );
+
+      pointsSub = onSnapshot(
+        pointsQuery,
+        (snapshot) => {
+          let amount = 0;
+          if (snapshot.empty) {
+            setPointsData({ amount: 0, noTransactions: 0 });
+            return;
+          }
+          const transactions = snapshot.docs
+            ? snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                date: new Date(doc.data()["createdAt"].toDate()),
+              }))
+            : [];
+          for (let i = 0; i < transactions.length; i++) {
+            amount += transactions[i].points;
+          }
+          setPointsData({
+            amount: amount ? amount : 0,
+            noTransactions: transactions.length,
+          });
+          console.log("points-trx", transactions);
+        },
+        (err) => {
+          console.error("Error listening to Points transactions:", err);
+        },
+      );
+    });
+
     return () => {
       airtimeSub();
       utilitySub();
       pointsSub();
+      onAuth();
     };
-  }, [uid]);
-  return {
-    airtimeData,
-    weeklyData,
-    utilityData,
-    utilityMonthlyData,
-    pointsData,
-  };
+  }, []);
+  return useMemo(
+    () => ({
+      airtimeData,
+      weeklyData,
+      utilityData,
+      utilityMonthlyData,
+      pointsData,
+    }),
+    [airtimeData, weeklyData, utilityData, utilityMonthlyData, pointsData],
+  );
 };
 
 const getMonthlyReferrals = (transactions, ref) => {

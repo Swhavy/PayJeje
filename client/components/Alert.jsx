@@ -16,10 +16,10 @@ import { Button } from "@/components/ui/button";
 
 export default function FeedbackAlert({ message, isOpen, isClose }) {
   return (
-    <AlertDialog open={isOpen} onOpenChange={isClose}>
+    <AlertDialog open={isOpen} onOpenChange={isClose} className="">
       <AlertDialogOverlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70]" />
 
-      <AlertDialogContent className="rounded-2xl shadow-xl max-w-sm w-full p-6 text-center absolute inset-0 m-auto top-[15rem] z-[70]">
+      <AlertDialogContent className="rounded-2xl shadow-xl max-w-md h-2/6 max-h-[80vh] w-full p-10 text-center absolute inset-0 m-auto top-[-40%] [@media(max-height:500px)]:top-[-42rem] [@media(min-height:600px)_and_(max-height:900px)]:top-[-15rem] [@media(min-height:600px)_and_(max-width:950px)]:top-[-8rem] z-[70]">
         <AlertDialogHeader className="flex flex-col items-center">
           {message.status ? (
             <Check className="text-green-500 h-12 w-12 mb-4" />

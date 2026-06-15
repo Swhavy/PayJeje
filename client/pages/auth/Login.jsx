@@ -336,7 +336,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className={`min-h-screen bg-background flex items-center justify-center p-4 overflow-hidden ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
+      className={`min-h-screen bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] flex items-center justify-center p-4 overflow-hidden ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
     >
       <div className="w-full max-w-md overflow-hidden">
         <div className="text-center mb-8">
@@ -355,7 +355,7 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        <Card className="bg-card border-border">
+        <Card className="bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] border-border shadow-xl">
           <CardHeader className="text-center">
             <CardTitle className="text-foreground">Welcome Back</CardTitle>
             <CardDescription className="text-muted-foreground">
@@ -367,7 +367,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border hover:bg-accent"
+                className="w-full h-11 border-border  bg-[#1a3a52] border-[#2a4a62] hover:bg-accent"
                 onClick={() =>
                   handleOAuthLogin(new GoogleAuthProvider(), "Google")
                 }
@@ -383,7 +383,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border hover:bg-accent"
+                className="w-full h-11 border-border bg-[#1a3a52] border-[#2a4a62] hover:bg-accent"
                 onClick={() =>
                   handleOAuthLogin(new FacebookAuthProvider(), "Facebook")
                 }
@@ -399,7 +399,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border hover:bg-accent"
+                className="w-full h-11 border-border bg-[#1a3a52] border-[#2a4a62] hover:bg-accent"
                 onClick={() => handleOAuthLogin("twitter")}
                 disabled={oauthLoading !== null}
               >
@@ -408,7 +408,7 @@ export default function LoginPage() {
                 ) : (
                   <XIcon />
                 )}
-                <span className="ml-2">Continue with X</span>
+                <span className="ml-2 ">Continue with X</span>
               </Button>
             </div>
 
@@ -417,7 +417,7 @@ export default function LoginPage() {
                 <Separator className="w-full" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">
+                <span className="px-2 text-muted-foreground">
                   Or continue with email
                 </span>
               </div>
@@ -436,7 +436,7 @@ export default function LoginPage() {
                     onChange={(e) => controlledInput(e)}
                     type="email"
                     placeholder="Enter your email"
-                    className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10 bg-[#0a1f3a] border-border text-foreground placeholder:text-muted-foreground"
                     required
                   />
                 </div>
@@ -454,7 +454,7 @@ export default function LoginPage() {
                     onChange={(e) => controlledInput(e)}
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
-                    className="pl-10 pr-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10 pr-10 bg-[#0a1f3a] border-border text-foreground placeholder:text-muted-foreground"
                     required
                   />
                   <Button

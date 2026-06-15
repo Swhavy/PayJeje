@@ -24,10 +24,11 @@ import Transactions from "@/Components/Transactions";
 import useTransactionFetch from "@/Components/useTransactionFetch";
 
 // Pages
-import Index from "./pages/Index";
+import Index from "./pages/happpy";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
+import SignupFlow from "./pages/auth/pegister";
 import Dashboard from "./pages/Dashboard";
 import PaymentConfirmation from "./pages/PaymentConfirmation";
 import Wallet from "./pages/Wallet";
@@ -79,9 +80,10 @@ const App = () => (
                       element={<Register />}
                     />
                     <Route
-                      path="pitch"
-                      element={<ProposalDocument />}
+                      path="/auth/signup/:referredBy?"
+                      element={<SignupFlow />}
                     />
+                    <Route path="pitch" element={<ProposalDocument />} />
                     {/* Protected Routes */}
                     <Route
                       path="/earn"
