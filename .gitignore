@@ -32,6 +32,5 @@ firestore.indexes.json
 firestore.rules
 functions/package.json
 functions/package-lock.json
-functions/index.js
 client/firebaseConfig.js
 vite.config.server.ts
