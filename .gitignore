@@ -30,7 +30,7 @@ dist-ssr
 firebase.json
 firestore.indexes.json
 firestore.rules
-functions/package.json
-functions/package-lock.json
+# functions/package.json
+# functions/package-lock.json
 client/firebaseConfig.js
 vite.config.server.ts
