@@ -12,9 +12,10 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider,
   onAuthStateChanged,
+  signOut,
 } from "firebase/auth";
 
-import { addUserCred, changeUserPhoto } from "@/Features/userSlice";
+import { addUserCred, changeUserPhoto, clearState } from "@/Features/userSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { db, auth, functions } from "@/firebaseConfig";
 import { Button } from "@/components/ui/button";
@@ -47,15 +48,20 @@ import {
   MapPin,
   Calendar,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSetting } from "@/components/customHook";
 import { toast } from "sonner";
 import { httpsCallable } from "firebase/functions";
 import PasswordResetModal from "@/components/confirmPasswordModal";
-import { setDoc, doc } from "firebase/firestore";
+import { setDoc, doc, collection, getDoc, updateDoc } from "firebase/firestore";
+import TwoFactorSetupModal from "@/components/twoFactorSetup";
+import Disable2FA from "@/components/disable2FA";
 
 export default function SettingsPage() {
+  const [is2FAModalOpen, setIs2FAModalOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const navigate = useNavigate();
+  const [two2FA, setTwo2FA] = useState(false);
   const { setContext, updateDB } = useSetting();
   const [credentialSet, setCredentialSet] = useState({
     currentPassword: "",
@@ -63,18 +69,156 @@ export default function SettingsPage() {
     confirmPassword: "",
   });
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [twoFADisable, set2FADisable] = useState(false);
   const [buttonLoading, setButtonLoading] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [user, setUser] = useState(null);
   const [prefButton, setPrefButton] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [updatePasswordVisibilty, setUpdatePasswordVisibility] =
     useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const userData = useSelector((state) => state.user.user);
-  const { userPhoto, uid } = userData;
+  const { userPhoto, uid, twoFactor: twoFactorStatus } = userData;
   const dispatch = useDispatch();
   //call function to update referrer's referrals doc data for this particular user
   const userDPUpdate = httpsCallable(functions, "userDPUpdate");
+
+  const [profile, setProfile] = useState({
+    firstName: userData ? userData.firstName : "John",
+    lastName: userData ? userData.lastName : "Doe",
+    email: userData ? userData.userEmail : "john.doe@example.com",
+    phone: userData ? userData.userPhone : "+234 801 234 5678",
+    dateOfBirth: "1990-01-15",
+    location: userData ? userData.userState : "Lagos, Nigeria",
+  });
+
+  const [notifications, setNotifications] = useState({
+    email: true,
+    push: true,
+    sms: false,
+    marketing: true,
+    surveys: true,
+    rewards: true,
+  });
+
+  const [security, setSecurity] = useState({
+    twoFactor: twoFactorStatus,
+    loginAlerts: true,
+    sessionTimeout: null,
+  });
+
+  const [uploading, setUploading] = useState(false);
+
+  const [preferences, setPreferences] = useState({
+    language: "en",
+    currency: "NGN",
+    timezone: "Africa/Lagos",
+    theme: "system",
+  });
+
+  const [savedSettings, setSavedSettings] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  //FETCH FROM FIRESTORE ON MOUNT
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const prefDocRef = doc(db, "users", uid, "preferences", uid);
+      const prefSnap = await getDoc(prefDocRef);
+
+      if (prefSnap.exists) {
+        const data = {
+          twoFactor: prefSnap.data().twoFactor ?? false,
+          loginAlerts: prefSnap.data().loginAlerts ?? false,
+          sessionTimeout: prefSnap.data().sessionTimeout ?? null,
+        };
+        setSecurity(data);
+        setSavedSettings(data); // snapshot
+      }
+    };
+
+    fetchSettings();
+  }, [uid]);
+
+  const hasChanges =
+    savedSettings !== null &&
+    (security.twoFactor !== savedSettings.twoFactor ||
+      security.loginAlerts !== savedSettings.loginAlerts ||
+      security.sessionTimeout !== savedSettings.sessionTimeout);
+
+  const handleSaveSecurity = useCallback(async () => {
+    if (!hasChanges) return;
+    setIsSaving(true);
+
+    try {
+      const prefDocRef = doc(db, "users", uid, "preferences", uid);
+      await updateDoc(prefDocRef, {
+        twoFactor: security.twoFactor,
+        loginAlerts: security.loginAlerts,
+        sessionTimeout: security.sessionTimeout,
+      });
+      await handleTimeoutChange(
+        security.sessionTimeout,
+        security.loginAlerts,
+        security.twoFactor,
+      );
+      setSavedSettings({ ...security }); // update snapshot so button disables again
+      toast.success("Security settings saved.");
+    } catch (error) {
+      toast.error("Failed to save security settings. Please try again.");
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [security, hasChanges, uid]);
+
+  const SignOut = () => {
+    console.log("login out..");
+    signOut(auth).then(() => {
+      dispatch(clearState({}));
+      navigate("/auth/Login");
+    });
+  };
+
+  const handleTimeoutChange = async (minutes, loginAlert, twoFA) => {
+    switch (minutes) {
+      case "15min":
+        minutes = 15;
+        break;
+      case "0.5min":
+        minutes = 0.5;
+        break;
+      case "30min":
+        minutes = 30;
+        break;
+      case "1hour":
+        minutes = 60;
+        break;
+      default:
+        minutes = null;
+        break;
+    }
+    // await setDoc(
+    //   doc(db, "users", uid, "preferences", uid),
+    //   { sessionTimeout: minutes },
+    //   { merge: true },
+    // );
+    dispatch(
+      addUserCred({
+        sessionTimeout: minutes,
+        loginAlerts: loginAlert,
+        twoFactor: twoFA,
+      }),
+    );
+  };
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser); // null if signed out, user object if signed in
+    });
+
+    return () => unsub(); // cleanup listener on unmount
+  }, []);
 
   const preferenceUpdate = useCallback(
     async (notification, uid) => {
@@ -148,39 +292,6 @@ export default function SettingsPage() {
     fileInputRef.current.click(); // Programmatically click the hidden input
   };
 
-  const [profile, setProfile] = useState({
-    firstName: userData ? userData.firstName : "John",
-    lastName: userData ? userData.lastName : "Doe",
-    email: userData ? userData.userEmail : "john.doe@example.com",
-    phone: userData ? userData.userPhone : "+234 801 234 5678",
-    dateOfBirth: "1990-01-15",
-    location: userData ? userData.userState : "Lagos, Nigeria",
-  });
-
-  const [notifications, setNotifications] = useState({
-    email: true,
-    push: true,
-    sms: false,
-    marketing: true,
-    surveys: true,
-    rewards: true,
-  });
-
-  const [security, setSecurity] = useState({
-    twoFactor: false,
-    loginAlerts: true,
-    sessionTimeout: "30min",
-  });
-
-  const [uploading, setUploading] = useState(false);
-
-  const [preferences, setPreferences] = useState({
-    language: "en",
-    currency: "NGN",
-    timezone: "Africa/Lagos",
-    theme: "system",
-  });
-
   const handleSaveProfile = () => {
     console.log("Saving profile:", profile);
     toast.success("Profile updated successfully!");
@@ -188,11 +299,6 @@ export default function SettingsPage() {
 
   const handleSaveNotifications = async () => {
     await preferenceUpdate(notifications, uid);
-  };
-
-  const handleSaveSecurity = () => {
-    console.log("Saving security:", security);
-    alert("Security settings updated!");
   };
 
   const handleSavePreferences = () => {
@@ -801,9 +907,16 @@ export default function SettingsPage() {
                     </div>
                     <Switch
                       checked={security.twoFactor}
-                      onCheckedChange={(checked) =>
-                        setSecurity((prev) => ({ ...prev, twoFactor: checked }))
-                      }
+                      onCheckedChange={(checked) => {
+                        if (!checked) {
+                          set2FADisable(true);
+                        }
+                        setSecurity((prev) => ({
+                          ...prev,
+                          twoFactor: checked,
+                        }));
+                        setIs2FAModalOpen(checked);
+                      }}
                     />
                   </div>
 
@@ -835,9 +948,11 @@ export default function SettingsPage() {
                   <Label className="text-foreground">Session Timeout</Label>
                   <Select
                     value={security.sessionTimeout}
-                    onValueChange={(value) =>
-                      setSecurity({ ...security, sessionTimeout: value })
-                    }
+                    onValueChange={(value) => {
+                      setSecurity({ ...security, sessionTimeout: value });
+                      //handleTimeoutChange(value);
+                      console.log("hey", value);
+                    }}
                   >
                     <SelectTrigger className="bg-background border-border text-foreground">
                       <SelectValue />
@@ -854,6 +969,12 @@ export default function SettingsPage() {
                         className="text-foreground hover:bg-muted"
                       >
                         30 minutes
+                      </SelectItem>
+                      <SelectItem
+                        value="0.5min"
+                        className="text-foreground hover:bg-muted"
+                      >
+                        0.5 minutes
                       </SelectItem>
                       <SelectItem
                         value="1hour"
@@ -906,13 +1027,19 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button
+                  <button
                     onClick={handleSaveSecurity}
-                    className="bg-green-600 hover:bg-green-700 text-white"
+                    disabled={!hasChanges || isSaving}
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold transition-all
+        ${
+          hasChanges && !isSaving
+            ? "bg-green-500 text-black cursor-pointer hover:bg-green-400"
+            : "bg-green-500/30 text-green-900 cursor-not-allowed"
+        }`}
                   >
                     <Lock className="h-4 w-4 mr-2" />
-                    Save Security Settings
-                  </Button>
+                    {isSaving ? "Saving..." : "Save Security Settings"}
+                  </button>
                 </div>
               </CardContent>
             </Card>
@@ -1105,6 +1232,66 @@ export default function SettingsPage() {
           onCancel={() => setIsModalOpen(false)}
           userEmail={profile.email}
         />
+        <div>
+          {is2FAModalOpen && (
+            <TwoFactorSetupModal
+              isOpen={is2FAModalOpen}
+              user={user}
+              onClose={() => setIs2FAModalOpen(false)}
+              onEnrolled={() => {
+                toast.success("2FA enabled!");
+                setSecurity((prev) => ({ ...prev, twoFactor: true }));
+                //DB write happens at handleSaveSecurity function
+              }}
+              onCancelled={() => {
+                security.twoFactor = false; //revert toggle state
+                toast.info("2FA setup was not completed");
+              }} // fires on cancel or if user closes modal before finishing enrollment
+              onEnrollmentFailed={() => {
+                setSecurity((prev) => ({ ...prev, twoFactor: false })); //revert toggle state
+                toast.error("2FA setup failed. Please try again.");
+              }} // fires if user completes enrollment but verification fails (e.g. wrong OTP code entered)
+              onError={() => {
+                setSecurity((prev) => ({ ...prev, twoFactor: true })); //revert toggle state
+                toast.error("2FA disabling failed. Please try again.");
+              }} // fires if unEnrollment fails
+              onUnenrolled={() => {
+                setSecurity((prev) => ({ ...prev, twoFactor: false }));
+                //DB write happens at handleSaveSecurity function
+                SignOut();
+              }}
+            />
+          )}
+        </div>
+        <div className="h-full">
+          {user && twoFADisable ? (
+            <Disable2FA
+              user={user}
+              isOpen={twoFADisable}
+              isClose={(status) => {
+                if (status) {
+                  set2FADisable(false);
+                  //If successful then update twoFactor state to false to slideBack the slider.
+                  return setSecurity((prev) => ({ ...prev, twoFactor: false }));
+                }
+                //If Unsuccessful then update twoFactor state to true to maintain the slider.
+                setSecurity((prev) => ({ ...prev, twoFactor: true }));
+                set2FADisable(false);
+              }}
+              onSuccess={() => {
+                setSecurity((prev) => ({ ...prev, twoFactor: false }));
+                //DB write happens at handleSaveSecurity function
+              }}
+              onError={() =>
+                setTimeout(() => {
+                  setSecurity((prev) => ({ ...prev, twoFactor: true }));
+                }, 3000)
+              }
+            />
+          ) : (
+            ""
+          )}
+        </div>
       </div>
     </DashboardLayout>
   );

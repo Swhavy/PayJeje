@@ -143,6 +143,7 @@ export default function SignupFlow() {
           refferalsCount: 0,
           streak: 0,
           points: 0,
+          twoFactor: false,
         };
         dispatch(addUserCred(userData));
         dispatch(updateAchievement(achievementsData));
@@ -495,7 +496,7 @@ export default function SignupFlow() {
                   </label>
                   <input
                     type="text"
-                    name="username"
+                    name="userName"
                     value={field.userName}
                     onChange={handleInputChange}
                     placeholder="RocketRider"

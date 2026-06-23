@@ -48,13 +48,11 @@ export default function AirtimePage() {
   const [isLoading, setIsLoading] = useState(false);
   const { timeAgo, now } = interval();
 
-
   //initialize emulator once
   useEffect(() => {
     //cloud function to fetch bills
     connectFunctionsEmulator(functions, "localHost", 5001);
   }, []);
-
 
   //used to mask phone number in recent transactions
   function maskPhone(phone) {
@@ -123,11 +121,15 @@ export default function AirtimePage() {
   //   setIsConfirmationOpen(true);
   // };
 
-  const handleBuyNow = async (price) => {
+  const handleBuyNow = (price) => {
     if (!selectedNetwork || !phoneNumber || !price) {
       return toast.warning("Please select a network and enter a phone number.");
     }
     setClick(true);
+    setIsConfirmationOpen(true);
+  };
+
+  const onPaymentConfirmation = async () => {
     const res = await validateCustomer({
       itemCode: transactions.itemCode,
       customerID: phoneNumber,
@@ -135,17 +137,12 @@ export default function AirtimePage() {
     //console.log("validateCustomer response:", res);
     if (res.data.status == "error") {
       setClick(false);
-      return toast.error("Customer validation failed.");
-    } else if (res.data.status === "success") {
-      if (selectedNetwork.toUpperCase() != res.data.provider) {
-        setClick(false);
-        return toast.error(
-          "The phone number does not match the selected network, as it links to a " +
-            res.data.provider +
-            " network.",
-        );
-      }
-
+      //toast.error("Customer validation failed.");
+      throw new Error("Customer validation failed");
+    } else if (
+      res.data.status === "success" &&
+      selectedNetwork.toUpperCase() == res.data.provider
+    ) {
       dispatch(
         selectedPrice({
           billType: "airtime",
@@ -156,13 +153,17 @@ export default function AirtimePage() {
           //initialUseCashback: false,
         }),
       );
-
-      setTimeout(() => {
-        setClick(false);
-        setIsConfirmationOpen(true);
-      }, 1000);
-      // Simulate purchase
-    }
+      setClick(false);
+      return true;
+    } else if (selectedNetwork.toUpperCase() != res.data.provider) {
+      setClick(false);
+      // toast.error(
+      //   "The phone number does not match the selected network, as it links to a " +
+      //     res.data.provider +
+      //     " network.",
+      // );
+      throw new Error("The phone number provided doesn't match the network");
+    } else "";
   };
 
   // useEffect(() => {
@@ -186,7 +187,7 @@ export default function AirtimePage() {
       <PaymentConfirmation
         isOpen={isConfirmationOpen}
         onClose={() => setIsConfirmationOpen(false)}
-        //onConfirm={handleConfirmPayment}
+        onConfirm={onPaymentConfirmation}
         paymentDetails={transactions}
       />
       <div className="space-y-6">

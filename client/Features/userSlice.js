@@ -36,6 +36,9 @@ const initialState = {
     referralCode: null,
     refferalsCount: null,
     points: null,
+    twoFactor: false,
+    loginAlerts: false,
+    sessionTimeout: null,
   },
   transactions: {
     billType: "",

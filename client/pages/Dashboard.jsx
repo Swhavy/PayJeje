@@ -194,7 +194,11 @@ const DashboardPage = React.memo(() => {
     );
     const subscribe = onSnapshot(userAchievement, (snapshot) => {
       console.log("achievement data snapshot", snapshot.data());
-      const { firstSurvey, pointsEarned, billPayer } = snapshot.data();
+      const {
+        firstSurvey = 0,
+        pointsEarned = 0,
+        billPayer = 0,
+      } = snapshot.data() ?? {};
       const firstSurveyPercentage = Math.ceil((firstSurvey / 1) * 100);
       const pointsEarnedPercentage = Math.ceil((pointsEarned / 1000) * 100);
       const billPayerPercentage = Math.ceil((billPayer / 5) * 100);

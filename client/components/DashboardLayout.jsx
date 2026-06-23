@@ -35,11 +35,17 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/firebaseConfig";
 import { clearState } from "@/Features/userSlice";
 import { useSpinner } from "@/components/SpinnerProvider";
+import useSessionTimeout from "@/components/hooks/useSessionTimeout";
+
+const SessionGuard = ({ children, timeout }) => {
+  useSessionTimeout(timeout);
+  return children;
+};
 
 export default function DashboardLayout({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const user = useSelector((state) => state.user.user);
-  const { userPhoto, userName, walletBalance } = user;
+  const { userPhoto, userName, walletBalance, sessionTimeout } = user;
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { theme, setTheme } = useTheme();
@@ -305,7 +311,14 @@ export default function DashboardLayout({ children }) {
 
         {/* Main Content */}
         <main className="flex-1 p-6 pb-20 lg:pb-6">
-          <div className="max-w-7xl mx-auto">{children}</div>
+          <div className="max-w-7xl mx-auto">
+            {" "}
+            {sessionTimeout ? (
+              <SessionGuard timeout={sessionTimeout}>{children}</SessionGuard>
+            ) : (
+              children
+            )}
+          </div>
         </main>
       </div>
 

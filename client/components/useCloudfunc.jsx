@@ -4,8 +4,10 @@ import { connectFunctionsEmulator, httpsCallable } from "firebase/functions";
 import { functions } from "@/firebaseConfig";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
+
 const useCloudfunc = () => {
   const user = useSelector((state) => state?.user?.user);
+  const { billsInfo } = useSelector((state) => state?.user?.transactions);
   const { accountReference } = user;
   const dispatch = useDispatch();
   //cloud function to fetch bills
@@ -72,7 +74,7 @@ const useCloudfunc = () => {
       const billsInfo = await res.data.data;
       if (res.data.status !== "error") {
         dispatch(billerInfo({ billsInfo }));
-        console.log("Biller details fetched successfully:", res);
+        console.log("Biller details fetched successfully");
         return true;
       } else {
         toast.error("Sorry an error occurred while fetching some data");

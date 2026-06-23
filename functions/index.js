@@ -8,6 +8,8 @@
  */
 
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import { beforeUserSignedIn } from "firebase-functions/v2/identity";
+import { Resend } from "resend";
 //import { doc, updateDoc, increment } from "firebase/firestore";
 import {
   onDocumentCreated,
@@ -29,10 +31,22 @@ import * as functions from "firebase-functions";
 admin.initializeApp();
 const db = admin.firestore();
 
+// admin.projectConfigManager().updateProjectConfig({
+//   multiFactorConfig: {
+//     providerConfigs: [{
+//       state: "ENABLED",
+//       totpProviderConfig: {
+//         adjacentIntervals: 5 // accept codes from ±5 windows (handles clock drift)
+//       }
+//     }]
+//   }
+// });
+
 //dotenv.config();
 
 const FLW_SECRET_KEY = defineSecret("FLW_SECRET_KEY");
 const FLW_WEBHOOK_HASH = defineSecret("FLW_WEBHOOK_HASH");
+const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
 export const flutterwaveWebhook = onRequest(async (req, res) => {
   const payload = req.body;
@@ -1643,19 +1657,31 @@ export const handleNewRefferal = onDocumentCreated(
     }
     const userData = snapshot.data();
 
-    
-
     const uid = event.params.userId;
 
     //Create User Preferences
-    const userPreferences = await db.collections("users").doc(uid).collections("preferences").doc(uid).set({
-      email: true,
-    push: true,
-    sms: false,
-    marketing: true,
-    surveys: true,
-    rewards: true,
-    }, {merge:true})
+    const userPreferences = await db
+      .collection("users")
+      .doc(uid)
+      .collection("preferences")
+      .doc(uid)
+      .set(
+        {
+          email: true,
+          push: true,
+          sms: false,
+          marketing: true,
+          surveys: true,
+          rewards: true,
+          loginAlerts: false,
+          sessionTimeout: null,
+        },
+        { merge: true },
+      );
+    const twoFactor = db
+      .collection("users")
+      .doc(uid)
+      .set({ twoFactor: false }, { merge: true });
     const walletCreate = await createWallet(
       userData.userEmail,
       userData.userPhone,
@@ -2273,3 +2299,217 @@ export const userDPUpdate = onCall(async (req) => {
     };
   }
 });
+
+const getLoginEmailHtml = ({ displayName, email, loginTime, signInMethod }) => `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>New Login – PayWaka</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#060d18;font-family:'Segoe UI',Arial,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#060d18;padding:40px 16px;">
+      <tr>
+        <td align="center">
+          <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+            <!-- Logo header -->
+            <tr>
+              <td align="center" style="padding-bottom:32px;">
+                <table cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="background:#22c55e;border-radius:10px;width:44px;height:44px;text-align:center;vertical-align:middle;">
+                      <span style="font-size:22px;font-weight:700;color:#060d18;line-height:44px;">₦</span>
+                    </td>
+                    <td style="padding-left:10px;vertical-align:middle;">
+                      <span style="font-size:24px;font-weight:700;color:#ffffff;">Pay</span><span style="font-size:24px;font-weight:700;color:#22c55e;">Waka</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Card -->
+            <tr>
+              <td style="background:#0d1b2a;border-radius:16px;border:1px solid #1e3a5f;overflow:hidden;">
+
+                <!-- Green top accent -->
+                <div style="height:4px;background:#22c55e;"></div>
+
+                <table width="100%" cellpadding="0" cellspacing="0" style="padding:36px 40px;">
+
+                  <!-- Alert icon + heading -->
+                  <tr>
+                    <td style="padding-bottom:8px;">
+                      <table cellpadding="0" cellspacing="0">
+                        <tr>
+                          <td style="background:rgba(34,197,94,0.12);border-radius:50%;width:48px;height:48px;text-align:center;vertical-align:middle;">
+                            <span style="font-size:22px;line-height:48px;">🔐</span>
+                          </td>
+                          <td style="padding-left:14px;vertical-align:middle;">
+                            <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">New Login Detected</p>
+                            <p style="margin:4px 0 0;font-size:13px;color:#6b8aad;">Security notification</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- Divider -->
+                  <tr><td style="padding:20px 0 24px;"><div style="height:1px;background:#1e3a5f;"></div></td></tr>
+
+                  <!-- Greeting -->
+                  <tr>
+                    <td style="padding-bottom:20px;">
+                      <p style="margin:0;font-size:15px;color:#c9d8e8;line-height:1.6;">
+                        Hi <strong style="color:#ffffff;">${displayName ?? "there"}</strong>, a new sign-in was just recorded on your PayWaka account. Here are the details:
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- Details block -->
+                  <tr>
+                    <td style="padding-bottom:28px;">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a1628;border-radius:10px;border:1px solid #1e3a5f;overflow:hidden;">
+                        <tr>
+                          <td style="padding:14px 20px;border-bottom:1px solid #1e3a5f;">
+                            <p style="margin:0;font-size:11px;font-weight:600;color:#6b8aad;text-transform:uppercase;letter-spacing:1px;">Account</p>
+                            <p style="margin:4px 0 0;font-size:14px;color:#ffffff;">${email}</p>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:14px 20px;border-bottom:1px solid #1e3a5f;">
+                            <p style="margin:0;font-size:11px;font-weight:600;color:#6b8aad;text-transform:uppercase;letter-spacing:1px;">Time</p>
+                            <p style="margin:4px 0 0;font-size:14px;color:#ffffff;">${loginTime} (WAT)</p>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:14px 20px;">
+                            <p style="margin:0;font-size:11px;font-weight:600;color:#6b8aad;text-transform:uppercase;letter-spacing:1px;">Sign-in method</p>
+                            <p style="margin:4px 0 0;font-size:14px;color:#ffffff;">${signInMethod}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- Safe notice -->
+                  <tr>
+                    <td style="padding-bottom:20px;">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(34,197,94,0.08);border-left:3px solid #22c55e;border-radius:0 8px 8px 0;padding:14px 18px;">
+                        <tr>
+                          <td>
+                            <p style="margin:0;font-size:14px;color:#c9d8e8;line-height:1.6;">
+                              If this was <strong style="color:#22c55e;">you</strong>, no action is needed. Enjoy PayWaka!
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- Warning notice -->
+                  <tr>
+                    <td style="padding-bottom:32px;">
+                      <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.08);border-left:3px solid #ef4444;border-radius:0 8px 8px 0;padding:14px 18px;">
+                        <tr>
+                          <td>
+                            <p style="margin:0;font-size:14px;color:#c9d8e8;line-height:1.6;">
+                              If this <strong style="color:#ef4444;">wasn't you</strong>, secure your account immediately.
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- CTA -->
+                  <tr>
+                    <td align="center">
+                      <a href="https://paywaka.com/auth/reset-password"
+                        style="display:inline-block;background:#22c55e;color:#060d18;font-size:14px;font-weight:700;padding:13px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.3px;">
+                        Secure My Account
+                      </a>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td align="center" style="padding-top:28px;">
+                <p style="margin:0;font-size:12px;color:#3d5a73;line-height:1.6;">
+                  You're receiving this because login alerts are enabled on your account.<br/>
+                  To manage notification preferences, visit your
+                  <a href="https://paywaka.com/settings/notifications" style="color:#6b8aad;text-decoration:underline;">account settings</a>.
+                </p>
+                <p style="margin:12px 0 0;font-size:11px;color:#2a3f54;">© ${new Date().getFullYear()} PayWaka · All rights reserved.</p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`;
+
+///add your resend api key to firestore
+export const loginNotification = beforeUserSignedIn(
+  { secrets: [RESEND_API_KEY] },
+  async (event) => {
+    const user = event.data;
+
+    if (!user.email) return;
+
+    // check if user opted in for login alerts
+    const prefSnap = await db
+      .collection("users")
+      .doc(user.uid)
+      .collection("preferences")
+      .doc(user.uid)
+      .get();
+
+    if (!prefSnap.exists) {
+      console.log(`No preferences doc found for ${user.uid}, skipping.`);
+      return;
+    }
+
+    const { LoginAlerts } = prefSnap.data();
+
+    if (!LoginAlerts) {
+      console.log(`Login alerts disabled for ${user.uid}, skipping.`);
+      return;
+    }
+
+    const resend = new Resend(RESEND_API_KEY.value());
+
+    const loginTime = new Date().toLocaleString("en-GB", {
+      timeZone: "Africa/Lagos",
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    const signInMethod = event.credential?.signInMethod ?? "Email & Password";
+
+    const { error } = await resend.emails.send({
+      from: "PayWaka <noreply@paywaka.com>",
+      to: user.email,
+      subject: "New login to your PayWaka account",
+      html: getLoginEmailHtml({
+        displayName: user.displayName,
+        email: user.email,
+        loginTime,
+        signInMethod,
+      }),
+    });
+
+    if (error) {
+      console.error("Resend failed to send login notification:", error);
+    }
+  },
+);

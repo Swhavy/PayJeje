@@ -38,7 +38,7 @@ const useTransactionFetch = () => {
     let onAuth = () => {};
     onAuth = onAuthStateChanged(auth, async (user) => {
       setAppContext((prev) => ({ ...prev, spinner: true }));
-      if (!user.uid) {
+      if (!user?.uid) {
         setAppContext((prev) => ({ ...prev, spinner: false }));
         toast.error("no user signed in");
         return navigate("/auth/login");

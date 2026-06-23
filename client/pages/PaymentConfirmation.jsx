@@ -111,7 +111,7 @@ const fieldLabels = {
 export default function PaymentConfirmation({
   isOpen,
   onClose,
-  //onConfirm,
+  onConfirm,
   paymentDetails,
 }) {
   //start
@@ -125,8 +125,10 @@ export default function PaymentConfirmation({
   connectFunctionsEmulator(functions, "localHost", 5001);
   const paymentRedirect = httpsCallable(functions, "paymentRedirect");
   const [callBackUrl, setCallBack_URL] = useState("");
+  const [phase, setPhase] = useState(null);
   const navigate = useNavigate();
   const [details, setDetails] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     // const unsub = onAuthStateChanged(auth, async (user) => {
@@ -150,26 +152,47 @@ export default function PaymentConfirmation({
   //end
   const pay = async () => {
     try {
+      //execute this function if it exits
+      setError(null);
       setRedirect(true);
-      const res = await paymentRedirect({
-        email: userEmail,
-        name: userName,
-        phonenumber: paymentDetails?.customerID,
-        amount: paymentDetails?.price,
-        userID: uid,
-      });
-      if (res.data?.status === "success") {
-        toast.success("you are being redirected to payment gateway");
-        setCallBack_URL(res.data.data.link);
-      } else {
-        console.log(res);
-        toast.warning("sorry bro an error occurred");
+      setPhase("Please wait, confirming info provided..");
+      const verify = await onConfirm?.();
+      if (verify) {
+        setPhase("Preparing to redirect");
+
+        const res = await paymentRedirect({
+          email: userEmail,
+          name: userName,
+          phonenumber: paymentDetails?.customerID,
+          amount: paymentDetails?.price,
+          userID: uid,
+        });
+        if (res.data?.status === "success") {
+          toast.success("you are being redirected to payment gateway");
+          setCallBack_URL(res.data.data.link);
+        } else {
+          console.log(res);
+          toast.warning("sorry an error occurred while redirecting");
+        }
+        setRedirect(false);
+        setPhase(null);
+        return console.log(res);
       }
-      setRedirect(false);
-      console.log(res);
     } catch (err) {
+      setError("Sorry an error occurred");
+      setPhase(null);
       setRedirect(false);
-      toast.error("Error occurred while redirecting");
+      console.log("PR " + err);
+      if (
+        err.message == "The phone number provided doesn't match the network"
+      ) {
+        return toast.error(
+          "The phone number provided doesn't match the network",
+        );
+      } else if (err.message == "Customer validation failed") {
+        return toast.error("Customer validation failed");
+      }
+      toast.error("An error occurred while initiating payment");
     }
   };
 
@@ -181,7 +204,13 @@ export default function PaymentConfirmation({
   return (
     <>
       {details && (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog
+          open={isOpen}
+          onOpenChange={() => {
+            setError(null);
+            return onClose();
+          }}
+        >
           <DialogContent className="sm:max-w-[425px] h-[30rem] p-6 rounded-lg shadow-xl fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 focus:outline-none overflow-y-auto">
             <DialogHeader className="text-center">
               <DialogTitle className="text-2xl font-bold text-foreground">
@@ -263,11 +292,11 @@ export default function PaymentConfirmation({
             <DialogFooter className="mt-6">
               <Button
                 type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-white text-lg font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full ${error ? "bg-red-500 hover:bg-red-700 text-xs font-normal" : "bg-green-600 hover:bg-green-700"} text-white text-lg font-semibold py-3 disabled:opacity-50 disabled:cursor-not-allowed`}
                 onClick={pay}
-                disabled={redirect}
+                disabled={redirect || error}
               >
-                Proceed
+                {phase ? phase : error ? error : "Proceed"}
               </Button>
             </DialogFooter>
           </DialogContent>

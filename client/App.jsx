@@ -76,11 +76,11 @@ const App = () => (
                     <Route path="/" element={<Index />} />
                     <Route path="/auth/login" element={<Login />} />
                     <Route
-                      path="/auth/register/:referredBy?"
+                      path="/auth/signUp/:referredBy?"
                       element={<Register />}
                     />
                     <Route
-                      path="/auth/signup/:referredBy?"
+                      path="/auth/register/:referredBy?"
                       element={<SignupFlow />}
                     />
                     <Route path="pitch" element={<ProposalDocument />} />

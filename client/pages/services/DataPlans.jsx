@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,22 @@ export default function DataPlans() {
   //   navigate(`/services/data-plans/payment?${queryParams}`);
   // };
 
+
+  //DEDUP
+  const deduplicateData = (data) => {
+    const seen = new Map();
+
+    return data.filter((item) => {
+      const key = `${item.amount}-${item.biller_name}-${item.validity_period}`;
+      if (seen.has(key)) return false;
+      seen.set(key, true);
+      return true;
+    });
+  };
+  const Bills = useMemo(
+    () => deduplicateData(transactions.billsInfo),
+    [transactions.billsInfo],
+  );
   //new
   const handleBuyNow = async (price, plan) => {
     setSpin(true);
@@ -155,7 +171,7 @@ export default function DataPlans() {
     console.log("useEffect pre", spin);
     if (mount) {
       console.log("useEffect before", spin);
-      setDataPlans(transactions.billsInfo);
+      setDataPlans(Bills);
       setSpin(false);
       // setTimeout(() => {
       //   setSpin(false);

@@ -7,6 +7,7 @@
     "serve": "firebase emulators:start --only functions",
     "emulators": "firebase emulators:start",
     "shell": "firebase functions:shell",
+    "enable-totp": "node ./enable-totp.js",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useDispatch } from "react-redux";
 import {
   Card,
@@ -23,6 +23,8 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   FacebookAuthProvider,
+  getMultiFactorResolver,
+  TotpMultiFactorGenerator,
   sendEmailVerification,
 } from "firebase/auth";
 import {
@@ -33,6 +35,7 @@ import {
   collection,
   Timestamp,
 } from "firebase/firestore";
+import { Shield, Loader2 } from "lucide-react";
 import {
   addUserCred,
   addUserInfo,
@@ -77,6 +80,8 @@ const XIcon = () => (
 );
 
 export default function LoginPage() {
+  const [mfaResolver, setMfaResolver] = useState(null); // holds the resolver between steps
+  const [otpCode, setOtpCode] = useState("");
   //Login credentials of user
   const [field, setField] = useState({
     email: "",
@@ -85,6 +90,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(null);
+  const [mfaError, setMfaError] = useState(null);
+  const [mfaVerifying, setMfaVerifying] = useState(false);
   const { setAppContext, appContext } = useSpinner();
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -93,6 +100,48 @@ export default function LoginPage() {
   const controlledInput = (e) => {
     const enter = { ...field, [e.target.id]: e.target.value };
     setField(enter);
+  };
+
+  const fetchAndDispatchUserData = async (user) => {
+    const uid = user.uid;
+    //fetch user data from firestore
+    const userRef = doc(db, "users", uid);
+    const achievements = doc(db, "users", uid, "achievements", "stats");
+    const userAchievements = await getDoc(achievements);
+
+    const userData = await getDoc(userRef);
+    const docRef = userData.data();
+    //fetch wallet balance
+    const wallet = await getWalletBalance(docRef.accountReference);
+    if (wallet.status === "success") {
+      console.log("wallet balance fetched", wallet);
+      dispatch(addUserCred({ walletBalance: wallet.walletBalance }));
+    } else {
+      console.log("error fetching wallet balance", wallet);
+      dispatch(addUserCred({ walletBalance: "null" }));
+    }
+    const payload = {
+      firstName: docRef?.firstName,
+      lastName: docRef?.lastName,
+      userName: docRef?.userName,
+      userEmail: docRef?.userEmail,
+      userState: docRef?.userState,
+      userCountry: docRef?.userCountry,
+      userGender: docRef?.userGender,
+      userPhone: docRef?.userPhone,
+      userPhoto: docRef?.userPhoto,
+      accountReference: docRef?.accountReference,
+      accountNumber: docRef?.accountNumber,
+      bankName: docRef?.bankName,
+      barterID: docRef?.barter_id,
+      referralCode: docRef?.referralCode,
+      refferalsCount: docRef?.refferalsCount,
+      streak: docRef?.streak,
+      points: 0,
+    };
+    dispatch(addUserCred({ ...payload, uid }));
+    dispatch(updateAchievement(userAchievements.data()));
+    return { uid, userRef, docRef };
   };
 
   //function that logs into a user account
@@ -120,45 +169,7 @@ export default function LoginPage() {
       //   }, 3000);
 
       //console.log("user details", user);
-
-      const uid = user.uid;
-      //fetch user data from firestore
-      const userRef = doc(db, "users", uid);
-      const achievements = doc(db, "users", uid, "achievements", "stats");
-      const userAchievements = await getDoc(achievements);
-
-      const userData = await getDoc(userRef);
-      const docRef = userData.data();
-      //fetch wallet balance
-      const wallet = await getWalletBalance(docRef.accountReference);
-      if (wallet.status === "success") {
-        console.log("wallet balance fetched", wallet);
-        dispatch(addUserCred({ walletBalance: wallet.walletBalance }));
-      } else {
-        console.log("error fetching wallet balance", wallet);
-        dispatch(addUserCred({ walletBalance: "null" }));
-      }
-      const payload = {
-        firstName: docRef?.firstName,
-        lastName: docRef?.lastName,
-        userName: docRef?.userName,
-        userEmail: docRef?.userEmail,
-        userState: docRef?.userState,
-        userCountry: docRef?.userCountry,
-        userGender: docRef?.userGender,
-        userPhone: docRef?.userPhone,
-        userPhoto: docRef?.userPhoto,
-        accountReference: docRef?.accountReference,
-        accountNumber: docRef?.accountNumber,
-        bankName: docRef?.bankName,
-        barterID: docRef?.barter_id,
-        referralCode: docRef?.referralCode,
-        refferalsCount: docRef?.refferalsCount,
-        streak: docRef?.streak,
-        points: 0,
-      };
-      dispatch(addUserCred({ ...payload, uid }));
-      dispatch(updateAchievement(userAchievements.data()));
+      const { uid, userRef, docRef } = await fetchAndDispatchUserData(user);
       //if the user has profile pic, dispatch it to the state if not dispatch null to the userPhoto state
       if (docRef?.userPhoto) {
         dispatch(changeUserPhoto({ userPhoto: docRef.userPhoto || null }));
@@ -174,18 +185,25 @@ export default function LoginPage() {
         { lastLogin: Timestamp.fromDate(new Date()) },
         { merge: true },
       );
-      await userEmailVerified();
-
+      const emailVerified = await userEmailVerified();
+      if (emailVerified) {
+        navigate("/dashboard");
+      }
       setIsLoading(false);
       setAppContext({ ...appContext, spinner: false });
     } catch (error) {
       setIsLoading(false);
       setAppContext({ ...appContext, spinner: false });
       console.log("there's an error:", error);
-      if (error.code === "auth/user-not-found") {
+      if (error.code === "auth/multi-factor-auth-required") {
+        // Store resolver in state — show OTP input to user
+        return setMfaResolver(getMultiFactorResolver(auth, error));
+      } else if (error.code === "auth/user-not-found") {
         return toast.error(
           "No user found with this email. Please check and try again.",
         );
+      } else if (error.code === "auth/network-request-failed") {
+        return toast.error("Seem's you might be having a network issue");
       } else if (error.code === "auth/wrong-password") {
         return toast.error(
           "Hmmm.. we don't think that's the right password please recheck an then try again.",
@@ -194,6 +212,48 @@ export default function LoginPage() {
       return toast.error(
         "An error occurred this might be to an invalid credential or an unverified email",
       );
+    }
+  };
+  //2FA verification handler
+  const handleMfaVerify = async () => {
+    if (!mfaResolver || otpCode.length !== 6) return;
+    setMfaVerifying(true);
+    setMfaError(null);
+
+    try {
+      const assertion = TotpMultiFactorGenerator.assertionForSignIn(
+        mfaResolver.hints[0].uid,
+        otpCode,
+      );
+
+      const userCredential = await mfaResolver.resolveSignIn(assertion);
+      const user = userCredential.user;
+      const { uid, userRef, docRef } = await fetchAndDispatchUserData(user);
+      if (docRef?.userPhoto) {
+        dispatch(changeUserPhoto({ userPhoto: docRef.userPhoto || null }));
+      }
+
+      await Promise.all([
+        setDoc(
+          userRef,
+          { lastLogin: Timestamp.fromDate(new Date()) },
+          { merge: true },
+        ),
+        setDoc(
+          doc(db, "users", uid, "lastLogin", "details01"),
+          { lastLogin: Timestamp.fromDate(new Date()) },
+          { merge: true },
+        ),
+      ]);
+      navigate("/dashboard");
+    } catch (err) {
+      setMfaError(
+        err.code === "auth/invalid-verification-code"
+          ? "Incorrect code. Check your authenticator app and try again."
+          : "Verification failed. Please try again.",
+      );
+    } finally {
+      setMfaVerifying(false);
     }
   };
 
@@ -213,36 +273,41 @@ export default function LoginPage() {
   // };
 
   //checks if the user Email is verified
-  const userEmailVerified = async () => {
-    onAuthStateChanged(auth, async (user) => {
-      try {
-        if (user) {
-          await user.reload();
-          if (user.emailVerified) {
-            console.log("email verified...login successful");
-            return navigate("/dashboard");
-            // if (navigate !== "loading") {
-            //   setAppContext({ ...appContext, spinner: false });
-            // } else {
-            //   setAppContext({ ...appContext, spinner: true });
-            // }
-          } else {
-            navigate("/auth/login");
-            auth.signOut();
-            toast.error("Please verify your email before logging in.");
+  const userEmailVerified = useCallback(async () => {
+    return new Promise((resolve, reject) => {
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        unsubscribe(); // Unsubscribe immediately to prevent multiple triggers
+        try {
+          if (user) {
+            await user.reload();
+            if (user.emailVerified) {
+              console.log("email verified");
+              resolve(true);
+              // if (navigate !== "loading") {
+              //   setAppContext({ ...appContext, spinner: false });
+              // } else {
+              //   setAppContext({ ...appContext, spinner: true });
+              // }
+            } else {
+              auth.signOut();
+              toast.error("Please verify your email before logging in.");
+              navigate("/auth/login");
+              resolve(false);
+            }
           }
+        } catch (error) {
+          toast.error(
+            "An internal error occurred while checking your email verification. Please try again later.",
+          );
+          console.log(
+            "error occured internally when verifying email verification",
+            error,
+          );
+          reject(error);
         }
-      } catch (error) {
-        toast.error(
-          "An internal error occurred while checking your email verification. Please try again later.",
-        );
-        console.log(
-          "error occured internally when verifying email verification",
-          error,
-        );
-      }
+      });
     });
-  };
+  }, []);
 
   const handleOAuthLogin = async (provider, providerName) => {
     setOauthLoading(provider);
@@ -258,6 +323,7 @@ export default function LoginPage() {
       //   "userSettings",
 
       const docSnap = await getDoc(userRef);
+      const emailVerified = await userEmailVerified();
       //if the user does not exist in the database create a new user
       if (!docSnap.exists()) {
         const userData = {
@@ -280,7 +346,7 @@ export default function LoginPage() {
         setDoc(userRef, userData);
         setDoc(achievements, achievementsData);
         //userEmailVerified();
-        sendEmailVerification(auth.currentUser);
+        await sendEmailVerification(auth.currentUser);
         toast.success(
           `A verification email has been sent to ${user.user.email}. Please verify your email before logging in.`,
         );
@@ -313,26 +379,103 @@ export default function LoginPage() {
         dispatch(addUserCred({ ...payload, uid }));
         dispatch(updateAchievement(userAchievements.data()));
         console.log("pinpoint", userData);
-        userEmailVerified();
+        setOauthLoading(null);
         //set Last Login
         await setDoc(
           userRef,
-          { lastLogin: Timestamp.fromDate(Date.now()) },
+          { lastLogin: Timestamp.fromDate(new Date()) },
           { merge: true },
         );
         await setDoc(
           doc(db, "users", uid, "lastLogin", "details01"),
-          { lastLogin: Timestamp.fromDate(Date.now()) },
+          { lastLogin: Timestamp.fromDate(new Date()) },
           { merge: true },
         );
+        console.log("email verification status", emailVerified);
+        emailVerified && navigate("/dashboard");
       }
-      setOauthLoading(null);
     } catch (error) {
       setOauthLoading(null);
-      console.log("error occurred while logging in with google", error);
-      toast.error(`An error occurred while logging in with ${providerName}`);
+      console.log(
+        `error occurred while logging in with ${providerName}`,
+        error,
+      );
+      if (error.code === "auth/network-request-failed") {
+        return toast.error("Seem's you might be having a network issue");
+      } 
+       if (error.code === "auth/multi-factor-auth-required") {
+         // Store resolver in state — show OTP input to user
+         return setMfaResolver(getMultiFactorResolver(auth, error));
+       }
+       toast.error(`An error occurred while logging in with ${providerName}`);
     }
   };
+
+  if (mfaResolver) {
+    return (
+      <div className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="bg-[#0a1628] border border-[#1a2f4a] rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+          {/* Icon */}
+          <div className="flex justify-center mb-6">
+            <div className="w-14 h-14 bg-[#00FF41]/10 border border-[#00FF41]/20 rounded-full flex items-center justify-center">
+              <Shield className="w-7 h-7 text-[#00FF41]" />
+            </div>
+          </div>
+
+          {/* Heading */}
+          <h2 className="text-xl font-bold text-white text-center mb-2">
+            Two-Factor Authentication
+          </h2>
+          <p className="text-[#8aa6b8] text-sm text-center mb-8">
+            Enter the 6-digit code from your authenticator app to continue
+          </p>
+
+          {/* OTP Input */}
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="000000"
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+            className="w-full px-4 py-4 bg-[#111f35] border border-[#1a2f4a] rounded-xl text-white text-center text-3xl tracking-[0.5em] font-mono placeholder-[#2a4a62] focus:outline-none focus:border-[#00FF41] focus:ring-1 focus:ring-[#00FF41] transition-all mb-4"
+            autoFocus
+          />
+
+          {/* Error */}
+          {mfaError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 mb-4">
+              <p className="text-red-400 text-sm text-center">{mfaError}</p>
+            </div>
+          )}
+
+          {/* Verify Button */}
+          <button
+            onClick={handleMfaVerify}
+            disabled={otpCode.length !== 6 || mfaVerifying}
+            className="w-full py-4 bg-[#00FF41] text-[#0a1628] font-bold rounded-xl hover:bg-[#00e63a] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {mfaVerifying ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              "Verify & Sign In"
+            )}
+          </button>
+
+          {/* Back link */}
+          <button
+            onClick={() => setMfaResolver(null)}
+            className="w-full mt-4 text-[#8aa6b8] text-sm hover:text-white transition-colors"
+          >
+            ← Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
