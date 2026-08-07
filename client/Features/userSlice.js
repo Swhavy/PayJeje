@@ -19,6 +19,7 @@ const initialState = {
   user: {
     firstName: "",
     lastName: "",
+    lastLogin: "",
     userName: "",
     userEmail: "",
     userState: "",

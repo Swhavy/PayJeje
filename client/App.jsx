@@ -12,7 +12,9 @@ import { PersistGate } from "redux-persist/integration/react";
 import AccountDetailsCard from "@/components/AccountDetailsCard.jsx";
 import BillHistory from "@/pages/BillHistory.jsx";
 import TransactionChart from "@/components/HistoryChart.jsx";
+import NotificationsPage from "@/components/NotificationPage.jsx";
 import ProposalDocument from "@/pages/pitch.jsx";
+import PaymentSuccessAnimation from "@/pages/animate.jsx";
 
 // Components
 import { AuthProvider } from "@/components/AuthProvider";
@@ -24,7 +26,7 @@ import Transactions from "@/Components/Transactions";
 import useTransactionFetch from "@/Components/useTransactionFetch";
 
 // Pages
-import Index from "./pages/happpy";
+import HomePage from "./pages/index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -33,6 +35,7 @@ import Dashboard from "./pages/Dashboard";
 import PaymentConfirmation from "./pages/PaymentConfirmation";
 import Wallet from "./pages/Wallet";
 import BankCombobox from "./pages/wall";
+import WithdrawalStatePage from "./pages/WithdrawalStatePage";
 import Earn from "./pages/Earn";
 import Referrals from "./pages/Referrals";
 import Settings from "./pages/Settings";
@@ -73,7 +76,7 @@ const App = () => (
                 <AuthProvider>
                   <Routes>
                     {/* Public Routes */}
-                    <Route path="/" element={<Index />} />
+                    <Route path="/" element={<HomePage />} />
                     <Route path="/auth/login" element={<Login />} />
                     <Route
                       path="/auth/signUp/:referredBy?"
@@ -90,6 +93,14 @@ const App = () => (
                       element={
                         <ProtectedRoute>
                           <Earn />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/animate"
+                      element={
+                        <ProtectedRoute>
+                          <PaymentSuccessAnimation />
                         </ProtectedRoute>
                       }
                     />
@@ -197,6 +208,14 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     />
+                    <Route
+                      path="/withdrawState"
+                      element={
+                        <ProtectedRoute>
+                          <WithdrawalStatePage />
+                        </ProtectedRoute>
+                      }
+                    />
 
                     <Route
                       path="/settings"
@@ -230,6 +249,14 @@ const App = () => (
                       element={
                         <ProtectedRoute>
                           <Wallet />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/Notifications"
+                      element={
+                        <ProtectedRoute>
+                          <NotificationsPage />
                         </ProtectedRoute>
                       }
                     />

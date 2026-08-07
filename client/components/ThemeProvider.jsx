@@ -15,9 +15,22 @@ export const ThemeProvider = ({ children, defaultTheme = 'dark', storageKey = 'p
 
   useEffect(() => {
     const storedTheme = localStorage.getItem(storageKey);
+
     if (storedTheme) {
       setTheme(storedTheme);
+      return; // user has a preference, don't listen to system
     }
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+    // set initial system theme
+    setTheme(mediaQuery.matches ? "dark" : "light");
+
+    // listen for system changes
+    const handleChange = (e) => setTheme(e.matches ? "dark" : "light");
+    mediaQuery.addEventListener("change", handleChange);
+
+    return () => mediaQuery.removeEventListener("change", handleChange);
   }, [storageKey]);
 
   useEffect(() => {

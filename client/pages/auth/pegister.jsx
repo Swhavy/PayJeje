@@ -46,12 +46,13 @@ import { toast, Toaster } from "sonner";
 
 // For navigation
 import { Link, useNavigate, useParams } from "react-router-dom";
+import Navbar from "../../components/Navbar";
 
 const TOTAL_STEPS = 3;
 
 const Logo = () => (
   <img
-    src="/logo.svg"
+    src="/logo.png"
     alt="Paywaka Logo"
     width={120}
     height={120}
@@ -159,7 +160,10 @@ export default function SignupFlow() {
       //if the user exists in the database login the user
       else {
         const userData = docSnap.data();
-        dispatch(addUserCred(userData));
+        const prefRef = doc(db, "users", uid, "preferences", uid);
+        const prefDoc = await getDoc(prefRef);
+        const prefData = prefDoc.data() 
+        dispatch(addUserCred({ ...userData, ...prefData }));
         dispatch(updateAchievement(achievementSnap.data()));
         console.log(userData);
         userEmailVerified;
@@ -343,7 +347,8 @@ export default function SignupFlow() {
       className={`min-h-screen relative ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""} bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] flex items-center justify-center p-4`}
     >
       {/* Logo */}
-      <div className="text-center mb-8 fixed top-1 left-5 scale-90">
+      <Navbar />
+      {/* <div className="text-center mb-8 fixed top-1 left-5 scale-90">
         <Link to="/" className="inline-flex items-center gap-1 mb-6">
           <Logo />
           <span className="text-2xl font-bold text-foreground">
@@ -351,7 +356,7 @@ export default function SignupFlow() {
             <span className="text-green-600 dark:text-green-400">waka</span>
           </span>
         </Link>
-      </div>
+      </div> */}
       <div className="w-full max-w-md mt-20">
         {/* Progress Bar */}
         <div className="mb-8">
@@ -778,7 +783,7 @@ export default function SignupFlow() {
         </div>
 
         {/* Sign in link */}
-        {currentStep === 1 && (
+        {currentStep && (
           <p className="text-center text-[#8aa6b8] text-sm mt-6">
             Already have an account?{" "}
             <Link

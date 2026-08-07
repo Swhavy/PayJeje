@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/customProgress";
 import Tooltip from "@/components/ui/tip";
+import AccountDetailsCard from "@/components/AccountDetailsCard";
 
 import {
   Star,
@@ -21,17 +22,27 @@ import {
   Wallet,
   TrendingUp,
   TrendingDown,
+  ChevronDown,
+  ChevronUp,
   ArrowUpRight,
   ArrowDownLeft,
   Plus,
   Eye,
+  EyeOff,
   Calendar,
   CheckCircle,
+  Sparkles,
+  ArrowRight,
+  TrendingUp as TrendUpIcon,
+  Award,
+  ChevronRight,
+  CreditCard,
+  Bell,
+  X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
-//import { ThreeDAnimation } from "../components/3DAnimation";
+import { Link, useNavigate } from "react-router-dom";
 import TopEarnersCarousel from "../components/TopEarnersCarousel";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import useTransactionFetch from "@/components/useTransactionFetch";
 import {
   useInflowData,
@@ -43,137 +54,132 @@ import { db } from "@/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 import QuickEarnModal from "@/components/QuickEarn";
 import { addUserCred } from "../Features/userSlice";
-import { useDispatch } from "react-redux";
+
 
 const quickActions = [
   {
     title: "Earn Points",
-    description: "Complete surveys and tasks",
+    description: "Complete tasks",
     icon: Star,
     href: "/earn",
-    color: "bg-yellow-600 hover:bg-yellow-700",
+    color:
+      "bg-gradient-to-tr from-yellow-500 to-amber-400 shadow-yellow-500/10",
   },
   {
     title: "Buy Airtime",
-    description: "Purchase airtime & data",
+    description: "VTU and data",
     icon: Smartphone,
     href: "/services/airtime",
-    color: "bg-blue-600 hover:bg-blue-700",
+    color: "bg-gradient-to-tr from-blue-600 to-sky-400 shadow-blue-500/10",
   },
   {
     title: "Pay Bills",
-    description: "Electricity, water & more",
+    description: "Power & utilities",
     icon: Zap,
     href: "/services/bills",
-    color: "bg-purple-600 hover:bg-purple-700",
+    color:
+      "bg-gradient-to-tr from-purple-600 to-indigo-400 shadow-purple-500/10",
   },
   {
     title: "Gift Cards",
-    description: "Redeem amazing rewards",
+    description: "Redeem rewards",
     icon: Gift,
     href: "/services/giftcards",
-    color: "bg-green-600 hover:bg-green-700",
-  },
-];
-
-const recentTransactions = [
-  {
-    id: 1,
-    type: "credit",
-    description: "Survey Completion Reward",
-    amount: 250,
-    date: "Today, 2:30 PM",
-    status: "completed",
-  },
-  {
-    id: 2,
-    type: "debit",
-    description: "Airtime Purchase - MTN",
-    amount: 500,
-    date: "Today, 12:15 PM",
-    status: "completed",
-  },
-  {
-    id: 3,
-    type: "credit",
-    description: "Referral Bonus",
-    amount: 100,
-    date: "Yesterday, 4:45 PM",
-    status: "completed",
-  },
-  {
-    id: 4,
-    type: "debit",
-    description: "Electricity Bill Payment",
-    amount: 1200,
-    date: "Yesterday, 9:20 AM",
-    status: "completed",
+    color:
+      "bg-gradient-to-tr from-emerald-600 to-green-400 shadow-green-500/10",
   },
 ];
 
 const actions = [
   {
     id: 1,
+    href: null,
     state: "coming soon",
     title: "Complete Survey",
     subtitle: "5 minutes • +50 points",
     icon: Star,
-    bgColor: "bg-yellow-100 dark:bg-yellow-900",
-    iconColor: "text-yellow-600 dark:text-yellow-400",
+    bgColor: "bg-yellow-500/10",
+    iconColor: "text-yellow-400",
     buttonText: "Start Now",
-    buttonColor: "bg-yellow-600 hover:bg-yellow-700",
+    buttonColor: "bg-zinc-800 text-zinc-400",
   },
   {
     id: 2,
+    href: null,
     state: "coming soon",
     title: "Watch Video",
     subtitle: "2 minutes • +25 points",
     icon: Eye,
-    bgColor: "bg-blue-100 dark:bg-blue-900",
-    iconColor: "text-blue-600 dark:text-blue-400",
+    bgColor: "bg-blue-500/10",
+    iconColor: "text-blue-400",
     buttonText: "Watch Now",
-    buttonColor: "bg-blue-600 hover:bg-blue-700",
+    buttonColor: "bg-zinc-800 text-zinc-400",
   },
   {
     id: 3,
+    href: "/referrals",
     state: "available",
     title: "Invite Friend",
     subtitle: "Share link • +100 points",
     icon: Users,
-    bgColor: "bg-purple-100 dark:bg-purple-900",
-    iconColor: "text-purple-600 dark:text-purple-400",
+    bgColor: "bg-purple-500/10",
+    iconColor: "text-purple-400",
     buttonText: "Share Link",
-    buttonColor: "bg-purple-600 hover:bg-purple-700",
+    buttonColor: "bg-purple-600 hover:bg-purple-500 text-white",
   },
 ];
 
 const DashboardPage = React.memo(() => {
+  const navigate = useNavigate();
   const dispatch = useDispatch();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [accountPopup, setAccountPopup] = useState(false);
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
+   const [hide, setHide] = useState(
+     localStorage.getItem("hideBalance") === "true",
+   );
+  const [depositAmount, setDepositAmount] = useState("");
   const { setAppContext, appContext, alertMsg, setAlertMsg } = useSpinner();
-  // const uid = useSelector((state) => state.user.user.uid);
-  const achieve = useSelector((state) => state.user.achievementsData);
   const [mounted, setMounted] = useState(false);
   const user = useSelector((state) => state.user.user);
-  const { userName, walletBalance, refferalsCount, uid } = user;
+  const {
+    userName,
+    walletBalance,
+    refferalsCount,
+    uid,
+    userPhoto,
+    points,
+    bankName,
+    accountReference,
+    accountNumber: account,
+  } = user;
   const { inflowData, loading, error } = useInflowData(uid);
   const { PointsData, refData, isloading, iserror } = useReferallData(uid);
   const { trxn, loadMore } = useTransactionFetch();
+  console.log("trxn", trxn);
   const [invites, setInvites] = useState({ count: 0, rate: 0 });
   const [achievementsState, setAchievementsState] = useState({});
+  const [isInsightsExpanded, setIsInsightsExpanded] = useState(() => {
+    try {
+      return localStorage.getItem("isInsightsExpanded") !== "false";
+    } catch {
+      return true;
+    }
+  });
 
-  useEffect(() => {
-    const userDBref = doc(db, "users", uid);
-    const subscribe = onSnapshot(userDBref, (snapshot) => {
-      const inviteCount = snapshot.data().refferalsCount;
-      const points = snapshot.data()?.points ? snapshot.data().points : 0;
-      dispatch(addUserCred({ points: points }));
-      const percentage = Math.ceil((inviteCount / 10) * 100);
-      setInvites({ count: inviteCount, rate: percentage });
+  const toggleInsights = () => {
+    setIsInsightsExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("isInsightsExpanded", String(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
     });
-    return () => subscribe();
-  }, []);
+  };
 
+  //achievement state
   useEffect(() => {
     const userAchievement = doc(db, "users", uid, "achievements", "stats");
     const userData = doc(db, "users", uid);
@@ -215,69 +221,6 @@ const DashboardPage = React.memo(() => {
     };
   }, []);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // useEffect(() => {
-  //   if (mounted) console.log("hey", PointsData);
-  // }, [mounted]);
-
-  /*  useEffect(() => {
-    setAppContext((prev) => ({ ...prev, spinner: loading }));
-    if (error)
-      setAlertMsg({
-        open: true,
-        status: false,
-        msg: error,
-        statusMsg:
-          "some of your transactions might appear incorrect as there was an error in displaying",
-      });
-  }, [loading, error]); */
-
-  const stats = useMemo(() => [
-    {
-      title: "Total Points",
-      value: PointsData?.pntsData?.currentAmount,
-      change: `${PointsData?.pntsData?.percentageChange}%`,
-      icon: Star,
-      color: PointsData?.pntsData?.isIncrease
-        ? "text-yellow-600 dark:text-yellow-400"
-        : "text-red-600 dark:text-red-400",
-      bgColor: PointsData?.pntsData?.isIncrease
-        ? "bg-yellow-100 dark:bg-yellow-900"
-        : "bg-red-100 dark:bg-red-900",
-    },
-    {
-      title: "Wallet Balance",
-      value: `₦ ${walletBalance}` || "Refresh",
-      //change: "+8%",
-      icon: Wallet,
-      color: "text-green-600 dark:text-green-400",
-      bgColor: "bg-green-100 dark:bg-green-900",
-    },
-    // {
-    //   title: "This Month",
-    //   value: "₦3,200",
-    //   change: "+15%",
-    //   icon: TrendingUp,
-    //   color: "text-blue-600 dark:text-blue-400",
-    //   bgColor: "bg-blue-100 dark:bg-blue-900",
-    // },
-    {
-      title: "Referrals",
-      value: refData?.currentAmount,
-      change: `${refData?.percentageChange}%`,
-      icon: Users,
-      color: refData?.isIncrease
-        ? "text-purple-600 dark:text-purple-400"
-        : "text-red-600 dark:text-red-400",
-      bgColor: refData?.isIncrease
-        ? "bg-purple-100 dark:bg-purple-900"
-        : "bg-red-100 dark:bg-red-900",
-    },
-  ]);
-
   const achievements = useMemo(() => [
     {
       title: "First Survey",
@@ -311,203 +254,465 @@ const DashboardPage = React.memo(() => {
     },
   ]);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const handleDepositSubmit = (e) => {
+    e.preventDefault();
+    if (!depositAmount) return;
+    dispatch(addUserCred(depositAmount));
+    setDepositAmount("");
+    setIsDepositOpen(false);
+  };
+
+  const stats = useMemo(
+    () => [
+      {
+        title: "Total Points",
+        value: PointsData?.pntsData?.currentAmount,
+        change: `${PointsData?.pntsData?.percentageChange}%`,
+        icon: Star,
+        color: PointsData?.pntsData?.isIncrease
+          ? "text-yellow-600 dark:text-yellow-400"
+          : "text-red-600 dark:text-red-400",
+        bgColor: PointsData?.pntsData?.isIncrease
+          ? "bg-yellow-100 dark:bg-yellow-900"
+          : "bg-red-100 dark:bg-red-900",
+      },
+      {
+        title: "Wallet Balance",
+        value: `₦ ${walletBalance.toLocaleString()}` || "Refresh",
+        //change: "+8%",
+        icon: Wallet,
+        color: "text-green-600 dark:text-green-400",
+        bgColor: "bg-green-100 dark:bg-green-900",
+      },
+      {
+        title: "Referrals",
+        value: refData?.currentAmount,
+        change: `${refData?.percentageChange}%`,
+        icon: Users,
+        color: refData?.isIncrease
+          ? "text-purple-600 dark:text-purple-400"
+          : "text-red-600 dark:text-red-400",
+        bgColor: refData?.isIncrease
+          ? "bg-purple-100 dark:bg-purple-900"
+          : "bg-red-100 dark:bg-red-900",
+      },
+    ],
+    [PointsData, refData],
+  );
+
   if (!mounted) {
     return null;
   }
 
+   const visibility = () => {
+     setHide(!hide);
+     localStorage.setItem("hideBalance", !hide);
+   };
+
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Welcome Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-              Welcome back, {userName}! 👋
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Here's what's happening with your account today.
-            </p>
+      <div className="space-y-6">
+        {/* MOBILE VIEW FIRST DISPLAY ELEMENT: Sleek Gradient Wallet Hero */}
+        <div className="block lg:hidden">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-tr from-green-950 via-zinc-950 to-emerald-950 border border-emerald-500/20 p-5 shadow-2xl">
+            {/* Ambient Background Glow lines */}
+            <div className="absolute top-0 right-0 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-36 h-36 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                {/* Consistent User Avatar placeholder inside dashboard top */}
+                <div className="w-11 h-11 rounded-full border border-emerald-500/30 overflow-hidden bg-zinc-800">
+                  {userPhoto ? (
+                    <img
+                      src={userPhoto}
+                      className="w-full h-full object-cover"
+                      alt="User"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-bold text-green-400 bg-green-500/15">
+                      {userName.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-zinc-400">
+                    Welcome, {userName}!
+                  </h2>
+                  <p className="text-[10px] text-zinc-500">Gold Tier Member</p>
+                </div>
+              </div>
+              <Badge className="bg-yellow-500/10 border-yellow-500/20 text-yellow-500 flex items-center gap-1 py-1 px-2">
+                <Sparkles className="h-3 w-3 animate-pulse" />
+                <span>{points} pts</span>
+              </Badge>
+            </div>
+
+            {/* Breathtaking Wallet Balance Gradient Bar/Card */}
+            <div className="rounded-2xl bg-gradient-to-r from-green-600 via-emerald-500 to-teal-600 p-4 text-white shadow-xl relative overflow-hidden group">
+              {/* Shimmer overlay effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out" />
+
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-white/70">
+                    Wallet Balance
+                  </span>
+                  <div className="text-2xl font-black tracking-tight mt-1 text-white">
+                    <span> ₦{walletBalance?.toLocaleString()}</span>
+                    <div>
+                      {" "}
+                      {hide ? (
+                        <EyeOff className="h-5 w-5" onClick={visibility} />
+                      ) : (
+                        <Eye
+                          className="h-5 w-5 text-green-500"
+                          onClick={visibility}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+                  <Wallet className="h-4.5 w-4.5 text-white" />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between mt-4.5 pt-3 border-t border-white/10">
+                <span className="text-[10px] text-white/80 font-medium">
+                  Instant utility payments activated
+                </span>
+                <button
+                  onClick={() => setAccountPopup(true)}
+                  className="bg-white text-green-700 hover:bg-zinc-100 active:scale-95 text-[11px] font-extrabold py-1.5 px-3 rounded-xl transition-all flex items-center gap-1 shadow-md shadow-green-900/10"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Top Up</span>
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
+        </div>
+
+        {/* Welcome Header — Only shown in full on desktop */}
+        <div className="hidden lg:flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {/* User profile image placeholder for consistent branding */}
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-green-600 to-emerald-400 p-0.5 shadow-xl shadow-green-500/10">
+              <div className="w-full h-full rounded-2xl bg-[#060d1a] p-0.5 overflow-hidden">
+                {userPhoto ? (
+                  <img
+                    src={userPhoto}
+                    className="w-full h-full object-cover rounded-[14px]"
+                    alt={userName}
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-[14px] flex items-center justify-center text-lg font-bold text-green-400 bg-green-500/10">
+                    {userName.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-2">
+                Welcome back, {userName}! 👋
+              </h1>
+              <p className="text-zinc-400 text-sm mt-0.5">
+                Here's what is happening with your Paywaka wallet today.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2.5">
             <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
+              className="bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 font-bold"
               onClick={() => setIsModalOpen(true)}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Sparkles className="h-4 w-4 mr-2" />
               Quick Earn
             </Button>
             <Button
               variant="outline"
-              className="border-border text-foreground hover:bg-muted bg-transparent"
+              onClick={() => setAccountPopup(true)}
+              className="border-zinc-800 text-white hover:bg-zinc-900 bg-transparent rounded-xl"
             >
-              <Eye className="h-4 w-4 mr-2" />
-              View All
+              <Plus className="h-4 w-4 mr-2" />
+              Add Funds
             </Button>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 cursor-default">
-          {stats.map((stat, index) => (
-            <Card
-              key={index}
-              className="bg-card border-border hover:shadow-lg transition-all duration-300"
+        {/* MOBILE ONLY: Quick Insights Bar (displays the desktop tooltip information elegantly on mobile) */}
+        <div className="block lg:hidden bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-3.5 mb-2 shadow-inner">
+          <div
+            onClick={toggleInsights}
+            className="flex items-center justify-between cursor-pointer select-none"
+          >
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+              <Sparkles className="h-3.5 w-3.5 animate-pulse shrink-0" />
+              <span>3-Month Performance Insights</span>
+            </div>
+            <button
+              type="button"
+              className="p-1 rounded-md text-emerald-400 hover:bg-emerald-500/10 transition-colors"
             >
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      {stat.title}
-                    </p>
-                    <p className="text-xl sm:text-2xl font-bold text-foreground">
-                      {stat.value}
-                    </p>
-                    {stat.title == "Wallet Balance" ? null : stat.title ==
-                      "Referrals" ? (
-                      <p
-                        className={`text-xs ${refData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"} flex items-center mt-1`}
-                      >
-                        <Tooltip
-                          content={
-                            refData?.isIncrease
-                              ? `referrals increased this past 3months`
-                              : `You are down at compared to the past 3 months`
-                          }
-                          className="flex flex-col"
-                        >
-                          <div className="flex justify-center items-center">
-                            {refData?.isIncrease ? (
-                              <TrendingUp className="h-3 w-3 mr-1" />
-                            ) : (
-                              <TrendingDown className="h-3 w-3 mr-1" />
-                            )}
-                            {stat.change}
-                          </div>
-                        </Tooltip>
-                      </p>
-                    ) : (
-                      <p
-                        className={`text-xs ${PointsData?.pntsData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}  flex items-center mt-1`}
-                      >
-                        <Tooltip
-                          content={
-                            PointsData?.pntsData?.isIncrease
-                              ? `points increased by ${stat.change} this past 3months`
-                              : `points decreased by ${stat.change} this past 3 months`
-                          }
-                          className="flex flex-col"
-                        >
-                          <div className="flex justify-center items-center">
-                            {PointsData?.pntsData?.isIncrease ? (
-                              <TrendingUp className="h-3 w-3 mr-1" />
-                            ) : (
-                              <TrendingDown className="h-3 w-3 mr-1" />
-                            )}
-                            {stat.change}
-                          </div>
-                        </Tooltip>
-                      </p>
-                    )}
-                  </div>
-                  <div
-                    className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full ${stat.bgColor} flex items-center justify-center`}
-                  >
-                    <stat.icon
-                      className={`h-5 w-5 sm:h-6 sm:w-6 ${stat.color}`}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+              {isInsightsExpanded ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </button>
+          </div>
 
-          <Card className="monthly stats bg-card border-border hover:shadow-lg transition-all duration-300">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    This Month
+          {isInsightsExpanded && (
+            <div className="grid grid-cols-1 gap-2 text-xs text-zinc-300 mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center gap-2 bg-zinc-950/30 p-2 rounded-xl border border-zinc-900/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
+                <span className="truncate">
+                  {PointsData?.pntsData?.isIncrease
+                    ? `Points increased by ${stats.find((s) => s.title === "Total Points")?.change} this past 3 months`
+                    : stats.find((s) => s.title === "Total Points")?.change ===
+                        0
+                      ? "You haven't gotten any points for the past 3months, let's start now"
+                      : `Points decreased by ${stats.find((s) => s.title === "Total Points")?.change || "12%"} this past 3 months`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 bg-zinc-950/30 p-2 rounded-xl border border-zinc-900/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                <span className="truncate">
+                  {inflowData?.isIncrease
+                    ? `Inflow increased by +${inflowData?.percentageChange || "18"}% this past 3 months`
+                    : inflowData?.percentageChange === 0
+                      ? "You haven't had any inflow for the past 3 months"
+                      : `Inflow decreased by -${inflowData?.percentageChange}% this past 3 months`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 bg-zinc-950/30 p-2 rounded-xl border border-zinc-900/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
+                <span className="truncate">
+                  {refData?.isIncrease
+                    ? `Referrals increased by +${stats.find((s) => s.title === "Referrals")?.change} this past 3 months`
+                    : stats.find((s) => s.title === "Referrals")?.change === 0
+                      ? "You haven't referred for the past 3 months, it,s never to late to earn"
+                      : `You are down by -${stats.find((s) => s.title === "Referrals")?.change} compared to the past 3 months`}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Stats Grid — desktop / layout view */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Points */}
+          <Card className="hover:shadow-xl hover:shadow-yellow-500/5 hover:border-yellow-500/20 transition-all duration-300">
+            <CardContent className="p-3.5 sm:p-5">
+              <div className="flex items-start justify-between gap-1.5 sm:gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs font-semibold text-zinc-500 truncate">
+                    Total Points
                   </p>
-                  <p className="text-xl sm:text-2xl font-bold text-foreground w-24 truncate">
-                    <Tooltip
-                      content={`₦${inflowData?.currentAmount} received this month`}
-                    >
-                      ₦{inflowData?.currentAmount}
-                    </Tooltip>
+                  <p className="text-base sm:text-xl font-bold text-foreground mt-0.5 sm:mt-1 truncate">
+                    {stats.find((s) => s.title === "Total Points")?.value ??
+                      "—"}{" "}
+                    pts
                   </p>
                   <Tooltip
                     content={
-                      inflowData?.isIncrease
-                        ? "Inflow Increased This Past 3months"
-                        : "Inflow Decreased  This Past 3months"
+                      PointsData?.pntsData?.isIncrease
+                        ? `Points increased by ${stats.find((s) => s.title === "Total Points")?.change} this past 3 months`
+                        : `Points decreased by ${stats.find((s) => s.title === "Total Points")?.change} this past 3 months`
                     }
                   >
                     <p
-                      className={`text-xs ${inflowData?.isIncrease ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"} flex items-center mt-1`}
+                      className={`text-[9px] sm:text-[10px] flex items-center gap-0.5 mt-1 truncate cursor-default
+                ${PointsData?.pntsData?.isIncrease ? "text-green-400" : "text-red-400"}`}
                     >
-                      {inflowData?.isIncrease ? (
-                        <TrendingUp className="h-3 w-3 mr-1" />
+                      {PointsData?.pntsData?.isIncrease ? (
+                        <TrendingUp className="h-3 w-3 shrink-0" />
                       ) : (
-                        <TrendingDown className="h-3 w-3 mr-1" />
+                        <TrendingDown className="h-3 w-3 shrink-0" />
                       )}
-                      {inflowData?.isIncrease
-                        ? `+${inflowData?.percentageChange}%`
-                        : `${inflowData?.percentageChange == 0 ? 0 : -inflowData?.percentageChange}%`}
+                      <span>
+                        {stats.find((s) => s.title === "Total Points")?.change}
+                      </span>
                     </p>
                   </Tooltip>
                 </div>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-yellow-500/10 border border-yellow-500/25 flex items-center justify-center shrink-0">
+                  <Star className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Wallet Balance — desktop only */}
+          <Card className="hidden lg:block hover:shadow-xl hover:shadow-green-500/5 hover:border-green-500/20 transition-all duration-300">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-zinc-500 truncate">
+                    Wallet Balance
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className={`text-xl font-black ${hide ? "blur-md" : ""} text-foreground mt-1 truncate`}>
+                      {stats.find((s) => s.title === "Wallet Balance")?.value ??
+                        "—"}
+                    </p>
+                    <div>
+                      {" "}
+                      {hide ? (
+                        <EyeOff className="h-5 w-5" onClick={visibility} />
+                      ) : (
+                        <Eye
+                          className="h-5 w-5 text-green-500"
+                          onClick={visibility}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-green-400 flex items-center gap-0.5 mt-1 truncate">
+                    <TrendingUp className="h-3 w-3 shrink-0" />
+                    <span>Instant withdrawals active</span>
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-green-500/10 border border-green-500/25 flex items-center justify-center shrink-0">
+                  <Wallet className="h-5 w-5 text-green-400" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Monthly Inflow */}
+          <Card className="hover:shadow-xl hover:shadow-blue-500/5 hover:border-blue-500/20 transition-all duration-300">
+            <CardContent className="p-3.5 sm:p-5">
+              <div className="flex items-start justify-between gap-1.5 sm:gap-3">
+                <div className="min-w-0 flex flex-col">
+                  <p className="text-[10px] sm:text-xs font-semibold text-zinc-500 truncate">
+                    Monthly Inflow
+                  </p>
+
+                  <Tooltip
+                    content={`₦${inflowData?.currentAmount} received this month`}
+                  >
+                    <p className={`text-base sm:text-xl font-bold text-foreground ${hide ? "blur-md" : ""} mt-0.5 sm:mt-1 truncate cursor-default w-fit`}>
+                      ₦{inflowData?.currentAmount ?? "—"}
+                    </p>
+                  </Tooltip>
+
+                  <Tooltip
+                    content={
+                      inflowData?.isIncrease
+                        ? "Inflow increased this past 3 months"
+                        : "Inflow decreased this past 3 months"
+                    }
+                  >
+                    <p
+                      className={`text-[9px] sm:text-[10px] flex items-center gap-0.5 mt-1 w-fit cursor-default
+              ${inflowData?.isIncrease ? "text-green-400" : "text-red-400"}`}
+                    >
+                      {inflowData?.isIncrease ? (
+                        <TrendingUp className="h-3 w-3 shrink-0" />
+                      ) : (
+                        <TrendingDown className="h-3 w-3 shrink-0" />
+                      )}
+                      <span>
+                        {inflowData?.isIncrease
+                          ? `+${inflowData?.percentageChange}%`
+                          : `${inflowData?.percentageChange === 0 ? 0 : -inflowData?.percentageChange}%`}
+                      </span>
+                    </p>
+                  </Tooltip>
+                </div>
+
                 <div
-                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full ${inflowData?.isIncrease ? "bg-blue-100 dark:bg-blue-900" : "bg-rose-100 dark:bg-rose-900"} flex items-center justify-center`}
+                  className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl border flex items-center justify-center shrink-0
+          ${
+            inflowData?.isIncrease
+              ? "bg-blue-500/10 border-blue-500/25"
+              : "bg-rose-500/10 border-rose-500/25"
+          }`}
                 >
                   {inflowData?.isIncrease ? (
-                    <TrendingUp
-                      className={`h-5 w-5 sm:h-6 sm:w-6 text-blue-600 dark:text-blue-400`}
-                    />
+                    <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-blue-400" />
                   ) : (
-                    <TrendingDown
-                      className={`h-5 w-5 sm:h-6 sm:w-6 text-red-600 dark:text-red-400`}
-                    />
+                    <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-rose-400" />
                   )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Referrals */}
+          <Card className="hover:shadow-xl hover:shadow-purple-500/5 hover:border-purple-500/20 transition-all duration-300">
+            <CardContent className="p-3.5 sm:p-5">
+              <div className="flex items-start justify-between gap-1.5 sm:gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] sm:text-xs font-semibold text-zinc-500 truncate">
+                    Total Referrals
+                  </p>
+                  <p className="text-base sm:text-xl font-bold text-foreground mt-0.5 sm:mt-1 truncate">
+                    {refData?.currentAmount ?? "—"} members
+                  </p>
+                  <Tooltip
+                    content={
+                      refData?.isIncrease
+                        ? `Referrals increased this past 3 months`
+                        : `You are down compared to the past 3 months`
+                    }
+                  >
+                    <p
+                      className={`text-[9px] sm:text-[10px] flex items-center gap-0.5 mt-1 truncate cursor-default
+                ${refData?.isIncrease ? "text-purple-400" : "text-red-400"}`}
+                    >
+                      {refData?.isIncrease ? (
+                        <TrendingUp className="h-3 w-3 shrink-0" />
+                      ) : (
+                        <TrendingDown className="h-3 w-3 shrink-0" />
+                      )}
+                      <span>
+                        +{stats.find((s) => s.title === "Referrals")?.change}{" "}
+                        this month
+                      </span>
+                    </p>
+                  </Tooltip>
+                </div>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-purple-500/10 border border-purple-500/25 flex items-center justify-center shrink-0">
+                  <Users className="h-4 w-4 sm:h-5 sm:w-5 text-purple-400" />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Chart.js Transaction data */}
-        <Card className="bg-card border-border overflow-hidden">
-          <CardContent className="p-0">
-            <div className="h-72 sm:h-80 relative">
-              <TransactionChart />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Top Earners Carousel */}
-
-        {/*    <TopEarnersCarousel /> */}
-
-        {/* Quick Actions */}
+        {/* Quick Actions Panel — Displayed and highly responsive */}
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-4 sm:mb-6">
-            Quick Actions
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="flex items-center justify-between mb-3.5">
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+              Quick Actions
+            </h2>
+            <span className="text-xs text-zinc-500 font-medium">
+              Tap to launch service
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:grid-cols-4 sm:gap-4">
             {quickActions.map((action, index) => (
               <Link key={index} to={action.href}>
-                <Card className="bg-card border-border hover:shadow-lg transition-all duration-300 group cursor-pointer">
-                  <CardContent className="p-4 sm:p-6">
-                    <div className="flex items-center gap-4">
+                <Card className="bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden">
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex items-center gap-2.5 sm:gap-3">
                       <div
-                        className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg ${action.color} flex items-center justify-center group-hover:scale-110 transition-transform`}
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl ${action.color} flex items-center justify-center text-white shrink-0 shadow-lg`}
                       >
-                        <action.icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+                        <action.icon className="h-4 w-4 sm:h-5 sm:w-5 group-hover:scale-110 transition-transform duration-300" />
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-foreground text-sm sm:text-base">
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-white text-[11px] sm:text-sm truncate leading-snug">
                           {action.title}
                         </h3>
-                        <p className="text-xs sm:text-xs text-muted-foreground">
+                        <p className="text-[9px] sm:text-[10px] text-zinc-400 truncate mt-0.5">
                           {action.description}
                         </p>
                       </div>
@@ -519,37 +724,100 @@ const DashboardPage = React.memo(() => {
           </div>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Recent Transactions */}
-          <Card className="lg:col-span-2 bg-card border-border">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-foreground">
-                  Recent Transactions
-                </CardTitle>
-                <Link to="/Transactions">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground text-yellow-400 hover:text-foreground"
-                  >
-                    View All
-                    <ArrowUpRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </Link>
+        {/* Dynamic Charts and Action Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 bg-amber gap-6">
+          {/* Flow metric Chart Card */}
+          {/* <Card className="bg-card border-border overflow-hidden">
+                    <CardContent className="p-0">
+                      <div className="h-72 sm:h-80 relative">
+                        <TransactionChart />
+                      </div>
+                    </CardContent>
+                  </Card> */}
+          {/* end */}
+          <Card className="lg:col-span-2 bg-zinc-950/45 border-zinc-900 shadow-xl overflow-hidden">
+            <CardContent className="p-0 h-full">
+              <div className="h-full">
+                <TransactionChart />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Achievements Checklist widget */}
+          <Card className="bg-zinc-950/45 border-zinc-900 shadow-xl">
+            <CardHeader className="p-5 pb-3">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Award className="h-4.5 w-4.5 text-yellow-500" />
+                <span>Achievements Progress</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-zinc-500">
+                Track and unlock cash points
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-5 pt-1 space-y-3.5">
+              {achievements.map((achievement, index) => (
+                <div
+                  key={index}
+                  className="space-y-1.5 p-2 rounded-xl hover:bg-zinc-900/20 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-base shrink-0">
+                        {achievement.icon}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-bold text-white text-xs truncate">
+                          {achievement.title}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate">
+                          {achievement.description}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-zinc-400">
+                      {achievement.progress}%
+                    </span>
+                  </div>
+                  <Progress value={achievement.progress} className="h-1.5" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Transactions list */}
+        {/* Recent Transactions */}
+        <Card
+          className={`lg:col-span-3 bg-card border-border  ${trxn?.length !== 0 ? "max-h-96 max-[900px]:max-h-80" : "max-h-36"}`}
+        >
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-foreground">
+                Recent Transactions
+              </CardTitle>
+              <Link to="/Transactions">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={loadMore}
+                  className="text-muted-foreground text-yellow-400 hover:text-foreground"
                 >
-                  More
+                  View All
+                  <ArrowUpRight className="h-4 w-4 ml-1" />
                 </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {/* <div className="space-y-4">
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+                onClick={loadMore}
+                disabled={trxn?.length == 0}
+              >
+                More
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-y-auto h-[30vh]">
+            {/* <div className="space-y-4">
                 {recentTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
@@ -601,154 +869,129 @@ const DashboardPage = React.memo(() => {
                 ))}
               </div> */}
 
-              <div className="space-y-4 h-[60vh] overflow-y-auto">
-                {trxn &&
-                  trxn.map((transaction, index) => (
-                    <div
-                      key={transaction.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
-                            transaction.narration === "credit"
-                              ? "bg-green-100 dark:bg-green-900"
-                              : "bg-red-100 dark:bg-red-900"
-                          }`}
-                        >
-                          {transaction.narration === "credit" ? (
-                            <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 dark:text-green-400" />
-                          ) : (
-                            <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-medium text-foreground text-sm sm:text-base">
-                            {transaction.narration}
-                          </p>
-                          <p className="text-xs sm:text-sm text-muted-foreground">
-                            {new Date(
-                              transaction?.createdAt?.toDate(),
-                            ).toLocaleString("en-NG", {
-                              dateStyle: "medium", // "Sep 3, 2025"
-                              timeStyle: "short", // "1:47 PM"
-                            })}
-                          </p>
-                        </div>
+            <div className="space-y-4 overflow-y-auto">
+              {trxn &&
+                trxn.map((transaction, index) => (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
+                          transaction.narration === "credit"
+                            ? "bg-green-100 dark:bg-green-900"
+                            : "bg-red-100 dark:bg-red-900"
+                        }`}
+                      >
+                        {transaction.narration === "credit" ? (
+                          <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 dark:text-green-400" />
+                        ) : (
+                          <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
+                        )}
                       </div>
-                      <div className="text-right">
-                        <p
-                          className={`font-semibold text-sm sm:text-base ${
-                            transaction.narration === "credit"
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-red-600 dark:text-red-400"
-                          }`}
-                        >
-                          {transaction.narration === "credit" ? "+" : "-"}₦
-                          {transaction.amount?.toLocaleString()}
+                      <div>
+                        <p className="font-medium text-foreground text-sm sm:text-base">
+                          {transaction.narration}
                         </p>
-                        <Badge
-                          variant="secondary"
-                          className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
-                        >
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Done
-                        </Badge>
+                        <p className="text-xs sm:text-sm text-muted-foreground">
+                          {new Date(
+                            transaction?.createdAt?.toDate(),
+                          ).toLocaleString("en-NG", {
+                            dateStyle: "medium", // "Sep 3, 2025"
+                            timeStyle: "short", // "1:47 PM"
+                          })}
+                        </p>
                       </div>
                     </div>
-                  ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Achievements */}
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="text-foreground">Achievements</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                Your progress and milestones
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {achievements.map((achievement, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{achievement.icon}</span>
-                        <div>
-                          <p className="font-medium text-foreground text-sm">
-                            {achievement.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {achievement.description}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {achievement.progress}%
-                      </span>
+                    <div className="text-right">
+                      <p
+                        className={`font-semibold text-sm sm:text-base ${
+                          transaction.narration === "credit"
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-red-600 dark:text-red-400"
+                        }`}
+                      >
+                        {transaction.narration === "credit" ? "+" : "-"}₦
+                        {transaction.amount?.toLocaleString()}
+                      </p>
+                      <Badge
+                        variant="secondary"
+                        className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
+                      >
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Done
+                      </Badge>
                     </div>
-                    <Progress value={achievement.progress} className="h-2" />
                   </div>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Today's Tasks */}
-        <Card className="bg-card border-border">
-          <CardHeader>
+        {/* Today's Tasks & Reward Opportunities */}
+        <Card className="bg-zinc-950/45 border-zinc-900 shadow-xl">
+          <CardHeader className="p-5 pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-foreground">Today's Tasks</CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Complete these to earn more points
+                <CardTitle className="text-sm font-bold">
+                  Active Reward Tasks
+                </CardTitle>
+                <CardDescription className="text-xs text-zinc-500">
+                  Participate to scale up points
                 </CardDescription>
               </div>
-              <Badge className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                <Calendar className="h-3 w-3 mr-1" />
-                {
-                  actions.filter((items) => items.state !== "coming soon")
-                    .length
-                }{" "}
-                available
+              <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 py-1 px-2.5 text-[10px]">
+                <Calendar className="h-3.5 w-3.5 mr-1" />
+                <span>
+                  {
+                    actions.filter((item) => item.state !== "coming soon")
+                      .length
+                  }{" "}
+                  Available
+                </span>
               </Badge>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <CardContent className="p-5 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {actions.map((action) => {
                 const Icon = action.icon;
+                const isComingSoon = action.state === "coming soon";
                 return (
                   <div
                     key={action.id}
-                    className="p-4 rounded-lg border border-border bg-muted/50 relative hover:scale-90 transition-transform duration-700 ease-in-out cursor-default"
+                    className="p-4 rounded-2xl border border-zinc-900 bg-zinc-900/10 relative overflow-hidden flex flex-col justify-between h-36"
                   >
-                    <div
-                      className={`absolute bg-black/60 backdrop-blur-lg rounded-lg  m-auto inset-0 w-full font-medium text-foreground text-sm flex justify-center items-center text-${action.iconColor} ${action.state !== "coming soon" ? "hidden" : ""}`}
-                    >
-                      {action.title} Tasks is Coming Soon
-                    </div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div
-                        className={`w-8 h-8 ${action.bgColor} rounded-full flex items-center justify-center`}
-                      >
-                        <Icon className={`h-4 w-4 ${action.iconColor}`} />
+                    {isComingSoon && (
+                      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col justify-center items-center text-center p-3 z-10">
+                        <span className="text-xs font-bold text-zinc-300">
+                          {action.title}
+                        </span>
+                        <span className="text-[9px] font-semibold text-zinc-500 mt-1">
+                          Coming Soon
+                        </span>
                       </div>
-                      <div>
-                        <h4 className="font-medium text-foreground text-sm">
+                    )}
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`w-8.5 h-8.5 rounded-xl ${action.bgColor} flex items-center justify-center shrink-0`}
+                      >
+                        <Icon className={`h-4.5 w-4.5 ${action.iconColor}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-white text-xs truncate">
                           {action.title}
                         </h4>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[10px] text-zinc-400 mt-0.5">
                           {action.subtitle}
                         </p>
                       </div>
                     </div>
                     <Button
+                      onClick={() => !isComingSoon && navigate(action.href)}
                       size="sm"
-                      className={`w-full ${action.buttonColor} text-white`}
+                      className={`w-full text-xs font-bold py-1.5 h-9 rounded-xl ${action.buttonColor}`}
                     >
                       {action.buttonText}
                     </Button>
@@ -758,11 +1001,23 @@ const DashboardPage = React.memo(() => {
             </div>
           </CardContent>
         </Card>
-        <QuickEarnModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-        />
       </div>
+
+      {/* Main Quick Earn Modals */}
+      <QuickEarnModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
+
+      {/* Direct Dashboard Deposit Modal */}
+      {accountPopup && (
+        <AccountDetailsCard
+          accountNumber={account || "0000000000"}
+          bankName={bankName || "Your Bank"}
+          open={accountPopup}
+          isClose={() => setAccountPopup(false)}
+        />
+      )}
     </DashboardLayout>
   );
 });

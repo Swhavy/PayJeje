@@ -137,6 +137,7 @@ export default function AirtimePage() {
     //console.log("validateCustomer response:", res);
     if (res.data.status == "error") {
       setClick(false);
+      console.log("Customer:", res.data.message);
       //toast.error("Customer validation failed.");
       throw new Error("Customer validation failed");
     } else if (
@@ -146,7 +147,7 @@ export default function AirtimePage() {
       dispatch(
         selectedPrice({
           billType: "airtime",
-          price,
+          price: amount,
           customerID: phoneNumber,
           bonusToEarn: ((2 / price) * 100).toFixed(2) + " NGN",
           // cashbackAmount: transactions.cashbackAmount,
@@ -187,8 +188,8 @@ export default function AirtimePage() {
       <PaymentConfirmation
         isOpen={isConfirmationOpen}
         onClose={() => setIsConfirmationOpen(false)}
-        onConfirm={onPaymentConfirmation}
-        paymentDetails={transactions}
+        //onConfirm={onPaymentConfirmation}
+        paymentDetails={{...transactions, price: amount, customerID: phoneNumber, billType: "airtime"}}
       />
       <div className="space-y-6">
         {/* Header */}

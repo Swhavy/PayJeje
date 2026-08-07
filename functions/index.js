@@ -8,21 +8,25 @@
  */
 
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import EnvVar from "./var.js";
 import { beforeUserSignedIn } from "firebase-functions/v2/identity";
 import { Resend } from "resend";
 //import { doc, updateDoc, increment } from "firebase/firestore";
 import {
   onDocumentCreated,
   onDocumentUpdated,
+  onDocumentWritten,
 } from "firebase-functions/v2/firestore";
 //import logger from "firebase-functions/logger";
 import * as logger from "firebase-functions/logger";
-//import dotenv from "dotenv";
+import dotenv from "dotenv";
 import { defineSecret } from "firebase-functions/params";
 import admin from "firebase-admin";
+import { getMessaging } from "firebase-admin/messaging";
 //import chromium from "chrome-aws-lambda";
 //import puppeteer from "puppeteer-core";
 import * as functions from "firebase-functions";
+import { type } from "node:os";
 //import { user } from "firebase-functions/v1/auth";
 //import { log } from "console";
 //import CryptoJS from 'crypto-js'
@@ -44,8 +48,10 @@ const db = admin.firestore();
 
 //dotenv.config();
 
-const FLW_SECRET_KEY = defineSecret("FLW_SECRET_KEY");
-const FLW_WEBHOOK_HASH = defineSecret("FLW_WEBHOOK_HASH");
+//const FLW_SECRET_KEY = defineSecret("FLW_SECRET_KEY");
+const FLW_SECRET_KEY = new EnvVar("FLW_MSECRET_KEY");
+const FLW_WEBHOOK_HASH = new EnvVar("FLW_WEBHOOK_HASH");
+//const FLW_WEBHOOK_HASH = defineSecret("FLW_WEBHOOK_HASH");
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
 export const flutterwaveWebhook = onRequest(async (req, res) => {
@@ -148,17 +154,115 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
 
     // Withdrawal
     else if (payload.event == "transfer.completed") {
-      //idempotency
-      let q = await db
+      const txDocRef = db
         .collection("users")
         .doc(userID)
         .collection("Transactions")
-        .where("tx_ref", "==", tx_ref)
-        .limit(1)
-        .get();
+        .doc(tx_ref);
 
-      if (!q.empty) res.status(200).send("success");
+      const existingDoc = await txDocRef.get();
+      const incomingStatus = transactionData.status; // NEW | PENDING | INITIATED | SUCCESSFUL | FAILED | CANCELLED
+      const timedOutAndStillPending =
+        existingDoc.exists &&
+        existingDoc.data()?.failureReason === "Request timed out" &&
+        incomingStatus === "PENDING";
 
+      // Idempotency: skip if this exact status was already recorded
+      if (
+        (existingDoc.exists && existingDoc.data().status === incomingStatus) ||
+        timedOutAndStillPending
+      ) {
+        logger.info(
+          "Duplicate webhook ignored, status unchanged:",
+          tx_ref,
+          incomingStatus,
+        );
+        return res.status(200).send("success");
+      }
+
+      const isCredit = transactionData.debit_currency === "PSA";
+      const isTerminalSuccess = incomingStatus === "SUCCESSFUL";
+      const isTerminalFailure =
+        incomingStatus === "FAILED" || incomingStatus === "CANCELLED";
+      const wasAlreadyTerminal =
+        existingDoc.exists &&
+        ["SUCCESSFUL", "FAILED", "CANCELLED"].includes(
+          existingDoc.data().status,
+        );
+
+      try {
+        await db.runTransaction(async (t) => {
+          const userRef = db.collection("users").doc(userID);
+          const userSnap = await t.get(userRef);
+
+          if (!userSnap.exists) {
+            throw new Error(`User ${userID} not found`);
+          }
+
+          // Guard: never touch balance if this tx already reached a terminal state before
+          if (!wasAlreadyTerminal) {
+            if (isTerminalSuccess) {
+              // Withdrawal succeeded — balance was already deducted at queue time, nothing to do here
+              // (Only credit flows would increment here)
+              if (isCredit) {
+                t.set(
+                  userRef,
+                  {
+                    walletBalance: admin.firestore.FieldValue.increment(
+                      transactionData.amount,
+                    ),
+                  },
+                  { merge: true },
+                );
+              }
+            } else if (isTerminalFailure && !isCredit) {
+              // Withdrawal failed/cancelled — refund the amount that was deducted upfront
+              t.set(
+                userRef,
+                {
+                  walletBalance: admin.firestore.FieldValue.increment(
+                    transactionData.amount,
+                  ),
+                },
+                { merge: true },
+              );
+            }
+          }
+
+          t.set(
+            txDocRef,
+            {
+              ...transactionData,
+              type: isCredit ? "inflow" : "outflow",
+              status: incomingStatus,
+              failureReason: isTerminalFailure
+                ? (transactionData.provider_response ?? null)
+                : existingDoc.exists
+                  ? (existingDoc.data().failureReason ?? null)
+                  : null,
+              createdAt: existingDoc.exists
+                ? existingDoc.data().createdAt
+                : admin.firestore.Timestamp.fromDate(
+                    new Date(transactionData.created_at),
+                  ),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        });
+
+        logger.info(
+          `transaction ${tx_ref} updated to status ${incomingStatus}`,
+        );
+        return res.status(200).send("success");
+      } catch (err) {
+        logger.error("Failed to process transfer.completed:", err);
+        return res.status(500).send("error");
+      }
+    } // end of payments
+
+    //bills payment
+    else if (payload.event == "singlebillpayment.status") {
       await db
         .collection("users")
         .doc(userID)
@@ -166,37 +270,17 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         .doc(tx_ref)
         .set(
           {
+            narration: "bill",
             ...transactionData,
             createdAt: admin.firestore.Timestamp.fromDate(
-              new Date(transactionData.created_at),
+              new Date(transactionData.createdAt),
             ),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
-      logger.info("transaction recorded:", transactionData);
-    } // end of payments
-
-    //bills payment
-    // else if (payload.event == "singlebillpayment.status") {
-    //   await db
-    //     .collection("users")
-    //     .doc(userID)
-    //     .collection("Transactions")
-    //     .doc(tx_ref)
-    //     .set(
-    //       {
-    //         narration: "bill",
-    //         ...transactionData,
-    //         createdAt: admin.firestore.Timestamp.fromDate(
-    //           new Date(transactionData.createdAt),
-    //         ),
-    //         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    //       },
-    //       { merge: true },
-    //     );
-    //   logger.info("bills payment completed:", transactionData);
-    // } //end of bills payment
+      logger.info("bills payment completed:", transactionData);
+    } //end of bills payment
   }
 
   res.status(200).send("success");
@@ -358,8 +442,15 @@ const createWallet = async (
       // Check for HTTP errors
       if (!res.ok) {
         const errorText = await res.text();
-        const errorJson = JSON.parse(errorText);
-        console.log("hey wallet error", errorJson);
+
+        let errorJson;
+        try {
+          errorJson = JSON.parse(errorText);
+          logger.error("Flutterwave validation error:", errorJson);
+        } catch {
+          logger.error("Flutterwave returned non-JSON:", errorText);
+        }
+
         logger.warn(
           `HTTP ${res.status} error on attempt ${attempt + 1}: ` + errorText,
         );
@@ -446,7 +537,7 @@ const createWallet = async (
       }
     } catch (error) {
       clearTimeout(timeout);
-      if (error?.message === "Email already exists") {
+      if (error?.message === "Email already exists" && attempt < MAX_RETRIES) {
         logger.info(
           "Email already exists, fetching existing wallet to store to the DB",
         );
@@ -461,7 +552,7 @@ const createWallet = async (
           });
           return {
             status: "success",
-            message: "Wallet created successfull",
+            message: "Wallet created successfully",
             accountReference: fetchWallets?.accountReference,
           };
         } else {
@@ -513,6 +604,18 @@ const createWallet = async (
 
       // Either not retryable or max retries reached
       logger.error(`Final error after ${attempt + 1} attempts:`, error);
+      await db
+        .collection("failedWallets")
+        .doc(uid)
+        .set(
+          {
+            ...payload,
+            walletStatus: "idle",
+            retryWalletCreation: true,
+            walletError: error.message,
+          },
+          { merge: true },
+        );
       throw error;
     }
   };
@@ -716,7 +819,7 @@ const createVirtualAccount = async (accountReference, uid) => {
       return {
         status: "error",
         message: "Request timed out after multiple attempts",
-        error,
+        error: error.message,
         attempts: MAX_RETRIES + 1,
       };
     }
@@ -724,12 +827,136 @@ const createVirtualAccount = async (accountReference, uid) => {
     return {
       status: "error",
       message: "Failed to create wallet after multiple attempts ",
-      error,
       error: error.message,
       attempts: MAX_RETRIES + 1,
     };
   }
 };
+
+//Cloudfunction to retry wallet creation failures
+export const onUserWalletRetryTrigger = onDocumentWritten(
+  {
+    document: "failedWallets/{userId}",
+    timeoutSeconds: 300, // Generous timeout for multiple Flutterwave API roundtrips
+    memory: "512MiB",
+  },
+  async (event) => {
+    const change = event.data;
+    if (!change) {
+      logger.warn("No data associated with the event");
+      return null;
+    }
+
+    // 🛡️ Guard against deletion events:
+    // If the document was deleted, change.after won't exist. Abort gracefully.
+    if (!change.after.exists) {
+      logger.info(`Cleanup: failedWallets document deleted for user.`);
+      return null;
+    }
+
+    const beforeData = change.before.data() || {};
+    const afterData = change.after.data() || {};
+    const uid = event.params.userId;
+
+    // 🛡️ CRITICAL LOOP SAFETY GUARD:
+    // Only trigger if 'retryWalletCreation' changes from not-true (or undefined) to true.
+    // This guarantees we don't cause an infinite trigger storm when we update the document.
+    const isRetryRequested = afterData?.retryWalletCreation === true;
+    const wasAlreadyRequested = beforeData?.retryWalletCreation === true;
+
+    if (!isRetryRequested || wasAlreadyRequested) {
+      // State has not transitioned; abort execution gracefully
+      return null;
+    }
+
+    // 🛡️ NO WALLET CHECK: Verify they don't already have an active configured wallet reference
+    // if (afterData.accountReference && afterData.accountNumber) {
+    //   logger.info(
+    //     `[Trigger] User ${uid} already has a fully complete wallet. Resetting trigger flag.`,
+    //   );
+    //   await db
+    //     .collection("users")
+    //     .doc(uid)
+    //     .update({ retryWalletCreation: false });
+    //   return null;
+    // }
+
+    logger.info(`⚡ Wallet retry database event triggered for user ${uid}`);
+
+    try {
+      // 1. Mark status as processing in database to block concurrent attempts
+      await db.collection("failedWallets").doc(uid).update({
+        walletStatus: "processing",
+        walletError: null,
+      });
+
+      // 2. Extract registration params
+      const email = afterData.email || afterData.email;
+      const phonenumber = afterData.mobilenumber || afterData.phonenumber;
+      const firstName = afterData.account_name.split(" ")[0];
+      const lastName = afterData.account_name.split(" ")[1];
+      const country = afterData.country;
+
+      if (!email || !phonenumber || !firstName || !lastName) {
+        throw new Error(
+          "Missing required registration parameters on user document.",
+        );
+      }
+
+      // 3. Create Flutterwave Subaccount
+      const walletResult = await createWallet(
+        email,
+        phonenumber,
+        firstName,
+        lastName,
+        country,
+        uid,
+      );
+
+      if (walletResult && walletResult.status === "success") {
+        logger.info(
+          `[Trigger] Payout subaccount successfully created/synced for ${uid}`,
+        );
+
+        // 4. Create Static Virtual Account for local transfers (using the subaccount reference)
+        const virtualResult = await createVirtualAccount(
+          walletResult.accountReference,
+          uid,
+        );
+
+        if (virtualResult && virtualResult.status === "success") {
+          logger.info(
+            `🎉 [Trigger] Subaccount and static virtual account fully configured for ${uid}`,
+          );
+          //delete that particular doc from failedWallets
+          await db.collection("failedWallets").doc(uid).delete();
+        } else {
+          throw new Error(
+            `Virtual static account setup failed: ${virtualResult.message}`,
+          );
+        }
+      } else {
+        throw new Error(
+          `Subaccount wallet registration failed: ${walletResult?.message || "Unknown error"}`,
+        );
+      }
+    } catch (error) {
+      logger.error(
+        `❌ [Trigger] Retry failed for user ${uid}: ${error.message}`,
+      );
+
+      // 6. Record failure to DB but clear trigger flag so we can trigger again in the future
+      await db.collection("failedWallets").doc(uid).update({
+        walletStatus: "failed",
+        walletError: error.message,
+        retryWalletCreation: false,
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return null;
+  },
+);
 
 //Fetch PSA(Wallets)
 export const getWallets = async (email) => {
@@ -848,38 +1075,186 @@ export const fetchBalance = onCall(async (req, context) => {
 });
 
 //Withdrawal
+// export const withdraw = onCall(async (req, context) => {
+//   const uid = req.auth.uid;
+//   const payload = req.data;
+//   if (!uid || !payload)
+//     return { status: "error", message: "Unauthorized request" };
+//   const { account_bank, account_number, amount, debit_subaccount } = payload;
+//   if (!account_bank || !account_number || !amount || !debit_subaccount)
+//     return { status: "error", message: "Missing some payloads" };
+//   logger.info(`withdrawing to user's account ${account_number}`);
+//   const url = `https://api.flutterwave.com/v3/transfers`;
+//   //API timeout Controller
+//   const controller = new AbortController();
+//   const timeout = setTimeout(() => {
+//     controller.abort();
+//   }, 5000); // 5 seconds timeout
+//   try {
+//     const walletRef = db.collection("users").doc(uid);
+//     await db.runTransaction(async (transaction) => {
+//       const walletDoc = await transaction.get(walletRef);
+//       if (!walletDoc.exists)
+//         return { status: "error", message: "Can't identify user in the DB" };
+
+//       const currentBalance = walletDoc.data().walletBalance;
+//       console.log(walletDoc.data());
+//       if (currentBalance < amount){
+//          throw new Error("Insufficient wallet balance for withdrawal");
+//       }
+//     });
+//     const res = await fetch(url, {
+//       method: "POST",
+//       headers: {
+//         accept: "application/json",
+//         Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         ...payload,
+//         currency: "NGN",
+//         debit_currency: "NGN",
+//         reference: `PayWaka-${uid}-${Date.now()}`,
+//       }),
+//       signal: controller.signal, // Attached the abort signal
+//     });
+//     clearTimeout(timeout); // Clear the timeout if the request completes in time
+//     const response = await res.json();
+//     console.log("withdrawal Data: ", response);
+//     if (
+//       response?.status == "success" &&
+//       response?.message == "Transfer Queued Successfully"
+//     ) {
+//       logger.info("withdrawal pending", response);
+//       //insert to DB"
+//       await db
+//         .collection("users")
+//         .doc(uid)
+//         .update({
+//           walletBalance: admin.firestore.FieldValue.increment(-amount),
+//         });
+//       await db
+//         .collection("users")
+//         .doc(uid)
+//         .collection("Transactions")
+//         .doc(response?.data?.reference)
+//         .set({
+//           ...response.data,
+//           status: "pending", // Mark as pending until confirmed by webhook
+//           tx_ref: response.data.reference,
+//           transactionType: "withdrawal",
+//         });
+//       // return info to the clientside
+//       return {
+//         status: "success",
+//         message: "Transfer Pending",
+//       };
+//     } else {
+//       await db
+//         .collection("users")
+//         .doc(uid)
+//         .collection("Transactions")
+//         .doc(response?.data?.reference)
+//         .set({
+//           ...response.data,
+//           tx_ref: response.data.reference, //To make implementation uniform especially for webHook Idempotency check
+//           transactionType: "withdrawal",
+//         });
+//       console.log("unsuccessful wallet withdrawal", response);
+//       return { status: "error", message: response.message, response };
+//     }
+//   } catch (error) {
+//     if(error.message === "Insufficient wallet balance for withdrawal") {
+//       logger.error("Error withdrawing from wallet balance:", error);
+//       return { status: "error", message: error.message };
+//     }
+//     else if (error.name === "AbortError") {
+//       logger.error(
+//         "🔥 Timeout: Flutterwave Wallet withdrawal API took too long to respond: ",
+//         error,
+//       );
+//       return { status: "error", message: "Request timed out" };
+//     }
+//     logger.error("Error withdrawing from wallet balance:", error);
+//     return { status: "error", message: "Sorry an error occured" };
+//   }
+// });
+
+//new
 export const withdraw = onCall(async (req, context) => {
-  const uid = req.auth.uid;
+  const uid = req.auth?.uid;
   const payload = req.data;
   if (!uid || !payload)
     return { status: "error", message: "Unauthorized request" };
+
   const { account_bank, account_number, amount, debit_subaccount } = payload;
   if (!account_bank || !account_number || !amount || !debit_subaccount)
     return { status: "error", message: "Missing some payloads" };
-  logger.info(`withdrawing to user's account ${debit_subaccount}`);
-  const url = `https://api.flutterwave.com/v3/transfers`;
-  //API timeout Controller
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 5000); // 5 seconds timeout
+
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0)
+    return { status: "error", message: "Invalid withdrawal amount" };
+
+  logger.info(`withdrawing to user's account ${account_number}`);
+
+  const reference = `PayWaka-${uid}-${Date.now()}`;
+  const walletRef = db.collection("users").doc(uid);
+
+  // Atomically check balance AND debit in one transaction
   try {
-    const walletRef = db.collection("users").doc(uid);
     await db.runTransaction(async (transaction) => {
       const walletDoc = await transaction.get(walletRef);
-      if (!walletDoc.exists)
-        return { status: "error", message: "Can't identify user in the DB" };
+      if (!walletDoc.exists) {
+        throw new Error("USER_NOT_FOUND");
+      }
 
-      const currentBalance = walletDoc.data().walletBalance;
-      console.log(walletDoc.data());
-      if (currentBalance < amount)
-        //check this logic out
-        return {
-          status: "error",
-          message: "Insufficient Funds in your wallet",
-        };
+      const currentBalance = walletDoc.data().walletBalance ?? 0;
+      if (currentBalance < numericAmount) {
+        throw new Error("INSUFFICIENT_BALANCE");
+      }
+
+      transaction.update(walletRef, {
+        walletBalance: admin.firestore.FieldValue.increment(-numericAmount),
+      });
     });
-    const res = await fetch(url, {
+  } catch (error) {
+    if (error.message === "INSUFFICIENT_BALANCE") {
+      return {
+        status: "error",
+        message: "Insufficient wallet balance for withdrawal",
+      };
+    }
+    if (error.message === "USER_NOT_FOUND") {
+      logger.error("Withdrawal attempted for unknown user:", uid);
+      return { status: "error", message: "Can't identify user in the DB" };
+    }
+    logger.error("Error debiting wallet:", error);
+    return { status: "error", message: "Sorry, an error occurred" };
+  }
+
+  // Balance is now debited. Record a pending transaction BEFORE calling Flutterwave,
+  // so there's a record even if the fetch never completes.
+  await db
+    .collection("users")
+    .doc(uid)
+    .collection("Transactions")
+    .doc(reference)
+    .set({
+      tx_ref: reference,
+      amount: numericAmount,
+      account_bank,
+      account_number,
+      status: "pending",
+      transactionType: "withdrawal",
+      type: "outflow",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); //15secs Timeout;
+
+  try {
+    const res = await fetch("https://api.flutterwave.com/v3/transfers", {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -887,69 +1262,96 @@ export const withdraw = onCall(async (req, context) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        ...payload,
+        account_bank,
+        account_number,
+        amount: numericAmount,
+        debit_subaccount,
+        narration: payload.narration,
         currency: "NGN",
         debit_currency: "NGN",
-        reference: `PayWaka-${uid}-${Date.now()}`,
+        reference,
       }),
-      signal: controller.signal, // Attached the abort signal
+      signal: controller.signal,
     });
-    clearTimeout(timeout); // Clear the timeout if the request completes in time
+    clearTimeout(timeout);
+
     const response = await res.json();
+    console.log("withdrawal Data:", response);
+
     if (
-      response?.status == "success" &&
-      response?.message == "Transfer Queued Successfully"
+      response?.status === "success" &&
+      response?.message === "Transfer Queued Successfully"
     ) {
-      logger.info("withdrawal successful", response);
-      //insert to DB"
-      await db
-        .collection("users")
-        .doc(uid)
-        .update({
-          walletBalance: admin.firestore.FieldValue.increment(-amount),
-        });
+      logger.info("withdrawal pending", response);
       await db
         .collection("users")
         .doc(uid)
         .collection("Transactions")
-        .doc(response?.data?.reference)
-        .update({
-          ...response.data,
-          tx_ref: response.data.reference,
-          transactionType: "withdrawal",
-        });
-      // return info to the clientside
+        .doc(reference)
+        .set({ ...response.data, status: "pending" }, { merge: true });
+
       return {
         status: "success",
-        message: "withdrawal successful",
+        message: "Transfer Pending",
+        reference: reference,
       };
-    } else {
+    }
+
+    // Flutterwave rejected the request outright — refund immediately, no need to wait for a webhook
+    await walletRef.update({
+      walletBalance: admin.firestore.FieldValue.increment(numericAmount),
+    });
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("Transactions")
+      .doc(reference)
+      .set({ ...(response?.data ?? {}), status: "FAILED" }, { merge: true });
+
+    console.log("unsuccessful wallet withdrawal", response);
+    return {
+      status: "error",
+      message:
+        response?.message ?? "The withdrawal failed, but you've been refunded",
+    };
+  } catch (error) {
+    clearTimeout(timeout);
+
+    if (error.name === "AbortError") {
       await db
         .collection("users")
         .doc(uid)
         .collection("Transactions")
-        .doc(response?.data?.reference)
-        .set({
-          ...response.data,
-          tx_ref: response.data.reference, //To make implementation uniform especially for webHook Idempotency check
-          transactionType: "withdrawal",
-        });
-      console.log("unsuccessful wallet withdrawal", response);
-      return { status: "error", message: response.message, response };
-    }
-  } catch (error) {
-    if (error.name === "AbortError") {
+        .doc(reference)
+        .set(
+          {
+            status: "PENDING",
+            failureReason: "Request timed out, awaiting webhook confirmation",
+          },
+          { merge: true },
+        );
       logger.error(
-        "🔥 Timeout: Flutterwave Wallet withdrawal API took too long to respond: ",
+        "🔥 Timeout: Flutterwave withdrawal API took too long:",
         error,
       );
       return { status: "error", message: "Request timed out" };
     }
+
+    // Refund since we debited upfront but the request to Flutterwave never confirmed
+    await walletRef.update({
+      walletBalance: admin.firestore.FieldValue.increment(numericAmount),
+    });
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("Transactions")
+      .doc(reference)
+      .set({ status: "FAILED", errorReason: error.message }, { merge: true });
     logger.error("Error withdrawing from wallet balance:", error);
-    return { status: "error", message: "Sorry an error occured" };
+    return { status: "error", message: "Sorry, an error occurred" };
   }
 });
-
+//end
 //fetch Banks details(bank codes, Bank names available for withdrawals)
 export const fetchBanks = onCall(async (req, context) => {
   const uid = req.auth.uid;
@@ -961,7 +1363,7 @@ export const fetchBanks = onCall(async (req, context) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => {
     controller.abort();
-  }, 5000); // 5 seconds timeout
+  }, 15000); // 15 seconds timeout
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -999,6 +1401,45 @@ export const fetchBanks = onCall(async (req, context) => {
     }
     logger.error("Error fetching Banks Info:", error);
     return { status: "error", message: error.message };
+  }
+});
+
+//confirm Account details before user make a transfer/withdrawal
+export const confirmAccountDetails = onCall(async (req, context) => {
+  const uid = req.auth.uid;
+  const payload = req.data;
+  if (!uid || !payload)
+    return { status: "error", message: "Unauthorized request" };
+  const { account_bank, account_number } = payload;
+  if (!account_bank || !account_number)
+    return { status: "error", message: "Missing some payloads" };
+  logger.info(`confirming account details for user ${uid}`);
+  try {
+    const response = await fetch(
+      "https://api.flutterwave.com/v3/accounts/resolve",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          account_number,
+          account_bank,
+        }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (data.status !== "success") {
+      throw new Error(data.message || "Account resolution failed");
+    }
+
+    return data.data; // { account_number, account_name }
+  } catch (err) {
+    console.error("Account resolve error:", err);
+    throw err;
   }
 });
 
@@ -1064,7 +1505,7 @@ export const paymentRedirect = onCall(async (req, context) => {
 //Verification of payment status before value is given to a user
 export const verifyTransactionStatus = onCall(async (req, context) => {
   const payload = req.data;
-  const expectedAmount = payload.amount;
+  const expectedAmount = 50; //payload.amount;
   const tx_id = payload.tx_id;
   const url = `https://api.flutterwave.com/v3/transactions/${tx_id}/verify`;
   //API timeout Controller
@@ -1084,8 +1525,9 @@ export const verifyTransactionStatus = onCall(async (req, context) => {
     });
     clearTimeout(timeout); // Clear the timeout if the request completes in time
     const data = await res.json();
+    console.log("Transaction verification response:", data);
     if (
-      data.data.status == "successful" &&
+      data.status == "success" &&
       data.data.amount == expectedAmount &&
       data.data.currency == "NGN"
     ) {
@@ -1096,6 +1538,7 @@ export const verifyTransactionStatus = onCall(async (req, context) => {
         message: "Transaction verified successfully",
       };
     }
+    console.log("verify", data.status, data.data.amount, data.data.currency);
     return logger.info(
       "Transaction verification unsuccessful as data mismatch:",
       data,
@@ -1358,6 +1801,7 @@ export const validateCustomer = onCall(async (req, context) => {
     logger.info("Validating customer with itemCode:", itemCode, customerID);
     const res = await validateCustomerCore(itemCode, customerID);
     logger.info("Customer validation result:", res);
+    console.log("Console Customer validation result:", res);
     if (res.status === "success") {
       return {
         status: "success",
@@ -1368,7 +1812,7 @@ export const validateCustomer = onCall(async (req, context) => {
       return { status: "error", message: "Customer validation failed" };
     }
   } catch (error) {
-    logger.error("Error validating customer:", error);
+    logger.error("Error validating customer:", error.message);
     return { status: "error", message: "Failed to validate customer" };
   }
 });
@@ -2248,26 +2692,6 @@ export const getServerTime = onCall(async (data) => {
   return { status: "success", serverDate: dateId };
 });
 
-export const onUserLogin = onDocumentUpdated(
-  "users/{uid}/lastLogin/details01",
-  async (event) => {
-    logger.info("see login det: ", event.data.after);
-    const uid = event.params.uid;
-    const data = event.data.after.data();
-    const referrerId = data?.refferredBy;
-    if (!referrerId) {
-      //logger.info("event: ", event.data)
-      logger.warn(`No referrerID found for uid ${uid}`);
-    }
-    const referrerRef = db
-      .collection("users")
-      .doc(referrerId)
-      .collection("referrals")
-      .doc(uid);
-    await referrerRef.set({ lastLogin: data?.lastLogin }, { merge: true });
-  },
-);
-
 export const userDPUpdate = onCall(async (req) => {
   const { uid, DP } = req.data;
   console.log(`DP param ${uid}-${DP}`);
@@ -2459,57 +2883,98 @@ const getLoginEmailHtml = ({ displayName, email, loginTime, signInMethod }) => `
 `;
 
 ///add your resend api key to firestore
-export const loginNotification = beforeUserSignedIn(
-  { secrets: [RESEND_API_KEY] },
+export const loginNotification = beforeUserSignedIn(async (event) => {
+  const user = event.data;
+
+  if (!user.email) return;
+
+  // check if user opted in for login alerts
+  const prefSnap = await db
+    .collection("users")
+    .doc(user.uid)
+    .collection("preferences")
+    .doc(user.uid)
+    .get();
+
+  // grab all tokens for this user
+  const tokensSnap = await db
+    .collection("users")
+    .doc(user.uid)
+    .collection("fcmTokens")
+    .get();
+
+  if (!prefSnap.exists) {
+    console.log(`No preferences doc found for ${user.uid}, skipping.`);
+    return;
+  }
+
+  const { loginAlerts } = prefSnap.data();
+
+  if (!loginAlerts) {
+    console.log(`Login alerts disabled for ${user.uid}, skipping.`);
+    return;
+  }
+
+  // send push notification to all tokens
+  if (tokensSnap.exists && tokensSnap.size > 0) {
+    const tokens = tokensSnap.docs.map((d) => d.data().token);
+    if (!tokens.length) return;
+
+    await getMessaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: "New login detected",
+        body: "A new sign-in was recorded on your PayWaka account.",
+      },
+    });
+  }
+
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+  const resend = new Resend(RESEND_API_KEY);
+
+  const loginTime = new Date().toLocaleString("en-GB", {
+    timeZone: "Africa/Lagos",
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+
+  const signInMethod = event.credential?.signInMethod ?? "Email & Password";
+
+  const { error } = await resend.emails.send({
+    //from: "PayWaka <noreply@paywaka.com>",
+    from: "onboarding@resend.dev",
+    to: user.email,
+    subject: "New login to your PayWaka account",
+    html: getLoginEmailHtml({
+      displayName: user.displayName,
+      email: user.email,
+      loginTime,
+      signInMethod,
+    }),
+  });
+
+  if (error) {
+    console.error("Resend failed to send login notification:", error);
+  }
+});
+
+export const onUserLogin = onDocumentUpdated(
+  "users/{uid}/lastLogin/details01",
   async (event) => {
-    const user = event.data;
-
-    if (!user.email) return;
-
-    // check if user opted in for login alerts
-    const prefSnap = await db
+    logger.info("see login det: ", event.data.after);
+    const uid = event.params.uid;
+    const data = event.data.after.data();
+    const referrerId = data?.refferredBy;
+    if (!referrerId) {
+      //logger.info("event: ", event.data)
+      return logger.warn(`No referrerID found for uid ${uid}`);
+    }
+    const referrerRef = db
       .collection("users")
-      .doc(user.uid)
-      .collection("preferences")
-      .doc(user.uid)
-      .get();
-
-    if (!prefSnap.exists) {
-      console.log(`No preferences doc found for ${user.uid}, skipping.`);
-      return;
-    }
-
-    const { LoginAlerts } = prefSnap.data();
-
-    if (!LoginAlerts) {
-      console.log(`Login alerts disabled for ${user.uid}, skipping.`);
-      return;
-    }
-
-    const resend = new Resend(RESEND_API_KEY.value());
-
-    const loginTime = new Date().toLocaleString("en-GB", {
-      timeZone: "Africa/Lagos",
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-
-    const signInMethod = event.credential?.signInMethod ?? "Email & Password";
-
-    const { error } = await resend.emails.send({
-      from: "PayWaka <noreply@paywaka.com>",
-      to: user.email,
-      subject: "New login to your PayWaka account",
-      html: getLoginEmailHtml({
-        displayName: user.displayName,
-        email: user.email,
-        loginTime,
-        signInMethod,
-      }),
-    });
-
-    if (error) {
-      console.error("Resend failed to send login notification:", error);
-    }
+      .doc(referrerId)
+      .collection("referrals")
+      .doc(uid);
+    await referrerRef.set({ lastLogin: data?.lastLogin }, { merge: true });
   },
 );

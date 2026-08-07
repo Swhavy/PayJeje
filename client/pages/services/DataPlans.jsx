@@ -14,6 +14,17 @@ import PaymentConfirmation from "../PaymentConfirmation";
 import { connectFunctionsEmulator, httpsCallable } from "firebase/functions";
 import { functions } from "@/firebaseConfig";
 
+const deduplicateData = (bills) => {
+  const seen = new Map();
+  if(!bills) return null
+  return bills?.filter((item) => {
+    const key = `${item.amount}-${item.biller_name}-${item.validity_period}`;
+    if (seen.has(key)) return false;
+    seen.set(key, true);
+    return true;
+  });
+};
+
 const networks = [
   { id: "MTN", name: "MTN", logo: "🟡", discount: "2%" },
   { id: "GLO", name: "GLO", logo: "🟢", discount: "3%" },
@@ -103,18 +114,7 @@ export default function DataPlans() {
   //   navigate(`/services/data-plans/payment?${queryParams}`);
   // };
 
-
   //DEDUP
-  const deduplicateData = (data) => {
-    const seen = new Map();
-
-    return data.filter((item) => {
-      const key = `${item.amount}-${item.biller_name}-${item.validity_period}`;
-      if (seen.has(key)) return false;
-      seen.set(key, true);
-      return true;
-    });
-  };
   const Bills = useMemo(
     () => deduplicateData(transactions.billsInfo),
     [transactions.billsInfo],

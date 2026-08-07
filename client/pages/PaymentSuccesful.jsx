@@ -22,8 +22,15 @@ import { toast } from "sonner";
 import { useSpinner } from "@/components/SpinnerProvider";
 import ErrorFeedback from "@/components/Alert";
 
+
 export default function PaymentSuccesful({ onClose }) {
-  const paymentInfo = useSelector((state) => state.user.transactions);
+  const payInfo = useSelector((state) => state.user.transactions);
+  const paymentInfo = {
+    price: 50,
+    customerID: Number("08136259221"),
+    billType: "Data",
+    ...payInfo,
+  };
   const uid = useSelector((state) => state.user.user.uid);
   const [mount, setMount] = useState(false);
 
@@ -66,10 +73,10 @@ export default function PaymentSuccesful({ onClose }) {
     const tx_id = searchParam.get("transaction_id") || null;
     try {
       const res = await verifyTransactionStatus({
-        amount: paymentInfo.price || 2000, //priceNum,
+        amount: paymentInfo.price, //priceNum,
         tx_id,
       });
-
+console.log("verify: ", res)
       if (
         res.data?.status === "success" &&
         res.data?.message === "Transaction verified successfully"
@@ -105,7 +112,7 @@ export default function PaymentSuccesful({ onClose }) {
         userID,
         billerCode: paymentInfo?.billerCode || null,
         itemCode: paymentInfo?.itemCode || null,
-        reference: rawTx_Ref,
+        reference: `${rawTx_Ref}`,
       });
       if (res.data.status === "abortError") {
         setError(res.data?.message);
@@ -149,8 +156,9 @@ export default function PaymentSuccesful({ onClose }) {
 
   useEffect(() => {
     setAppContext({ spinner: true });
-    console.log("status:", status);
-    if (status && status !== "No such document!") {
+    const status = true
+     console.log("status:", status);
+    if (status) {
       verifyPay();
     } else if (status === "No such document!") {
       toast.error(

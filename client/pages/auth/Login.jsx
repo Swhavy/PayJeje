@@ -45,6 +45,7 @@ import {
 import { auth } from "@/firebaseConfig";
 import { toast } from "sonner";
 import useCloudfunc from "@/components/useCloudfunc";
+import Navbar from "../../components/Navbar";
 
 const GoogleIcon = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -106,11 +107,14 @@ export default function LoginPage() {
     const uid = user.uid;
     //fetch user data from firestore
     const userRef = doc(db, "users", uid);
+    const prefRef = doc(db, "users", uid,"preferences", uid);
     const achievements = doc(db, "users", uid, "achievements", "stats");
     const userAchievements = await getDoc(achievements);
 
     const userData = await getDoc(userRef);
+    const prefData = await getDoc(prefRef);
     const docRef = userData.data();
+    const prefDocRef = prefData.data();
     //fetch wallet balance
     const wallet = await getWalletBalance(docRef.accountReference);
     if (wallet.status === "success") {
@@ -139,7 +143,7 @@ export default function LoginPage() {
       streak: docRef?.streak,
       points: 0,
     };
-    dispatch(addUserCred({ ...payload, uid }));
+    dispatch(addUserCred({ ...payload, ...prefDocRef, uid }));
     dispatch(updateAchievement(userAchievements.data()));
     return { uid, userRef, docRef };
   };
@@ -355,8 +359,11 @@ export default function LoginPage() {
       }
       //if the user exists in the database login the user
       else {
+        const prefRef = doc(db, "users", uid, "preferences", uid);
         const userAchievements = await getDoc(achievements);
+        const prefDoc = await getDoc(prefRef);
         const userData = docSnap.data();
+        const prefData = prefDoc.data();
         const payload = {
           firstName: userData?.firstName,
           lastName: userData?.lastName,
@@ -376,7 +383,7 @@ export default function LoginPage() {
           streak: userData?.streak,
           points: 0,
         };
-        dispatch(addUserCred({ ...payload, uid }));
+        dispatch(addUserCred({ ...payload, ...prefData, uid }));
         dispatch(updateAchievement(userAchievements.data()));
         console.log("pinpoint", userData);
         setOauthLoading(null);
@@ -402,12 +409,12 @@ export default function LoginPage() {
       );
       if (error.code === "auth/network-request-failed") {
         return toast.error("Seem's you might be having a network issue");
-      } 
-       if (error.code === "auth/multi-factor-auth-required") {
-         // Store resolver in state — show OTP input to user
-         return setMfaResolver(getMultiFactorResolver(auth, error));
-       }
-       toast.error(`An error occurred while logging in with ${providerName}`);
+      }
+      if (error.code === "auth/multi-factor-auth-required") {
+        // Store resolver in state — show OTP input to user
+        return setMfaResolver(getMultiFactorResolver(auth, error));
+      }
+      toast.error(`An error occurred while logging in with ${providerName}`);
     }
   };
 
@@ -482,10 +489,11 @@ export default function LoginPage() {
       className={`min-h-screen bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] flex items-center justify-center p-4 overflow-hidden ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
     >
       <div className="w-full max-w-md overflow-hidden">
-        <div className="text-center mb-8">
+        <Navbar />
+        {/*  <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-3 mb-6">
             <img
-              src="/logo.svg"
+              src="/logo.png"
               alt="Paywaka Logo"
               width={120}
               height={120}
@@ -496,7 +504,7 @@ export default function LoginPage() {
               <span className="text-green-600 dark:text-green-400">waka</span>
             </span>
           </Link>
-        </div>
+        </div> */}
 
         <Card className="bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] border-border shadow-xl">
           <CardHeader className="text-center">
