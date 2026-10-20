@@ -207,7 +207,7 @@ export default function BillHistory() {
 
   const getStatusColor = (status) => {
      return status === "successful"
-       ? "text-green-400"
+       ? "text-primary dark:text-green-400"
        : status === "pending"
          ? "text-yellow-400"
          : "text-red-400";
@@ -265,7 +265,7 @@ export default function BillHistory() {
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-6 md:mb-8">
-            <h1 className="text-2xl md:text-4xl font-bold text-white mb-1 md:mb-2">
+            <h1 className="text-2xl md:text-4xl font-bold text-foreground mb-1 md:mb-2">
               Transactions
             </h1>
             <p className="text-sm md:text-base text-slate-400">
@@ -277,7 +277,7 @@ export default function BillHistory() {
           <div className="mb-6 md:mb-8">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors mb-4 text-sm md:text-base"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-foreground rounded-lg transition-colors mb-4 text-sm md:text-base"
             >
               <Filter size={18} />
               {showFilters ? "Hide Filters" : "Show Filters"}
@@ -306,7 +306,7 @@ export default function BillHistory() {
 
                         handleFilterChange("dateFrom", formatted);
                       }}
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
                     />
                   </div>
 
@@ -331,7 +331,7 @@ export default function BillHistory() {
 
                         handleFilterChange("dateTo", formatted);
                       }}
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                     />
                     {/* <input
                     type="date"
@@ -346,7 +346,7 @@ export default function BillHistory() {
                         
                       handleFilterChange("dateTo", formatted);
                     }}
-                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
                   /> */}
 
                     {/*  <input
@@ -355,7 +355,7 @@ export default function BillHistory() {
                     onChange={(e) =>
                       handleFilterChange("dateTo", e.target.value)
                     }
-                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
                   /> */}
                   </div>
 
@@ -369,7 +369,7 @@ export default function BillHistory() {
                       onChange={(e) =>
                         handleFilterChange("status", e.target.value)
                       }
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
                     >
                       <option value="all">All Status</option>
                       <option value="completed">Completed</option>
@@ -389,7 +389,7 @@ export default function BillHistory() {
                       onChange={(e) =>
                         handleFilterChange("category", e.target.value)
                       }
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
                     >
                       <option value="all">All Categories</option>
                       <option value="CARD">Card Transactions</option>
@@ -412,7 +412,7 @@ export default function BillHistory() {
                       onChange={(e) =>
                         handleFilterChange("reference", e.target.value)
                       }
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-foreground placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
                     />
                   </div>
                 </div>
@@ -483,7 +483,7 @@ export default function BillHistory() {
                         onClick={() => receipts(txn.tx_ref)}
                         className="border-b border-slate-700 hover:bg-slate-700/30 transition-colors"
                       >
-                        <td className="px-2 py-4 text-sm font-medium text-white cursor-pointer">
+                        <td className="px-2 py-4 text-sm font-medium text-foreground cursor-pointer">
                           {txn.tx_ref}
                         </td>
                         <td className="text-xs">
@@ -496,7 +496,7 @@ export default function BillHistory() {
                         {/*  <td className="px-6 py-4 text-sm text-slate-300">
                         {txn.description}
                       </td> */}
-                        <td className="px-6 py-4 text-sm font-semibold text-white">
+                        <td className="px-6 py-4 text-sm font-semibold text-foreground">
                           ₦{txn.amount.toLocaleString()}
                         </td>
                         <td className="px-6 py-4 text-sm">
@@ -564,7 +564,7 @@ export default function BillHistory() {
                         timeStyle: "short",
                       })}
                     </div>
-                    <div className="text-lg font-semibold text-white">
+                    <div className="text-lg font-semibold text-foreground">
                       ₦{txn.amount.toLocaleString()}
                     </div>
                   </div>
@@ -584,7 +584,7 @@ export default function BillHistory() {
               <button
                 onClick={async () => await getHistory(null, "prev")}
                 disabled={pages.currentPage === 1}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-foreground rounded-lg transition-colors text-sm"
               >
                 <ChevronLeft size={18} />
                 Previous
@@ -592,11 +592,11 @@ export default function BillHistory() {
 
               <div className="text-sm text-slate-300">
                 Page{" "}
-                <span className="font-semibold text-white">
+                <span className="font-semibold text-foreground">
                   {pages.currentPage}
                 </span>{" "}
                 of{" "}
-                <span className="font-semibold text-white">
+                <span className="font-semibold text-foreground">
                   {pages.totalPages}
                 </span>
               </div>
@@ -604,7 +604,7 @@ export default function BillHistory() {
               <button
                 onClick={async () => await getHistory("next", null)}
                 disabled={pages.currentPage === pages.totalPages}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-foreground rounded-lg transition-colors text-sm"
               >
                 Next
                 <ChevronRight size={18} />

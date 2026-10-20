@@ -336,7 +336,7 @@ export default function ReferralsPage() {
                     />
                     <Button
                       onClick={copyReferralLink}
-                      className="bg-green-600 hover:bg-green-700 text-white"
+                      className="bg-green-600 hover:bg-green-700 text-foreground"
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -390,7 +390,7 @@ export default function ReferralsPage() {
                   </div>
                   <Button
                     onClick={sendEmailInvite}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    className="w-full bg-green-600 hover:bg-green-700 text-foreground"
                   >
                     <Mail className="h-4 w-4 mr-2" />
                     Send Invitation
@@ -473,7 +473,7 @@ export default function ReferralsPage() {
                           <div
                             className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2 ${
                               tier.current
-                                ? "bg-green-600 text-white"
+                                ? "bg-green-600 text-foreground"
                                 : "bg-muted text-muted-foreground"
                             }`}
                           >
@@ -512,7 +512,7 @@ export default function ReferralsPage() {
                           </div>
 
                           {tier.current && (
-                            <Badge className="w-full justify-center bg-green-600 text-white">
+                            <Badge className="w-full justify-center bg-green-600 text-foreground">
                               Current Tier
                             </Badge>
                           )}

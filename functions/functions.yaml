@@ -1,0 +1,838 @@
+{
+  "endpoints": {
+    "adminGetPricingConfig": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminGetPricingConfig"
+    },
+    "adminSeedPricingFromExcel": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminSeedPricingFromExcel"
+    },
+    "adminSyncClubKonnect": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminSyncClubKonnect"
+    },
+    "adminTriggerDailySettlement": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminTriggerDailySettlement"
+    },
+    "adminUpdatePlanPrice": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminUpdatePlanPrice"
+    },
+    "adminUpdatePricingConfig": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminUpdatePricingConfig"
+    },
+    "billHistory": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "billHistory"
+    },
+    "billsFetch": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "billsFetch"
+    },
+    "buyAirtime": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "buyAirtime"
+    },
+    "buyData": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "buyData"
+    },
+    "changeTransactionPin": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "changeTransactionPin"
+    },
+    "checkin": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "checkin"
+    },
+    "clubkonnectBuyAirtime": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "clubkonnectBuyAirtime"
+    },
+    "clubkonnectBuyData": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "clubkonnectBuyData"
+    },
+    "clubkonnectFetchCablePackages": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "clubkonnectFetchCablePackages"
+    },
+    "clubkonnectFetchDataPlans": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "clubkonnectFetchDataPlans"
+    },
+    "clubkonnectPayCable": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "clubkonnectPayCable"
+    },
+    "clubkonnectPayElectricity": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "clubkonnectPayElectricity"
+    },
+    "confirmAccountDetails": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "confirmAccountDetails"
+    },
+    "createTransactionPin": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "createTransactionPin"
+    },
+    "fetchBalance": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "fetchBalance"
+    },
+    "fetchBanks": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "fetchBanks"
+    },
+    "fetchCablePackages": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "fetchCablePackages"
+    },
+    "fetchDataPlans": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "fetchDataPlans"
+    },
+    "flutterwaveWebhook": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "httpsTrigger": {},
+      "entryPoint": "flutterwaveWebhook"
+    },
+    "getServerTime": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "getServerTime"
+    },
+    "handleNewRefferal": {
+      "availableMemoryMb": 512,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "eventTrigger": {
+        "eventType": "google.cloud.firestore.document.v1.created",
+        "eventFilters": {
+          "database": "(default)",
+          "namespace": "(default)"
+        },
+        "eventFilterPathPatterns": {
+          "document": "users/{userId}"
+        },
+        "retry": true
+      },
+      "entryPoint": "handleNewRefferal"
+    },
+    "initiateBVNConsent": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "initiateBVNConsent"
+    },
+    "loginNotification": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "blockingTrigger": {
+        "eventType": "providers/cloud.auth/eventTypes/user.beforeSignIn",
+        "options": {
+          "accessToken": false,
+          "idToken": false,
+          "refreshToken": false
+        }
+      },
+      "entryPoint": "loginNotification"
+    },
+    "nightlyConsolidatedSubaccountSweep": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "scheduleTrigger": {
+        "schedule": "59 23 * * *",
+        "retryConfig": {},
+        "timeZone": "Africa/Lagos"
+      },
+      "entryPoint": "nightlyConsolidatedSubaccountSweep"
+    },
+    "onUserLogin": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "eventTrigger": {
+        "eventType": "google.cloud.firestore.document.v1.updated",
+        "eventFilters": {
+          "database": "(default)",
+          "namespace": "(default)"
+        },
+        "eventFilterPathPatterns": {
+          "document": "users/{uid}/lastLogin/details01"
+        },
+        "retry": false
+      },
+      "entryPoint": "onUserLogin"
+    },
+    "onUserWalletRetryTrigger": {
+      "availableMemoryMb": 512,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "eventTrigger": {
+        "eventType": "google.cloud.firestore.document.v1.written",
+        "eventFilters": {
+          "database": "(default)",
+          "namespace": "(default)"
+        },
+        "eventFilterPathPatterns": {
+          "document": "failedWallets/{userId}"
+        },
+        "retry": false
+      },
+      "entryPoint": "onUserWalletRetryTrigger"
+    },
+    "payCable": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "payCable"
+    },
+    "payElectricity": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "payElectricity"
+    },
+    "paymentRedirect": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "paymentRedirect"
+    },
+    "payoutBill": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "payoutBill"
+    },
+    "processAirtimeTopupRequest": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "eventTrigger": {
+        "eventType": "google.cloud.firestore.document.v1.created",
+        "eventFilters": {
+          "database": "(default)",
+          "namespace": "(default)"
+        },
+        "eventFilterPathPatterns": {
+          "document": "airtimeTopupRequests/{reqId}"
+        },
+        "retry": false
+      },
+      "entryPoint": "processAirtimeTopupRequest"
+    },
+    "redeemMealCoupon": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "redeemMealCoupon"
+    },
+    "redeemMealVoucherMerchant": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "redeemMealVoucherMerchant"
+    },
+    "resetTransactionPin": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "resetTransactionPin"
+    },
+    "scheduledClubKonnectSync": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "scheduleTrigger": {
+        "schedule": "every 6 hours",
+        "retryConfig": {
+          "retryCount": null,
+          "maxDoublings": null,
+          "maxRetrySeconds": null,
+          "minBackoffSeconds": null,
+          "maxBackoffSeconds": null
+        },
+        "timeZone": null
+      },
+      "entryPoint": "scheduledClubKonnectSync"
+    },
+    "setDemoCashierRole": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "setDemoCashierRole"
+    },
+    "userDPUpdate": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "userDPUpdate"
+    },
+    "validateCustomer": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "validateCustomer"
+    },
+    "validateMealVoucherForMerchant": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "validateMealVoucherForMerchant"
+    },
+    "verifyBillPaymentStatus": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "verifyBillPaymentStatus"
+    },
+    "verifyTransactionPin": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "secretEnvironmentVariables": [
+        {
+          "key": "PIN_PEPPER_SECRET_V1"
+        }
+      ],
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "verifyTransactionPin"
+    },
+    "verifyTransactionStatus": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "verifyTransactionStatus"
+    },
+    "withdraw": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": null,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "withdraw"
+    }
+  },
+  "specVersion": "v1alpha1",
+  "requiredAPIs": [
+    {
+      "api": "identitytoolkit.googleapis.com",
+      "reason": "Needed for auth blocking functions"
+    },
+    {
+      "api": "cloudscheduler.googleapis.com",
+      "reason": "Needed for scheduled functions."
+    }
+  ],
+  "extensions": {},
+  "params": [
+    {
+      "type": "secret",
+      "name": "RESEND_API_KEY"
+    },
+    {
+      "type": "secret",
+      "name": "PIN_PEPPER_SECRET_V1"
+    }
+  ]
+}

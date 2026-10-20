@@ -60,7 +60,7 @@ export default function PasswordResetModal({
           <button
             onClick={handleConfirm}
             disabled={isLoading}
-            className="flex-1 px-4 py-3 bg-red-600 rounded-lg text-white font-medium hover:bg-[#FF5252] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="flex-1 px-4 py-3 bg-red-600 rounded-lg text-foreground font-medium hover:bg-[#FF5252] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>

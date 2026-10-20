@@ -97,7 +97,7 @@ export default function TwoFactorSetupModal({
 
           <button
             onClick={handleUnenroll}
-            className="w-full px-4 py-3 bg-[#FF6B6B] text-white rounded-lg font-medium hover:bg-[#FF5252] transition-all"
+            className="w-full px-4 py-3 bg-[#FF6B6B] text-foreground rounded-lg font-medium hover:bg-[#FF5252] transition-all"
           >
             Disable 2FA
           </button>
@@ -289,10 +289,10 @@ export default function TwoFactorSetupModal({
   if (phase === "error") {
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="relative bg-[#0a1628] border border-red-500/20 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
+        <div className="relative bg-card border border-red-500/20 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 text-[#8aa6b8] hover:text-white transition-colors"
+            className="absolute top-4 right-4 text-[#8aa6b8] hover:text-foreground transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -303,7 +303,7 @@ export default function TwoFactorSetupModal({
             </div>
           </div>
 
-          <h3 className="text-white text-xl font-bold mb-2">Setup Failed</h3>
+          <h3 className="text-foreground text-xl font-bold mb-2">Setup Failed</h3>
           <p className="text-[#8aa6b8] text-sm mb-6">{error}</p>
 
           <div className="flex gap-3">

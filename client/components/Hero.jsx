@@ -145,7 +145,7 @@ export default function Hero() {
         <div className="lg:col-span-5 relative w-full h-[350px] sm:h-[450px] lg:h-[550px] flex items-center justify-center">
           {/* Subtle Backing Pulse Ring to prevent blank space if spline is loading */}
           <div className="absolute w-[240px] h-[240px] sm:w-[320px] sm:h-[320px] rounded-full bg-gradient-to-tr from-[#00c96e]/10 to-[#00a8ff]/5 border border-[#00c96e]/20 blur-sm pointer-events-none flex items-center justify-center">
-            <div className="w-[180px] h-[180px] sm:w-[240px] sm:h-[240px] rounded-full bg-[#060d1a]/80 border border-[#00a8ff]/10 flex items-center justify-center">
+            <div className="w-[180px] h-[180px] sm:w-[240px] sm:h-[240px] rounded-full bg-background/80 border border-[#00a8ff]/10 flex items-center justify-center">
               <div className="w-[120px] h-[120px] rounded-full bg-[#00c96e]/5 blur-md animate-pulse-ring" />
             </div>
           </div>

@@ -69,7 +69,7 @@ export default function Stats() {
   return (
     <section
       ref={containerRef}
-      className="relative bg-[#0a1628] border-b border-[#1d3a6a]/30 py-20 overflow-hidden"
+      className="relative bg-card border-b border-[#1d3a6a]/30 py-20 overflow-hidden"
     >
       {/* Centered Ambient Green Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-[#00c96e]/5 blur-[100px] pointer-events-none" />

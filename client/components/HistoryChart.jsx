@@ -12,7 +12,6 @@ import {
 import { Line } from "react-chartjs-2";
 import useGetMonthlyTrx from "./useGetMonthlyTrx";
 import { useEffect, useState } from "react";
-import { use } from "react";
 
 
 // Register ChartJS components
@@ -30,13 +29,18 @@ ChartJS.register(
 const TransactionChart = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [max, setMax] = useState(null)
-  const {inflow, expenses, dateLabel} = useGetMonthlyTrx()
+  const { inflow, expenses, dateLabel } = useGetMonthlyTrx()
 
-useEffect(() => {
-  const calc = Math.max(...inflow, ...expenses)
-  const maxVal = Math.ceil(calc * 1.5)
-  setMax(maxVal)
-}, [inflow, expenses, dateLabel])
+  useEffect(() => {
+    if ((!inflow || inflow.length === 0) && (!expenses || expenses.length === 0)) {
+      setMax(100);
+      return;
+    }
+    const allValues = [...(inflow || []), ...(expenses || [])];
+    const calc = allValues.length > 0 ? Math.max(...allValues, 0) : 0;
+    const maxVal = Math.ceil(calc * 1.5);
+    setMax(maxVal > 0 ? maxVal : 100);
+  }, [inflow, expenses, dateLabel]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);

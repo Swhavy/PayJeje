@@ -14,7 +14,7 @@ import "../index.css";
 
 export default function HomePage() {
   return (
-    <div className="bg-[#060d1a] min-h-screen text-[#e8f0ff] selection:bg-[#00c96e] selection:text-[#060d1a]">
+    <div className="dark bg-background min-h-screen text-foreground selection:bg-[#00c96e] selection:text-[#060d1a]">
       {/* 1. Navigation */}
       <Navbar />
 

@@ -150,7 +150,7 @@ export default function EarnPage() {
           </div>
 
           {/* Current Points */}
-          <Card className="bg-gradient-to-r from-green-600 to-emerald-600 text-white border-0">
+          <Card className="bg-gradient-to-r from-green-600 to-emerald-600 text-foreground border-0">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -170,7 +170,7 @@ export default function EarnPage() {
                   <Badge
                     className={
                       pointsData.amount >= 50
-                        ? "bg-white/20 text-white border-white/30 mt-2"
+                        ? "bg-white/20 text-foreground border-white/30 mt-2"
                         : "bg-red-300/20 text-red-700 border-red-700/30 mt-2"
                     }
                   >
@@ -204,7 +204,7 @@ export default function EarnPage() {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className={`p-2 rounded-lg ${source.color}`}>
-                        <source.icon className="h-5 w-5 text-white" />
+                        <source.icon className="h-5 w-5 text-foreground" />
                       </div>
                       <Badge
                         variant="secondary"
@@ -235,7 +235,7 @@ export default function EarnPage() {
                         <span className="text-foreground">{source.time}</span>
                       </div>
                       <Button
-                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        className="w-full bg-green-600 hover:bg-green-700 text-foreground"
                         onClick={() => {
                           if (source.title === "Refer Friends") {
                             navigate("/referrals");

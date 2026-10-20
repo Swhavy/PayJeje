@@ -17,7 +17,7 @@ export default function Pricing() {
   };
 
   return (
-    <section id="pricing" className="py-24 bg-[#060d1a] border-b border-[#1d3a6a]/30 relative overflow-hidden">
+    <section id="pricing" className="py-24 bg-background border-b border-[#1d3a6a]/30 relative overflow-hidden">
       {/* Background decorations */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] rounded-full bg-[#00c96e]/2 blur-[140px] pointer-events-none" />
 
@@ -58,7 +58,7 @@ export default function Pricing() {
             >
               Billed Annually
               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black tracking-wide ${
-                isAnnual ? "bg-[#060d1a] text-[#00c96e]" : "bg-[#00c96e]/10 text-[#00c96e]"
+                isAnnual ? "bg-background text-[#00c96e]" : "bg-[#00c96e]/10 text-[#00c96e]"
               }`}>
                 SAVE 20%
               </span>

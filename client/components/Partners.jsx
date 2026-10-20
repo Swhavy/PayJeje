@@ -86,7 +86,7 @@ export default function Partners() {
   return (
     <section
       id="partners"
-      className="bg-[#0a1628] border-y border-[#1d3a6a]/30 py-8 relative overflow-hidden"
+      className="bg-card border-y border-[#1d3a6a]/30 py-8 relative overflow-hidden"
     >
       <div className="max-w-7xl mx-auto px-6 mb-4">
         <h3 className="text-center text-xs font-bold tracking-widest text-[#3d5a80]/80 uppercase">

@@ -44,6 +44,8 @@ export default function CheckInCalendar({ isOpen = true, onClose }) {
   }, []);
 
   useEffect(() => {
+    if (!UID || !UID?.uid) return;
+
     const checkinRef = collection(db, "users", UID.uid, "points");
     const userDoc = doc(db, "users", UID.uid);
     const now = new Date();
@@ -56,13 +58,15 @@ export default function CheckInCalendar({ isOpen = true, onClose }) {
     );
     //function to collect the checkinn data in the initial login
     const updateStreak = async () => {
-      const userstreak = await getDoc(userDoc);
-      const userData = userstreak.data();
-      setStreakCount(userData.streak || 0);
-      // const querySnapshot = await getDocs(q);
-      // const userCheckIns = querySnapshot.docs.map((doc) => doc.data().day);
-      // setCheckedInDates(new Set(userCheckIns));
-      // console.log("userCheckIns: ", userCheckIns);
+      try {
+        const userstreak = await getDoc(userDoc);
+        if (userstreak.exists()) {
+          const userData = userstreak.data();
+          setStreakCount(userData?.streak || 0);
+        }
+      } catch (e) {
+        console.error("Error updating streak:", e);
+      }
     };
     updateStreak();
 
@@ -81,7 +85,7 @@ export default function CheckInCalendar({ isOpen = true, onClose }) {
     return () => {
       subscribe();
     };
-  }, [UID.uid]);
+  }, [UID?.uid]);
   const checkin = httpsCallable(functions, "checkin");
 
   // const today = new Date();

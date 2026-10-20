@@ -39,6 +39,7 @@ import WithdrawalStatePage from "./pages/WithdrawalStatePage";
 import Earn from "./pages/Earn";
 import Referrals from "./pages/Referrals";
 import Settings from "./pages/Settings";
+import DevCard from "./pages/DevCard";
 import DataPreference from "@/pages/DataPreference";
 import PaymentSuccesful from "@/pages/PaymentSuccesful";
 import FeedbackAlert from "@/components/Alert";
@@ -50,6 +51,13 @@ import DataPlans from "./pages/services/DataPlans";
 import GiftCards from "./pages/services/GiftCards";
 import Bills from "./pages/services/Bills";
 import Meals from "./pages/services/Meals";
+import MealCouponDetail from "./pages/services/MealCouponDetail";
+import MealVoucherTicket from "./pages/services/MealVoucherTicket";
+import MyMealVouchers from "./pages/services/MyMealVouchers";
+import MealMerchantTerminal from "./pages/services/MealMerchantTerminal";
+import MerchantRoute from "./components/MerchantRoute";
+import AdminDataPricing from "./pages/admin/AdminDataPricing";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -77,6 +85,7 @@ const App = () => (
                   <Routes>
                     {/* Public Routes */}
                     <Route path="/" element={<HomePage />} />
+                    <Route path="/devCard" element={<DevCard />} />
                     <Route path="/auth/login" element={<Login />} />
                     <Route
                       path="/auth/signUp/:referredBy?"
@@ -118,6 +127,30 @@ const App = () => (
                       element={
                         <ProtectedRoute>
                           <DataPlans />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/data-plans"
+                      element={
+                        <ProtectedRoute>
+                          <DataPlans />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin"
+                      element={
+                        <ProtectedRoute>
+                          <AdminDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/data-pricing"
+                      element={
+                        <ProtectedRoute>
+                          <AdminDataPricing />
                         </ProtectedRoute>
                       }
                     />
@@ -197,6 +230,46 @@ const App = () => (
                         <ProtectedRoute>
                           <Meals />
                         </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/meals/coupon/:couponId"
+                      element={
+                        <ProtectedRoute>
+                          <MealCouponDetail />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/meals/voucher/:voucherId"
+                      element={
+                        <ProtectedRoute>
+                          <MealVoucherTicket />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/meals/vouchers"
+                      element={
+                        <ProtectedRoute>
+                          <MyMealVouchers />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/services/meals/terminal"
+                      element={
+                        <MerchantRoute>
+                          <MealMerchantTerminal />
+                        </MerchantRoute>
+                      }
+                    />
+                    <Route
+                      path="/merchant/meals"
+                      element={
+                        <MerchantRoute>
+                          <MealMerchantTerminal />
+                        </MerchantRoute>
                       }
                     />
 

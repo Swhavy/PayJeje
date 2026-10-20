@@ -201,12 +201,9 @@ export default function SignupFlow() {
       if (field.password !== field.confirmPassword) {
         toast.error("Passwords do not match");
         setIsLoading(false);
-        throw new Error("Passwords do not match");
-      } //else if (field.gender !== "male" || field.gender !== "female") {
-      //   toast.error("Please specify your gender");
-      //   setIsLoading(false);
-      //   return;
-      // }
+        setAppContext({ ...appContext, spinner: false });
+        return;
+      }
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         field.email,

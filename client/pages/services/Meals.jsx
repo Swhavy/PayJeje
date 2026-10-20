@@ -1,541 +1,831 @@
-import { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+import {
+  ArrowLeft,
+  Ticket,
+  Sparkles,
+  Wallet,
+  TrendingUp,
+  HelpCircle,
+  CheckCircle,
+  Clock,
+  MapPin,
+  Receipt,
+  Store,
+  ChevronRight,
+  PartyPopper,
+  ArrowRight,
+  X,
+  AlertTriangle,
+  Award,
+} from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import MealFloatingNav from "@/components/meals/MealFloatingNav";
+import { db, auth, doc, onSnapshot } from "@/firebaseConfig";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Utensils, Clock, Star, Search } from "lucide-react";
+  MEAL_CATEGORIES,
+  getMealOffers,
+  getUserVouchers,
+} from "@/fixtures/mealFixtures";
+
+const HERO_PHRASES = [
+  { text: "Something Delicious", type: "ember" },
+  { text: "Fresh Artisan Pizza", type: "ember" },
+  { text: "Crispy Jollof Feasts", type: "ember" },
+  { text: "Instant Food Savings", type: "emerald" },
+  { text: "Gourmet Burgers", type: "ember" },
+];
 
 export default function MealsPage() {
-  const [selectedRestaurant, setSelectedRestaurant] = useState("");
-  const [selectedMeal, setSelectedMeal] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const user = useSelector((state) => state.user?.user);
+  const currentUid = user?.uid || auth.currentUser?.uid;
+  const [livePoints, setLivePoints] = useState(null);
+  const [pointsLoading, setPointsLoading] = useState(true);
 
-  const restaurants = [
-    {
-      id: "kfc",
-      name: "KFC",
-      logo: "🍗",
-      rating: 4.5,
-      deliveryTime: "25-35 mins",
-      category: "Fast Food",
-      popular: true,
-      meals: [
-        {
-          id: "zinger-burger",
-          name: "Zinger Burger",
-          price: 2500,
-          points: 2500,
-        },
-        {
-          id: "chicken-bucket",
-          name: "Family Bucket",
-          price: 8000,
-          points: 8000,
-        },
-        {
-          id: "hot-wings",
-          name: "Hot Wings (6pcs)",
-          price: 3500,
-          points: 3500,
-        },
-      ],
-    },
-    {
-      id: "dominos",
-      name: "Domino's Pizza",
-      logo: "🍕",
-      rating: 4.3,
-      deliveryTime: "30-40 mins",
-      category: "Pizza",
-      popular: true,
-      meals: [
-        {
-          id: "margherita",
-          name: "Margherita Pizza",
-          price: 4500,
-          points: 4500,
-        },
-        { id: "pepperoni", name: "Pepperoni Pizza", price: 5500, points: 5500 },
-        {
-          id: "chicken-supreme",
-          name: "Chicken Supreme",
-          price: 6500,
-          points: 6500,
-        },
-      ],
-    },
-    {
-      id: "chicken-republic",
-      name: "Chicken Republic",
-      logo: "🐔",
-      rating: 4.2,
-      deliveryTime: "20-30 mins",
-      category: "Fast Food",
-      popular: false,
-      meals: [
-        { id: "refuel-max", name: "Refuel Max", price: 3200, points: 3200 },
-        { id: "chicken-wrap", name: "Chicken Wrap", price: 2800, points: 2800 },
-        {
-          id: "family-feast",
-          name: "Family Feast",
-          price: 12000,
-          points: 12000,
-        },
-      ],
-    },
-    {
-      id: "coldstone",
-      name: "Cold Stone",
-      logo: "🍦",
-      rating: 4.6,
-      deliveryTime: "15-25 mins",
-      category: "Dessert",
-      popular: false,
-      meals: [
-        {
-          id: "vanilla-ice-cream",
-          name: "Vanilla Ice Cream",
-          price: 2000,
-          points: 2000,
-        },
-        {
-          id: "chocolate-cake",
-          name: "Chocolate Cake",
-          price: 3500,
-          points: 3500,
-        },
-        {
-          id: "milkshake",
-          name: "Strawberry Milkshake",
-          price: 2500,
-          points: 2500,
-        },
-      ],
-    },
-  ];
+  // Authoritative real-time points subscription matching Dashboard and MealCouponDetail
+  useEffect(() => {
+    let unsubDoc = null;
 
-  const categories = [
-    "All",
-    "Fast Food",
-    "Pizza",
-    "Dessert",
-    "Local",
-    "International",
-  ];
+    const setupListener = (uid) => {
+      if (!uid) {
+        setPointsLoading(false);
+        return;
+      }
+      unsubDoc = onSnapshot(
+        doc(db, "users", uid),
+        (snap) => {
+          setPointsLoading(false);
+          if (snap.exists()) {
+            const data = snap.data();
+            if (typeof data.points === "number") {
+              setLivePoints(data.points);
+            }
+          }
+        },
+        (err) => {
+          console.warn("Marketplace points live fetch error:", err);
+          setPointsLoading(false);
+        }
+      );
+    };
 
-  const filteredRestaurants = restaurants.filter((restaurant) => {
-    const matchesSearch = restaurant.name
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesCategory =
-      selectedCategory === "All" || restaurant.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    if (currentUid) {
+      setupListener(currentUid);
+    } else {
+      const unsubAuth = auth.onAuthStateChanged((fbUser) => {
+        if (fbUser?.uid) {
+          setupListener(fbUser.uid);
+        } else {
+          setPointsLoading(false);
+        }
+      });
+      return () => {
+        unsubAuth();
+        if (unsubDoc) unsubDoc();
+      };
+    }
+
+    return () => {
+      if (unsubDoc) unsubDoc();
+    };
+  }, [currentUid]);
+
+  // Spendable points: authoritative Firestore live snapshot first, then Redux state
+  const spendablePoints =
+    typeof livePoints === "number"
+      ? livePoints
+      : typeof user?.points === "number"
+      ? user.points
+      : null;
+
+  const pointsBalance = spendablePoints ?? 0;
+
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
+
+  // Kinetic Headline Word Swap & Ambient Effects State
+  const [activePhraseIndex, setActivePhraseIndex] = useState(0);
+  const [leavingPhraseIndex, setLeavingPhraseIndex] = useState(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const heroCanvasRef = useRef(null);
+
+  // Check prefers-reduced-motion
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mediaQuery.matches);
+    const handleChange = (e) => setPrefersReducedMotion(e.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  // Word Swap Transitions Cycle (~3.2s per phrase)
+  useEffect(() => {
+    if (prefersReducedMotion) return;
+
+    let timeoutId;
+    const intervalId = setInterval(() => {
+      setActivePhraseIndex((current) => {
+        setLeavingPhraseIndex(current);
+        timeoutId = setTimeout(() => {
+          setLeavingPhraseIndex(null);
+        }, 750);
+        return (current + 1) % HERO_PHRASES.length;
+      });
+    }, 3200);
+
+    return () => {
+      clearInterval(intervalId);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [prefersReducedMotion]);
+
+  // Ambient Procedural Canvas for Floating Ember Sparks & Emerald Light Particles
+  useEffect(() => {
+    const canvas = heroCanvasRef.current;
+    if (!canvas || prefersReducedMotion) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let animationFrameId;
+    let width = (canvas.width = canvas.parentElement?.offsetWidth || 800);
+    let height = (canvas.height = canvas.parentElement?.offsetHeight || 400);
+
+    const handleResize = () => {
+      if (!canvas.parentElement) return;
+      width = canvas.width = canvas.parentElement.offsetWidth;
+      height = canvas.height = canvas.parentElement.offsetHeight;
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    class AmbientParticle {
+      constructor() {
+        this.reset();
+      }
+      reset() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.size = Math.random() * 2 + 0.8;
+        this.speedX = (Math.random() - 0.5) * 0.35;
+        this.speedY = -Math.random() * 0.55 - 0.2; // float upwards
+        this.opacity = Math.random() * 0.5 + 0.2;
+        // 60% emerald green, 40% warm ember
+        this.color = Math.random() > 0.4 ? "rgba(0, 192, 118, " : "rgba(255, 107, 0, ";
+      }
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        if (this.y < -10 || this.x < -10 || this.x > width + 10) {
+          this.reset();
+          this.y = height + 10;
+        }
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = this.color + this.opacity + ")";
+        ctx.shadowColor = this.color.includes("192") ? "#00C076" : "#FF6B00";
+        ctx.shadowBlur = 5;
+        ctx.fill();
+      }
+    }
+
+    const particles = Array.from({ length: 32 }, () => new AmbientParticle());
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+      for (let i = 0; i < particles.length; i++) {
+        particles[i].update();
+        particles[i].draw();
+      }
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [prefersReducedMotion]);
+
+  const allOffers = getMealOffers();
+  const featuredOffer = allOffers.find((o) => o.isFeatured) || allOffers[0];
+  const regularOffers = allOffers.filter((o) => o.id !== featuredOffer?.id);
+
+  const filteredOffers = regularOffers.filter((offer) => {
+    if (selectedCategory === "all") return true;
+    if (selectedCategory === "fast-food") return offer.category === "Fast Food";
+    if (selectedCategory === "local-delicacies") return offer.category === "Local Delicacies";
+    if (selectedCategory === "pizza-pasta") return offer.category === "Pizza & Pasta";
+    if (selectedCategory === "desserts") return offer.category === "Desserts";
+    return true;
   });
 
-  const recentOrders = [
-    {
-      id: 1,
-      restaurant: "KFC",
-      meal: "Zinger Burger",
-      amount: "₦2,500",
-      status: "Delivered",
-      time: "2 hours ago",
-    },
-    {
-      id: 2,
-      restaurant: "Domino's",
-      meal: "Pepperoni Pizza",
-      amount: "₦5,500",
-      status: "Delivered",
-      time: "1 day ago",
-    },
-    {
-      id: 3,
-      restaurant: "Cold Stone",
-      meal: "Vanilla Ice Cream",
-      amount: "₦2,000",
-      status: "Cancelled",
-      time: "3 days ago",
-    },
-  ];
-
-  const handleOrder = async () => {
-    if (!selectedRestaurant || !selectedMeal) return;
-
-    setIsLoading(true);
-    // Simulate order
-    setTimeout(() => {
-      setIsLoading(false);
-      // Show success message
-    }, 2000);
-  };
-
-  const selectedRestaurantData = restaurants.find(
-    (r) => r.id === selectedRestaurant,
-  );
-  const selectedMealData = selectedRestaurantData?.meals.find(
-    (m) => m.id === selectedMeal,
-  );
+  const activeVouchers = getUserVouchers("active");
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Meal Coupons</h1>
-          <p className="text-muted-foreground">
-            Order delicious meals using your points
-          </p>
-        </div>
-
-        {/* Points Balance */}
-        <Card className="bg-gradient-to-r from-orange-600 to-red-600 text-white border-0">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold mb-2">Available Points</h2>
-                <div className="text-3xl font-bold">2,450 Points</div>
-                <p className="text-orange-100 mt-2">
-                  Order your favorite meals
-                </p>
-              </div>
-              <Utensils className="h-12 w-12 text-orange-200" />
+      <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-16 sm:pb-20 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-4 sm:p-6 lg:p-8 shadow-2xl">
+        {/* TOP STATUS BAR ROW & IN-FLOW SUB-NAVIGATION */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#282a2e]/70">
+          <div className="flex items-center gap-3">
+            <Link
+              to="/dashboard"
+              className="w-10 h-10 rounded-full bg-[#1a1c20] hover:bg-[#282a2e] border border-[#282a2e] flex items-center justify-center text-[#e2e2e8] transition-colors flex-shrink-0"
+              aria-label="Back to dashboard"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-[#44e092] flex items-center gap-1.5 leading-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#44e092] shadow-[0_0_8px_rgba(68,224,146,0.8)]" />
+                PayWaka Rewards
+              </span>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight mt-1">
+                Meal Marketplace
+              </h1>
             </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Restaurant Selection */}
-          <div className="lg:col-span-3">
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                  <div>
-                    <CardTitle className="text-foreground">
-                      Available Restaurants
-                    </CardTitle>
-                    <CardDescription className="text-muted-foreground">
-                      Choose from our partner restaurants
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                      <Input
-                        placeholder="Search restaurants..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 w-48 bg-background border-border text-foreground placeholder:text-muted-foreground"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category Filter */}
-                <div className="flex flex-wrap gap-2 mt-4">
-                  {categories.map((category) => (
-                    <Button
-                      key={category}
-                      variant={
-                        selectedCategory === category ? "default" : "outline"
-                      }
-                      size="sm"
-                      onClick={() => {
-                        setSelectedCategory(category);
-                      }}
-                      className={
-                        selectedCategory === category
-                          ? "bg-orange-600 hover:bg-orange-700 text-white"
-                          : "border-border text-foreground hover:bg-muted"
-                      }
-                    >
-                      {category}
-                    </Button>
-                  ))}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  {filteredRestaurants.map((restaurant) => (
-                    <Card
-                      key={restaurant.id}
-                      className={`cursor-pointer transition-all hover:shadow-md ${
-                        selectedRestaurant === restaurant.id
-                          ? "ring-2 ring-orange-500 bg-orange-50 dark:bg-orange-900/20"
-                          : "bg-card border-border hover:bg-muted/50"
-                      }`}
-                      onClick={() => {
-                        setSelectedRestaurant(restaurant.id);
-                        setSelectedMeal("");
-                      }}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <span className="text-2xl">{restaurant.logo}</span>
-                            <div>
-                              <h3 className="font-semibold text-foreground">
-                                {restaurant.name}
-                              </h3>
-                              <div className="flex items-center gap-2 mt-1">
-                                <div className="flex items-center gap-1">
-                                  <Star className="h-3 w-3 text-yellow-500 fill-current" />
-                                  <span className="text-xs text-muted-foreground">
-                                    {restaurant.rating}
-                                  </span>
-                                </div>
-                                <span className="text-xs text-muted-foreground">
-                                  •
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {restaurant.deliveryTime}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          {restaurant.popular && (
-                            <Badge className="bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200">
-                              Popular
-                            </Badge>
-                          )}
-                        </div>
-                        <Badge
-                          variant="outline"
-                          className="border-border text-muted-foreground"
-                        >
-                          {restaurant.category}
-                        </Badge>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-
-                {/* Meal Selection */}
-                {selectedRestaurant && (
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground mb-4">
-                      Available Meals - {selectedRestaurantData?.name}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {selectedRestaurantData?.meals.map((meal) => (
-                        <Card
-                          key={meal.id}
-                          className={`cursor-pointer transition-all hover:shadow-md ${
-                            selectedMeal === meal.id
-                              ? "ring-2 ring-orange-500 bg-orange-50 dark:bg-orange-900/20"
-                              : "bg-card border-border hover:bg-muted/50"
-                          }`}
-                          onClick={() => setSelectedMeal(meal.id)}
-                        >
-                          <CardContent className="p-4">
-                            <h4 className="font-medium text-foreground mb-2">
-                              {meal.name}
-                            </h4>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-muted-foreground">
-                                {meal.points.toLocaleString()} points
-                              </span>
-                              <span className="font-semibold text-orange-600 dark:text-orange-400">
-                                ₦{meal.price.toLocaleString()}
-                              </span>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </div>
 
-          {/* Order Panel */}
-          <div className="space-y-6">
-            {selectedMeal ? (
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <CardTitle className="text-foreground">Place Order</CardTitle>
-                  <CardDescription className="text-muted-foreground">
-                    {selectedMealData?.name}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <span className="text-3xl">
-                      {selectedRestaurantData?.logo}
-                    </span>
-                    <h3 className="font-semibold text-foreground mt-2">
-                      {selectedRestaurantData?.name}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedMealData?.name}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="quantity" className="text-foreground">
-                      Quantity
-                    </Label>
-                    <Select value={quantity} onValueChange={setQuantity}>
-                      <SelectTrigger className="bg-background border-border text-foreground">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border">
-                        {[1, 2, 3, 4, 5].map((num) => (
-                          <SelectItem
-                            key={num}
-                            value={num.toString()}
-                            className="text-foreground hover:bg-muted"
-                          >
-                            {num}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {selectedMealData && (
-                    <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          Meal Price:
-                        </span>
-                        <span className="text-foreground font-medium">
-                          ₦
-                          {(
-                            selectedMealData.price * Number.parseInt(quantity)
-                          ).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          Points Required:
-                        </span>
-                        <span className="text-foreground font-medium">
-                          {(
-                            selectedMealData.points * Number.parseInt(quantity)
-                          ).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          Delivery Fee:
-                        </span>
-                        <span className="text-foreground font-medium">
-                          ₦500
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm font-semibold pt-2 border-t border-border">
-                        <span className="text-foreground">Total Points:</span>
-                        <span className="text-foreground">
-                          {(
-                            selectedMealData.points *
-                              Number.parseInt(quantity) +
-                            500
-                          ).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleOrder}
-                    disabled={
-                      !selectedMeal ||
-                      isLoading ||
-                      (selectedMealData
-                        ? selectedMealData.points * Number.parseInt(quantity) +
-                            500 >
-                          2450
-                        : false)
-                    }
-                    className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-                  >
-                    {isLoading ? "Placing Order..." : "Place Order"}
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="bg-card border-border">
-                <CardContent className="p-6 text-center">
-                  <Utensils className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="font-semibold text-foreground mb-2">
-                    Select a Meal
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Choose a restaurant and meal to get started
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Recent Orders */}
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <Clock className="h-4 w-4" />
-                  Recent Orders
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 px-2">
-                {recentOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-                  >
-                    <div>
-                      <div className="font-medium text-foreground">
-                        {order.restaurant}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {order.meal}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {order.time}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium text-foreground">
-                        {order.amount}
-                      </div>
-                      <div className="-mr-[.25rem]">
-                        <Badge
-                          className={
-                            order.status === "Delivered"
-                              ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
-                              : order.status === "Cancelled"
-                                ? "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200"
-                                : "bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200"
-                          }
-                        >
-                          {order.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <MealFloatingNav className="w-full sm:w-auto" />
           </div>
         </div>
+
+        {/* SECTION 1: TOP HERO / REWARD BALANCE CARD (KINETIC AMBIENT HERO WITH WORD SWAP & PARTICLES) */}
+        <section className="pt-4 sm:pt-6 pb-6 sm:pb-8">
+          <style>{`
+            @keyframes subtleDrift {
+              0%, 100% { transform: translate(0, 0) scale(1); }
+              50% { transform: translate(15px, -20px) scale(1.08); }
+            }
+            @keyframes emberDrift {
+              0%, 100% { transform: translate(0, 0) scale(1); }
+              50% { transform: translate(-20px, 15px) scale(1.12); }
+            }
+            @keyframes sheenSweep {
+              0% { transform: translateX(-150%) skewX(-20deg); }
+              35%, 100% { transform: translateX(250%) skewX(-20deg); }
+            }
+            @keyframes floatSoft {
+              0%, 100% { transform: translateY(0px); }
+              50% { transform: translateY(-5px); }
+            }
+            @keyframes textShimmer {
+              0% { background-position: 0% 50%; }
+              50% { background-position: 100% 50%; }
+              100% { background-position: 0% 50%; }
+            }
+
+            .shimmer-text-ember {
+              background: linear-gradient(135deg, #FF6B00 0%, #FFA24A 35%, #FFDF85 50%, #FF6B00 75%, #FF3D00 100%);
+              background-size: 250% 250%;
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              animation: textShimmer 4.5s ease infinite;
+              filter: drop-shadow(0 0 16px rgba(255, 107, 0, 0.4));
+            }
+
+            .shimmer-text-emerald {
+              background: linear-gradient(135deg, #00C076 0%, #38EF9A 40%, #B2FFD9 55%, #00C076 80%, #008F56 100%);
+              background-size: 250% 250%;
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              animation: textShimmer 5s ease infinite;
+              filter: drop-shadow(0 0 16px rgba(0, 192, 118, 0.4));
+            }
+
+            .glow-aura-green {
+              animation: subtleDrift 10s ease-in-out infinite;
+            }
+            .glow-aura-ember {
+              animation: emberDrift 12s ease-in-out infinite;
+            }
+            .float-card {
+              animation: floatSoft 5s ease-in-out infinite;
+            }
+
+            .word-swap-container {
+              display: block;
+              position: relative;
+              width: 100%;
+              max-width: 100%;
+              height: 1.65em;
+              min-height: 1.65em;
+              overflow: hidden;
+              overflow-y: clip;
+              overflow-x: visible;
+            }
+            .word-slot {
+              position: absolute;
+              inset: 0;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              text-align: center;
+              width: 100%;
+              height: 100%;
+              padding: 0 0.5rem;
+              opacity: 0;
+              transform: translateY(100%) rotateX(-45deg);
+              transition: all 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+              transform-origin: center bottom;
+              white-space: nowrap;
+              pointer-events: none;
+            }
+            .word-slot.active {
+              opacity: 1;
+              transform: translateY(0%) rotateX(0deg);
+              pointer-events: auto;
+            }
+            .word-slot.leaving {
+              opacity: 0;
+              transform: translateY(-80%) rotateX(45deg);
+              filter: blur(4px);
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+              .glow-aura-green,
+              .glow-aura-ember,
+              .float-card,
+              .shimmer-text-ember,
+              .shimmer-text-emerald {
+                animation: none !important;
+              }
+              .word-slot {
+                transition: none !important;
+                transform: none !important;
+              }
+            }
+          `}</style>
+
+          <div
+            className="relative overflow-hidden rounded-xl sm:rounded-2xl lg:rounded-3xl p-4 sm:p-6 lg:p-10 border transition-all"
+            style={{
+              background:
+                "radial-gradient(ellipse at 16% 18%, rgba(0, 201, 110, 0.18) 0%, rgba(0, 201, 110, 0.05) 45%, transparent 70%), radial-gradient(ellipse at 86% 84%, rgba(255, 107, 0, 0.28) 0%, rgba(255, 136, 46, 0.12) 42%, transparent 72%), linear-gradient(145deg, #07120e 0%, #0b1412 35%, #101515 65%, #19140e 100%)",
+              borderColor: "rgba(68, 224, 146, 0.28)",
+              boxShadow:
+                "0 24px 60px -15px rgba(0, 0, 0, 0.8), 0 0 35px -8px rgba(0, 201, 110, 0.14), 0 0 40px -8px rgba(255, 107, 0, 0.22)",
+            }}
+          >
+            {/* Atmospheric Procedural Canvas for Floating Ember Sparks & Emerald Light Particles */}
+            <canvas
+              ref={heroCanvasRef}
+              className="pointer-events-none absolute inset-0 w-full h-full opacity-60 z-0"
+            />
+
+            {/* Ambient Lighting Orbs — Drift & Scale Animations */}
+            <div className="glow-aura-green absolute -left-10 -top-10 w-72 sm:w-96 h-72 sm:h-96 rounded-full bg-[#00c96e]/12 blur-3xl pointer-events-none z-0" />
+            <div className="glow-aura-ember absolute -right-10 -bottom-10 w-64 sm:w-88 h-64 sm:h-88 rounded-full bg-[#ff6b00]/22 blur-3xl pointer-events-none z-0" />
+
+            <div className="relative z-10 flex flex-col items-center text-center gap-3 sm:gap-4 md:gap-5 max-w-3xl lg:max-w-4xl mx-auto w-full">
+              {/* Feature Pill Badge */}
+              <div className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#004729]/60 text-[#44e092] border border-[#44e092]/40 whitespace-nowrap shadow-sm backdrop-blur-md">
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#44e092] flex-shrink-0" />
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#44e092] whitespace-nowrap">
+                  PayWaka Food Rewards
+                </span>
+              </div>
+
+              {/* High-Impact Kinetic Headline with Calibrated Rollup Text (Never Cut Off) */}
+              <h1 className="font-display text-[17px] min-[375px]:text-[19px] sm:text-2xl md:text-3xl lg:text-[38px] xl:text-[40px] font-bold tracking-tight text-white leading-tight text-center w-full max-w-4xl mx-auto py-0.5 select-none">
+                <span className="block text-white drop-shadow-[0_2px_18px_rgba(0,0,0,0.8)]">
+                  Turn your points into
+                </span>
+                <span className="word-swap-container relative block w-full h-[1.65em] mt-0.5 sm:mt-1 px-1">
+                  {HERO_PHRASES.map((phrase, idx) => {
+                    const isActive = idx === activePhraseIndex;
+                    const isLeaving = idx === leavingPhraseIndex;
+                    const isEmerald = phrase.type === "emerald";
+                    const shimmerClass = isEmerald ? "shimmer-text-emerald" : "shimmer-text-ember";
+
+                    if (prefersReducedMotion) {
+                      if (idx !== 0) return null;
+                      return (
+                        <span
+                          key={phrase.text}
+                          className={`word-slot active ${shimmerClass} block`}
+                        >
+                          {phrase.text}
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <span
+                        key={phrase.text}
+                        className={`word-slot ${isActive ? "active" : ""} ${isLeaving ? "leaving" : ""} ${shimmerClass}`}
+                      >
+                        {phrase.text}
+                      </span>
+                    );
+                  })}
+                </span>
+              </h1>
+
+              {/* Greyed Supporting Text — Less Bold, Soft Neutral & Refined Desktop Spacing */}
+              <p className="text-xs sm:text-sm md:text-base text-zinc-400 font-normal max-w-md sm:max-w-xl mx-auto leading-relaxed px-2 tracking-normal">
+                Use your accumulated PayWaka Points to unlock instant meal discount vouchers at participating restaurants across Lagos.
+              </p>
+
+              {/* PayWaka Emerald Points Balance Card with Floating & Glass Highlight Animation */}
+              <div className="float-card relative w-full max-w-md sm:max-w-lg mt-0.5 sm:mt-1 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 bg-gradient-to-r from-[#071711]/90 via-[#0c1614]/85 to-[#16130f]/85 backdrop-blur-md p-3.5 sm:p-4 sm:px-6 rounded-xl sm:rounded-2xl border border-[#44e092]/30 shadow-[0_10px_30px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.06)] hover:border-[#44e092]/50 hover:shadow-[0_16px_40px_rgba(0,192,118,0.15)] transition-all duration-300 group">
+                {/* Glass Specular Sheen Sweep Reflection */}
+                <div className="pointer-events-none absolute -inset-px rounded-xl sm:rounded-2xl overflow-hidden">
+                  <div className="w-1/2 h-full bg-gradient-to-r from-transparent via-white/[0.08] to-transparent transform -skew-x-12 translate-x-[-150%] animate-[sheenSweep_8s_infinite]" />
+                </div>
+
+                <div className="flex items-center gap-3 relative z-10">
+                  {/* Wallet Icon Container with Soft Glow and Live Pulse Dot */}
+                  <div className="relative w-10 sm:w-11 h-10 sm:h-11 rounded-xl bg-[#004729]/80 border border-[#44e092]/40 flex items-center justify-center text-[#44e092] flex-shrink-0 shadow-[0_0_16px_rgba(68,224,146,0.3)] transition-transform duration-300 group-hover:scale-105">
+                    <Wallet className="w-5 h-5" />
+                    {/* Live Pulse Dot */}
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 pointer-events-none">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#38EF9A] opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00c96e]" />
+                    </span>
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] sm:text-[11px] text-zinc-400 uppercase tracking-wider font-medium whitespace-nowrap">
+                      PayWaka Points Balance
+                    </span>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      {pointsLoading && spendablePoints === null ? (
+                        <span className="font-display text-xl sm:text-2xl md:text-3xl font-black text-zinc-500 tracking-tight leading-none animate-pulse">
+                          —
+                        </span>
+                      ) : (
+                        <span className="font-display text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-none">
+                          {pointsBalance.toLocaleString()}
+                        </span>
+                      )}
+                      <span className="text-xs font-bold text-[#44e092] font-mono">pts</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 border-white/10 pt-2 sm:pt-0 relative z-10">
+                  <span className="text-xs text-[#44e092] flex items-center gap-1 font-bold whitespace-nowrap">
+                    <TrendingUp className="w-3.5 h-3.5 flex-shrink-0" />
+                    +180 pts
+                  </span>
+                  <span className="text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap">this week</span>
+                </div>
+              </div>
+
+              {/* Bottom Card Actions — Compact Single Row Horizontal Alignment */}
+              <div className="w-full max-w-md sm:max-w-lg flex flex-row items-center justify-between gap-2 pt-2.5 sm:pt-3 border-t border-white/[0.08]">
+                <button
+                  type="button"
+                  onClick={() => setShowHowItWorksModal(true)}
+                  className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-[11px] sm:text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#44e092] flex-shrink-0" />
+                  <span className="whitespace-nowrap">How Meal Rewards Work</span>
+                </button>
+                <Link
+                  to="/earn"
+                  className="flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#004729]/50 hover:bg-[#004729]/80 border border-[#44e092]/40 text-[#44e092] hover:text-white text-[11px] sm:text-xs font-bold transition-all shadow-sm whitespace-nowrap flex-shrink-0"
+                >
+                  <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#44e092] flex-shrink-0" />
+                  <span className="whitespace-nowrap">Earn More Points</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 2: FEATURED MEAL REWARD SPOTLIGHT (SMOOTH EMERALD GRADIENT) */}
+        {featuredOffer && (
+          <section className="py-4">
+            <div className="flex items-center justify-between mb-3.5">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-[#44e092]" />
+                <h3 className="text-lg font-bold text-white tracking-tight">Featured Partner</h3>
+              </div>
+              <span className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold whitespace-nowrap">
+                Curated Selection
+              </span>
+            </div>
+
+            <div className="relative overflow-hidden rounded-[26px] bg-gradient-to-b from-[#0b1c14] via-[#0f1d17] to-[#14171a] shadow-2xl border border-[#44e092]/35 transition-all hover:border-[#44e092]/65 hover:shadow-[0_16px_40px_rgba(68,224,146,0.15)]">
+              <div className="relative w-full h-56 sm:h-64 lg:h-72 overflow-hidden">
+                <img
+                  src={featuredOffer.image}
+                  alt={featuredOffer.title}
+                  className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0b1c14] via-[#0b1c14]/40 to-transparent" />
+
+                <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                  <span className="px-3.5 py-1.5 rounded-full bg-[#05140e]/90 backdrop-blur-md text-[#44e092] text-xs font-bold shadow-sm flex items-center gap-1.5 border border-[#44e092]/30 whitespace-nowrap">
+                    <Sparkles className="w-3.5 h-3.5 text-[#44e092]" />
+                    {featuredOffer.spotlightBadge || "Partner Spotlight"}
+                  </span>
+
+                  {/* Phase 3 Claim Limit Badge */}
+                  <span className="px-3.5 py-1.5 rounded-full bg-[#05140e]/90 text-xs font-semibold text-zinc-300 border border-white/10 whitespace-nowrap shadow-sm">
+                    {featuredOffer.lifetimeClaimCount}/2 Claims Used
+                  </span>
+                </div>
+
+                <div className="absolute bottom-3 left-4 flex items-baseline gap-2">
+                  <span className="text-3xl sm:text-4xl font-black text-[#ff6b00] tracking-tight leading-none drop-shadow-[0_2px_16px_rgba(255,107,0,0.35)]">
+                    {featuredOffer.discountDisplay}
+                  </span>
+                  <span className="text-xs bg-[#05140e]/85 px-3 py-1 rounded-full text-zinc-300 font-medium border border-white/10 whitespace-nowrap shadow-sm">
+                    Instant Voucher
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-5 sm:p-6 flex flex-col gap-3.5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h4 className="text-lg font-bold text-white">{featuredOffer.vendorName}</h4>
+                    <div className="flex items-center gap-1 text-zinc-400 text-xs mt-1">
+                      <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>{featuredOffer.branch}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-white">{featuredOffer.pointsCost} pts</span>
+                    <div className="text-xs text-zinc-400">required</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-zinc-300 text-xs bg-gradient-to-r from-[#07170f] via-[#0b1d14] to-[#101915] px-4 py-3 rounded-xl border border-[#44e092]/25">
+                  <span className="flex items-center gap-1.5">
+                    <Receipt className="w-4 h-4 text-zinc-400" />
+                    Min. purchase: ₦{featuredOffer.minSpend?.toLocaleString()}
+                  </span>
+                  <span className="text-[#44e092] flex items-center gap-1 font-bold whitespace-nowrap">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {pointsBalance >= featuredOffer.pointsCost ? "Sufficient Balance" : "Need points"}
+                  </span>
+                </div>
+
+                {featuredOffer.hasActiveVoucher ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/services/meals/voucher/${featuredOffer.activeVoucherId || "vch-act-1"}`)}
+                    className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#004729] hover:bg-[#00522f] border border-[#44e092]/40 text-[#44e092] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(68,224,146,0.25)] transition-all whitespace-nowrap"
+                  >
+                    <Ticket className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">Active Voucher in Wallet (Show Ticket)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/services/meals/coupon/${featuredOffer.id}`)}
+                    className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#ff6b00] hover:bg-[#ff7a1a] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(255,107,0,0.35)] active:scale-[0.98] transition-all whitespace-nowrap"
+                  >
+                    <span className="whitespace-nowrap">Redeem Reward</span>
+                    <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* SECTION 3: CATEGORY FILTER CHIPS */}
+        <section className="py-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-bold text-white">Categories</span>
+            <span className="text-xs text-zinc-400 font-medium">Lagos Partner Spots</span>
+          </div>
+
+          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none snap-x">
+            {MEAL_CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`snap-start flex-shrink-0 px-4 py-2.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                    active
+                      ? "bg-[#004729] border border-[#44e092] text-[#44e092] shadow-[0_0_12px_rgba(68,224,146,0.25)]"
+                      : "bg-gradient-to-b from-[#091b13] to-[#121815] hover:bg-[#1a201c] text-zinc-300 border border-[#44e092]/20"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* SECTION 4: EXPLORE PARTNER VENDORS GRID (SMOOTH EMERALD GRADIENT TOUCH ON CARDS) */}
+        <section className="pt-2 pb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Store className="w-5 h-5 text-[#44e092]" />
+              <h3 className="text-lg font-bold text-white tracking-tight">Available Meal Offers</h3>
+            </div>
+            <span className="text-xs text-zinc-400">
+              {filteredOffers.length} {filteredOffers.length === 1 ? "Offer" : "Offers"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredOffers.map((offer) => {
+              const hasEnough = pointsBalance >= offer.pointsCost;
+              return (
+                <div
+                  key={offer.id}
+                  className="rounded-2xl bg-gradient-to-b from-[#0a1b13] via-[#0e1a15] to-[#141619] border border-[#44e092]/25 hover:border-[#44e092]/50 shadow-lg hover:shadow-[0_10px_28px_rgba(68,224,146,0.14)] transition-all flex flex-col overflow-hidden"
+                >
+                  <div className="relative w-full h-40 overflow-hidden">
+                    <img
+                      src={offer.image}
+                      alt={offer.title}
+                      className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0a1b13] via-[#0a1b13]/30 to-transparent" />
+
+                    <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-full bg-[#05140e]/85 backdrop-blur-md text-zinc-200 text-[11px] font-semibold border border-[#44e092]/30 whitespace-nowrap shadow-sm">
+                        {offer.category}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-[#05140e]/85 text-[11px] font-semibold text-zinc-300 border border-white/10 whitespace-nowrap shadow-sm">
+                        {offer.lifetimeClaimCount || 0}/2
+                      </span>
+                    </div>
+
+                    <div className="absolute bottom-2.5 left-3">
+                      <span className="text-2xl font-black text-[#ff6b00] tracking-tight drop-shadow-[0_2px_12px_rgba(255,107,0,0.3)]">
+                        {offer.discountDisplay}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 flex-1 flex flex-col justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white truncate">{offer.title}</h4>
+                      <div className="flex items-center justify-between text-xs text-zinc-400 mt-1">
+                        <span className="truncate">{offer.vendorName}</span>
+                        <span>₦{offer.minSpend?.toLocaleString()} min</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-[#44e092]/20">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black text-white">{offer.pointsCost} pts</span>
+                        <span className="text-[10px] text-zinc-400">Reward cost</span>
+                      </div>
+
+                      {offer.hasActiveVoucher ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/services/meals/voucher/${offer.activeVoucherId || "vch-act-1"}`)}
+                          className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#004729] text-[#44e092] border border-[#44e092]/40 hover:brightness-110 transition-all whitespace-nowrap shadow-sm"
+                        >
+                          View Active
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/services/meals/coupon/${offer.id}`)}
+                          className={`px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                            hasEnough
+                              ? "bg-[#ff6b00] text-white shadow-[0_2px_10px_rgba(255,107,0,0.35)] hover:brightness-110 active:scale-95"
+                              : "bg-[#1e2024] text-zinc-400 hover:bg-[#282a2e]"
+                          }`}
+                        >
+                          Unlock
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* SECTION 5: MOTIVATIONAL "ALMOST THERE" REWARD CARD (SMOOTH EMERALD GRADIENT) */}
+        <section className="py-3">
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-[22px] bg-gradient-to-r from-[#071c12] via-[#0c2217] to-[#131917] p-4 sm:p-6 shadow-xl border border-[#44e092]/40">
+            <div className="flex items-start gap-3 sm:gap-3.5">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#004729]/60 text-[#44e092] flex-shrink-0 flex items-center justify-center border border-[#44e092]/30 shadow-[0_0_12px_rgba(68,224,146,0.2)]">
+                <PartyPopper className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#44e092]">
+                  PayWaka Points Goal
+                </span>
+                <h4 className="text-base font-bold text-white">Unlock ₦1,500 Gourmet Feast</h4>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Earn points every time you pay for airtime, data, electricity, and cable on PayWaka (1 point for every ₦50 spent).
+                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <Link
+                    to="/earn"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#44e092] hover:text-white transition-colors"
+                  >
+                    <span>Earn More Points</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 6: HOW IT WORKS INFOGRAPHIC STRIP (EXPLICITLY KEPT ON CLEAN OBSIDIAN WITHOUT EMERALD GRADIENT PER USER REQUEST) */}
+        <section className="py-5">
+          <div className="flex items-center justify-between mb-3.5">
+            <h3 className="text-lg font-bold text-white">How It Works</h3>
+            <span className="text-xs text-zinc-400">3 Easy Steps</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="flex items-center gap-3.5 p-4 sm:p-5 rounded-2xl bg-[#16181d] border border-[#282a2e] shadow-sm">
+              <div className="w-9 h-9 rounded-full bg-[#282a2e] text-white flex items-center justify-center font-extrabold text-sm flex-shrink-0 border border-[#383a40]">
+                1
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-white">Pick a Merchant</span>
+                <span className="text-xs text-zinc-400 truncate mt-0.5">Choose a participating diner or café.</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3.5 p-4 sm:p-5 rounded-2xl bg-[#16181d] border border-[#282a2e] shadow-sm">
+              <div className="w-9 h-9 rounded-full bg-[#ff6b00] text-white flex items-center justify-center font-extrabold text-sm flex-shrink-0 shadow-md">
+                2
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-white">Unlock with Points</span>
+                <span className="text-xs text-zinc-400 truncate mt-0.5">Redeem instant ₦ discount voucher.</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3.5 p-4 sm:p-5 rounded-2xl bg-[#16181d] border border-[#282a2e] shadow-sm">
+              <div className="w-9 h-9 rounded-full bg-[#004729] text-[#44e092] flex items-center justify-center font-extrabold text-sm flex-shrink-0 border border-[#44e092]/30">
+                3
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-white">Show QR at Counter</span>
+                <span className="text-xs text-zinc-400 truncate mt-0.5">Present QR or PIN, pay discounted bill.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* HOW IT WORKS MODAL */}
+        {showHowItWorksModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md bg-[#16181d] border border-[#282a2e] rounded-3xl p-6 shadow-2xl flex flex-col gap-4 text-left animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between pb-3 border-b border-[#282a2e]">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#44e092]" />
+                  <h3 className="text-lg font-bold text-white">How Meal Rewards Work</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHowItWorksModal(false)}
+                  className="w-8 h-8 rounded-full bg-[#282a2e] text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs text-zinc-400 leading-relaxed">
+                <div className="p-3.5 sm:p-4 bg-[#0c0e12] rounded-2xl border border-[#282a2e]">
+                  <strong className="text-white block mb-1">1. Earn Points Automatically</strong>
+                  Earn 1 PayWaka Point for every ₦50 spent on Airtime, Data, Electricity, and Cable TV bills.
+                </div>
+                <div className="p-3.5 sm:p-4 bg-[#0c0e12] rounded-2xl border border-[#282a2e]">
+                  <strong className="text-white block mb-1">2. Unlock Meal Coupons</strong>
+                  Exchange your accumulated points for instant cash discounts (e.g. ₦500 OFF, ₦1,000 OFF) at partner food vendors.
+                </div>
+                <div className="p-3.5 sm:p-4 bg-[#0c0e12] rounded-2xl border border-[#282a2e]">
+                  <strong className="text-white block mb-1">3. Fair Usage Rules</strong>
+                  You can claim a specific deal up to 2 times across the lifetime of the campaign, and hold 1 active voucher per offer at any time.
+                </div>
+                <div className="p-3.5 sm:p-4 bg-[#0c0e12] rounded-2xl border border-[#282a2e]">
+                  <strong className="text-white block mb-1">4. Redeem at Counter</strong>
+                  Each unlocked voucher generates a secure digital QR code and 6-digit PIN. Present this to the cashier before paying to deduct your discount.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowHowItWorksModal(false)}
+                className="w-full py-3 rounded-full bg-[#004729] hover:bg-[#005430] border border-[#44e092]/40 text-[#44e092] hover:text-white font-bold text-xs shadow-md mt-2 transition-colors"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

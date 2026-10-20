@@ -43,7 +43,7 @@ export default function Features() {
   };
 
   return (
-    <section id="features" className="py-24 bg-[#060d1a] relative overflow-hidden">
+    <section id="features" className="py-24 bg-background relative overflow-hidden">
       {/* Background Decorative Element */}
       <div className="absolute top-1/3 left-0 w-[500px] h-[500px] rounded-full bg-[#00c96e]/2 blur-[150px] pointer-events-none" />
       <div className="absolute bottom-1/3 right-0 w-[500px] h-[500px] rounded-full bg-[#00a8ff]/2 blur-[150px] pointer-events-none" />
@@ -95,7 +95,7 @@ export default function Features() {
               </div>
 
               {/* Dynamic Points Visualization */}
-              <div className="mt-8 relative h-32 bg-[#060d1a]/55 rounded-2xl border border-[#1d3a6a]/40 flex items-center justify-between px-8 overflow-hidden shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
+              <div className="mt-8 relative h-32 bg-background/55 rounded-2xl border border-[#1d3a6a]/40 flex items-center justify-between px-8 overflow-hidden shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
                 <div className="absolute right-0 top-0 bottom-0 w-2/3 bg-gradient-to-l from-[#00c96e]/10 to-transparent pointer-events-none" />
                 
                 <div className="flex flex-col">
@@ -138,7 +138,7 @@ export default function Features() {
                 </p>
               </div>
 
-              <div className="mt-8 flex gap-2 overflow-hidden justify-center py-2 bg-[#060d1a]/30 rounded-xl border border-[#1d3a6a]/20">
+              <div className="mt-8 flex gap-2 overflow-hidden justify-center py-2 bg-background/30 rounded-xl border border-[#1d3a6a]/20">
                 <span className="text-[10px] font-mono text-[#00a8ff] tracking-tight animate-pulse px-2 py-0.5 rounded-md bg-[#00a8ff]/10 border border-[#00a8ff]/10">⚡ ZERO_FEE_PIPELINE</span>
               </div>
             </div>
@@ -167,7 +167,7 @@ export default function Features() {
                 </p>
               </div>
 
-              <div className="mt-8 py-2 px-3 rounded-xl bg-[#060d1a]/40 border border-[#1d3a6a]/20 flex items-center justify-center gap-2">
+              <div className="mt-8 py-2 px-3 rounded-xl bg-background/40 border border-[#1d3a6a]/20 flex items-center justify-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00c96e] animate-ping" />
                 <span className="font-mono text-[9px] text-[#7a9cc8] tracking-widest uppercase">PCI-DSS COMPLIANT</span>
               </div>
@@ -228,7 +228,7 @@ export default function Features() {
               </div>
 
               {/* Referral Network Connection Animation */}
-              <div className="mt-8 relative h-20 bg-[#060d1a]/60 rounded-xl border border-[#1d3a6a]/30 overflow-hidden flex items-center justify-center">
+              <div className="mt-8 relative h-20 bg-background/60 rounded-xl border border-[#1d3a6a]/30 overflow-hidden flex items-center justify-center">
                 <svg className="w-full h-full px-4" viewBox="0 0 200 60">
                   <g className="stroke-[#00c96e]/20 stroke-1" strokeDasharray="3 3">
                     <line x1="20" y1="30" x2="100" y2="30" />

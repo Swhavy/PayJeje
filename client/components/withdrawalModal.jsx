@@ -68,7 +68,7 @@ export default function WithdrawalConfirmationModal({
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div
-        className="bg-[#070e1b] border border-zinc-800 rounded-3xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-in zoom-in-95 duration-200 text-white my-auto max-h-[92vh] flex flex-col"
+        className="bg-[#070e1b] border border-border rounded-3xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-in zoom-in-95 duration-200 text-foreground my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Subtle Ambient Background Glows */}
@@ -76,26 +76,26 @@ export default function WithdrawalConfirmationModal({
         <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl -ml-16 -mb-16 pointer-events-none" />
 
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-zinc-900 bg-zinc-950/60 relative z-10 shrink-0">
+        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-border bg-card/60 relative z-10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-black tracking-tight text-foreground flex items-center gap-2">
                 Confirm Withdrawal
                 <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5">
                   Instant
                 </Badge>
               </h3>
-              <p className="text-xs text-zinc-400 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Review payout details & available cashback perks
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-white rounded-xl hover:bg-zinc-800/60 transition-all shrink-0"
+            className="p-2 text-muted-foreground hover:text-foreground rounded-xl hover:bg-muted/60 transition-all shrink-0"
             aria-label="Close modal"
           >
             <X className="h-5 w-5" />
@@ -105,9 +105,9 @@ export default function WithdrawalConfirmationModal({
         {/* Scrollable Modal Content */}
         <div className="p-5 sm:p-6 space-y-5 overflow-y-auto custom-scrollbar relative z-10">
           {/* Main Withdrawal Summary Box */}
-          <div className="bg-zinc-950/80 border border-zinc-900 p-4 sm:p-5 rounded-2xl space-y-3.5">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-900/80">
-              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+          <div className="bg-card/80 border border-border p-4 sm:p-5 rounded-2xl space-y-3.5">
+            <div className="flex items-center justify-between pb-3 border-b border-border/80">
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                 Requested Amount
               </span>
               <span className="text-xl sm:text-2xl font-black font-display text-emerald-400 tracking-tight">
@@ -117,40 +117,40 @@ export default function WithdrawalConfirmationModal({
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="space-y-1">
-                <span className="text-zinc-500 font-medium block">
+                <span className="text-muted-foreground font-medium block">
                   Destination Bank
                 </span>
-                <p className="font-bold text-white truncate flex items-center gap-1.5">
-                  <Building2 className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+                <p className="font-bold text-foreground truncate flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   {bankName}
                 </p>
               </div>
 
               <div className="space-y-1">
-                <span className="text-zinc-500 font-medium block">
+                <span className="text-muted-foreground font-medium block">
                   Account Number
                 </span>
-                <p className="font-mono font-bold text-zinc-200">
+                <p className="font-mono font-bold text-foreground">
                   {accountNumber}
                 </p>
               </div>
 
               <div className="space-y-1">
-                <span className="text-zinc-500 font-medium block">
+                <span className="text-muted-foreground font-medium block">
                   Beneficiary Name
                 </span>
-                <p className="font-bold text-zinc-300 truncate">
+                <p className="font-bold text-foreground truncate">
                   {accountHolder}
                 </p>
               </div>
 
               <div className="space-y-1">
-                <span className="text-zinc-500 font-medium block">
+                <span className="text-muted-foreground font-medium block">
                   Transfer Fee
                 </span>
                 <p className="font-bold text-emerald-400">
                   ₦0.00{" "}
-                  <span className="text-[10px] text-zinc-500 font-normal">
+                  <span className="text-[10px] text-muted-foreground font-normal">
                     (Free)
                   </span>
                 </p>
@@ -163,7 +163,7 @@ export default function WithdrawalConfirmationModal({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-amber-400 animate-pulse" />
-                <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-200">
+                <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-foreground">
                   In the Meantime: Cashbacks & Perks
                 </h4>
               </div>
@@ -177,8 +177,8 @@ export default function WithdrawalConfirmationModal({
               onClick={() => setApplyCashbackBalance(!applyCashbackBalance)}
               className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                 applyCashbackBalance
-                  ? "bg-emerald-950/30 border-emerald-500/50 text-white shadow-lg shadow-emerald-950/50"
-                  : "bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300"
+                  ? "bg-emerald-950/30 border-emerald-500/50 text-foreground shadow-lg shadow-emerald-950/50"
+                  : "bg-card/40 border-border hover:border-border text-foreground"
               }`}
             >
               <div className="flex items-center gap-3 min-w-0">
@@ -186,21 +186,21 @@ export default function WithdrawalConfirmationModal({
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
                     applyCashbackBalance
                       ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                      : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                      : "bg-muted border-border text-muted-foreground"
                   }`}
                 >
                   <Wallet className="h-4.5 w-4.5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">
+                    <span className="text-xs font-bold text-foreground">
                       Apply Cashback Wallet Balance
                     </span>
                     <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 text-[9px] px-1.5 py-0">
                       +₦{formatMoney(userCashbackBalance)}
                     </Badge>
                   </div>
-                  <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
                     Combine your earned cashback balance into this transfer.
                   </p>
                 </div>
@@ -210,7 +210,7 @@ export default function WithdrawalConfirmationModal({
                 className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
                   applyCashbackBalance
                     ? "bg-emerald-500 border-emerald-400 text-black"
-                    : "border-zinc-700 bg-zinc-900"
+                    : "border-border bg-muted"
                 }`}
               >
                 {applyCashbackBalance && (
@@ -224,8 +224,8 @@ export default function WithdrawalConfirmationModal({
               onClick={() => setApplyPointsBonus(!applyPointsBonus)}
               className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                 applyPointsBonus
-                  ? "bg-purple-950/30 border-purple-500/50 text-white shadow-lg shadow-purple-950/50"
-                  : "bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300"
+                  ? "bg-purple-950/30 border-purple-500/50 text-foreground shadow-lg shadow-purple-950/50"
+                  : "bg-card/40 border-border hover:border-border text-foreground"
               }`}
             >
               <div className="flex items-center gap-3 min-w-0">
@@ -233,21 +233,21 @@ export default function WithdrawalConfirmationModal({
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
                     applyPointsBonus
                       ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
-                      : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                      : "bg-muted border-border text-muted-foreground"
                   }`}
                 >
                   <Award className="h-4.5 w-4.5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">
+                    <span className="text-xs font-bold text-foreground">
                       Redeem 200 Points for +₦500 Bonus
                     </span>
                     <Badge className="bg-purple-500/15 text-purple-300 border-purple-500/30 text-[9px] px-1.5 py-0">
                       {userPoints} Pts Available
                     </Badge>
                   </div>
-                  <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
                     Use reward points to boost your final withdrawal amount.
                   </p>
                 </div>
@@ -256,8 +256,8 @@ export default function WithdrawalConfirmationModal({
               <div
                 className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
                   applyPointsBonus
-                    ? "bg-purple-500 border-purple-400 text-white"
-                    : "border-zinc-700 bg-zinc-900"
+                    ? "bg-purple-500 border-purple-400 text-foreground"
+                    : "border-border bg-muted"
                 }`}
               >
                 {applyPointsBonus && (
@@ -280,7 +280,7 @@ export default function WithdrawalConfirmationModal({
                   <span>5% VTU Cashback</span>
                   <ArrowUpRight className="h-3.5 w-3.5 ml-auto opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                 </div>
-                <p className="text-[10px] text-zinc-400 mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   Buy Airtime/Data instead & get up to ₦1,000 instant cashback.
                 </p>
               </div>
@@ -297,7 +297,7 @@ export default function WithdrawalConfirmationModal({
                   <span>₦500 Bill Cashback</span>
                   <ArrowUpRight className="h-3.5 w-3.5 ml-auto opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                 </div>
-                <p className="text-[10px] text-zinc-400 mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   Pay power or TV bills and get ₦500 flat wallet credit.
                 </p>
               </div>
@@ -305,9 +305,9 @@ export default function WithdrawalConfirmationModal({
           </div>
 
           {/* Final Calculation Box */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-zinc-950 to-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-card to-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest block">
+              <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest block">
                 Total Net Payout to Bank
               </span>
               {(applyCashbackBalance || applyPointsBonus) && (
@@ -330,10 +330,10 @@ export default function WithdrawalConfirmationModal({
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="p-4 sm:p-5 bg-zinc-950 border-t border-zinc-900 flex flex-col sm:flex-row gap-2.5 relative z-10 shrink-0">
+        <div className="p-4 sm:p-5 bg-card border-t border-border flex flex-col sm:flex-row gap-2.5 relative z-10 shrink-0">
           <button
             onClick={onClose}
-            className="w-full sm:w-1/3 py-3 px-4 rounded-2xl text-xs font-bold bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition-colors"
+            className="w-full sm:w-1/3 py-3 px-4 rounded-2xl text-xs font-bold bg-muted hover:bg-muted text-foreground border border-border transition-colors"
           >
             Modify Details
           </button>
@@ -349,7 +349,7 @@ export default function WithdrawalConfirmationModal({
         </div>
 
         {/* Security Micro Footnote */}
-        <div className="bg-[#040810] py-2 px-4 border-t border-zinc-900/60 text-center text-[10px] text-zinc-500 flex items-center justify-center gap-1.5 shrink-0">
+        <div className="bg-[#040810] py-2 px-4 border-t border-border/60 text-center text-[10px] text-muted-foreground flex items-center justify-center gap-1.5 shrink-0">
           <ShieldCheck className="h-3 w-3 text-emerald-500" />
           <span>
             NIBSS Direct Credit Instant Settlement • 256-bit Encrypted

@@ -201,7 +201,7 @@ export default function DataPreferencesPage() {
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center ${
                           privacyLevel === level.id
-                            ? "bg-green-600 text-white"
+                            ? "bg-green-600 text-foreground"
                             : "bg-muted text-muted-foreground"
                         }`}
                       >
@@ -493,7 +493,7 @@ export default function DataPreferencesPage() {
                       </p>
                       <Button
                         onClick={handleExportData}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-foreground"
                       >
                         Request Data Export
                       </Button>
@@ -513,7 +513,7 @@ export default function DataPreferencesPage() {
                       </p>
                       <Button
                         variant="destructive"
-                        className="w-full hover:bg-blue-700 transition-colors duration-700 ease-in-out border-2 text-white"
+                        className="w-full hover:bg-blue-700 transition-colors duration-700 ease-in-out border-2 text-foreground"
                       >
                         Delete Account
                       </Button>
@@ -562,7 +562,7 @@ export default function DataPreferencesPage() {
         <div className="flex justify-end">
           <Button
             onClick={handleSavePreferences}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-green-600 hover:bg-green-700 text-foreground"
           >
             <Settings className="h-4 w-4 mr-2" />
             Save Preferences

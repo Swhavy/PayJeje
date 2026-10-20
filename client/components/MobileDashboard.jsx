@@ -123,41 +123,41 @@ const MobileDashboard = React.memo(() => {
   return (
     <div className="min-h-screen bg-background pb-24">
       {/* Hero Section - Wallet Balance */}
-      <div className="bg-gradient-to-br from-[#0a1628] via-[#0f2040] to-[#003d20] px-4 pt-6 pb-8 rounded-b-3xl shadow-lg">
+      <div className="bg-gradient-to-br from-card via-accent to-green-950 px-4 pt-6 pb-8 rounded-b-3xl shadow-lg">
         <div className="flex justify-between items-start mb-8">
           <div>
-            <p className="text-[#7a9cc8] text-sm">Welcome back</p>
-            <h1 className="text-[#e8f0ff] text-2xl font-bold">{userName}</h1>
+            <p className="text-muted-foreground text-sm">Welcome back</p>
+            <h1 className="text-foreground text-2xl font-bold">{userName}</h1>
           </div>
           <button className="p-2 hover:bg-white/10 rounded-full transition">
-            <MoreHorizontal className="w-5 h-5 text-[#e8f0ff]" />
+            <MoreHorizontal className="w-5 h-5 text-foreground" />
           </button>
         </div>
 
         {/* Wallet Card */}
-        <div className="bg-gradient-to-br from-[#1d3a6a] to-[#0a1628] border border-[#2a4a7a] rounded-2xl p-6 mb-6">
-          <p className="text-[#7a9cc8] text-sm mb-2">Total Balance</p>
-          <h2 className="text-[#e8f0ff] text-4xl font-bold mb-1">
-            ₦{walletBalance || "0"}
+        <div className="bg-gradient-to-br from-accent to-card border border-border rounded-2xl p-6 mb-6">
+          <p className="text-muted-foreground text-sm mb-2">Total Balance</p>
+          <h2 className="text-foreground text-4xl font-bold mb-1">
+            ₦{walletBalance ? walletBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
           </h2>
-          <p className="text-[#00c96e] text-xs flex items-center gap-1">
+          <p className="text-primary text-xs flex items-center gap-1">
             <TrendingUp className="w-3 h-3" /> 12% from last month
           </p>
         </div>
 
         {/* Quick Stats Pills - Horizontal Scroll */}
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-          <div className="bg-[#0f2040]/60 border border-[#1d3a6a] rounded-full px-4 py-2 whitespace-nowrap flex-shrink-0">
-            <p className="text-[#7a9cc8] text-xs">Points</p>
-            <p className="text-[#e8f0ff] text-sm font-semibold">2,450</p>
+          <div className="bg-card/60 border border-border rounded-full px-4 py-2 whitespace-nowrap flex-shrink-0">
+            <p className="text-muted-foreground text-xs">Points</p>
+            <p className="text-foreground text-sm font-semibold">2,450</p>
           </div>
-          <div className="bg-[#0f2040]/60 border border-[#1d3a6a] rounded-full px-4 py-2 whitespace-nowrap flex-shrink-0">
-            <p className="text-[#7a9cc8] text-xs">Referrals</p>
-            <p className="text-[#e8f0ff] text-sm font-semibold">5</p>
+          <div className="bg-card/60 border border-border rounded-full px-4 py-2 whitespace-nowrap flex-shrink-0">
+            <p className="text-muted-foreground text-xs">Referrals</p>
+            <p className="text-foreground text-sm font-semibold">5</p>
           </div>
-          <div className="bg-[#0f2040]/60 border border-[#1d3a6a] rounded-full px-4 py-2 whitespace-nowrap flex-shrink-0">
-            <p className="text-[#7a9cc8] text-xs">This Month</p>
-            <p className="text-[#e8f0ff] text-sm font-semibold">₦8,200</p>
+          <div className="bg-card/60 border border-border rounded-full px-4 py-2 whitespace-nowrap flex-shrink-0">
+            <p className="text-muted-foreground text-xs">This Month</p>
+            <p className="text-foreground text-sm font-semibold">₦8,200</p>
           </div>
         </div>
       </div>
@@ -166,7 +166,7 @@ const MobileDashboard = React.memo(() => {
         {/* Quick Earn CTA */}
         <button
           onClick={() => setIsModalOpen(true)}
-          className="w-full bg-gradient-to-r from-[#00c96e] to-[#00a55a] rounded-2xl px-4 py-3 text-[#0a1628] font-bold text-center hover:shadow-lg transition-shadow"
+          className="w-full bg-gradient-to-r from-primary to-green-600 rounded-2xl px-4 py-3 text-primary-foreground font-bold text-center hover:shadow-lg transition-shadow"
         >
           <Plus className="w-4 h-4 inline mr-2" />
           Quick Earn Now
@@ -174,7 +174,7 @@ const MobileDashboard = React.memo(() => {
 
         {/* Quick Actions - 2x2 Grid */}
         <div>
-          <h3 className="text-[#e8f0ff] font-bold mb-3">Quick Actions</h3>
+          <h3 className="text-foreground font-bold mb-3">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-3">
             {quickActions.map((action, idx) => (
               <Link key={idx} to={action.href}>
@@ -182,9 +182,9 @@ const MobileDashboard = React.memo(() => {
                   className={`bg-gradient-to-br ${action.color} rounded-2xl p-4 flex flex-col items-center justify-center h-32 hover:shadow-lg transition-shadow group`}
                 >
                   <div className="bg-white/20 p-3 rounded-xl mb-2 group-hover:scale-110 transition-transform">
-                    <action.icon className="w-6 h-6 text-white" />
+                    <action.icon className="w-6 h-6 text-foreground" />
                   </div>
-                  <p className="text-white text-sm font-semibold text-center">
+                  <p className="text-foreground text-sm font-semibold text-center">
                     {action.title}
                   </p>
                 </div>
@@ -196,10 +196,10 @@ const MobileDashboard = React.memo(() => {
         {/* Recent Transactions */}
         <div>
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-[#e8f0ff] font-bold">Recent Activity</h3>
+            <h3 className="text-foreground font-bold">Recent Activity</h3>
             <Link
               to="/Transactions"
-              className="text-[#00c96e] text-xs font-semibold hover:underline"
+              className="text-primary text-xs font-semibold hover:underline"
             >
               View all
             </Link>
@@ -208,29 +208,28 @@ const MobileDashboard = React.memo(() => {
             {recentTransactions.map((txn) => (
               <div
                 key={txn.id}
-                className="flex items-center gap-3 p-3 bg-[#0f2040] border border-[#1d3a6a] rounded-xl hover:bg-[#1d3a6a] transition"
+                className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl hover:bg-muted transition"
               >
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    txn.type === "credit"
-                      ? "bg-green-500/20 border border-green-500/50"
-                      : "bg-red-500/20 border border-red-500/50"
-                  }`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${txn.type === "credit"
+                    ? "bg-green-500/20 border border-green-500/50"
+                    : "bg-red-500/20 border border-red-500/50"
+                    }`}
                 >
                   {txn.type === "credit" ? (
-                    <ArrowDownLeft className={`w-5 h-5 text-green-400`} />
+                    <ArrowDownLeft className={`w-5 h-5 text-primary dark:text-green-400`} />
                   ) : (
                     <ArrowUpRight className={`w-5 h-5 text-red-400`} />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[#e8f0ff] text-sm font-medium truncate">
+                  <p className="text-foreground text-sm font-medium truncate">
                     {txn.description}
                   </p>
-                  <p className="text-[#7a9cc8] text-xs">{txn.date}</p>
+                  <p className="text-muted-foreground text-xs">{txn.date}</p>
                 </div>
                 <p
-                  className={`text-sm font-bold flex-shrink-0 ${txn.type === "credit" ? "text-green-400" : "text-red-400"}`}
+                  className={`text-sm font-bold flex-shrink-0 ${txn.type === "credit" ? "text-primary dark:text-green-400" : "text-red-400"}`}
                 >
                   {txn.type === "credit" ? "+" : "-"}₦{txn.amount}
                 </p>
@@ -241,7 +240,7 @@ const MobileDashboard = React.memo(() => {
 
         {/* Achievements Scroll */}
         <div>
-          <h3 className="text-[#e8f0ff] font-bold mb-3">Achievements</h3>
+          <h3 className="text-foreground font-bold mb-3">Achievements</h3>
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
             {[
               { icon: "🎯", title: "First Survey", progress: 100 },
@@ -251,15 +250,15 @@ const MobileDashboard = React.memo(() => {
             ].map((ach, idx) => (
               <div
                 key={idx}
-                className="bg-[#0f2040] border border-[#1d3a6a] rounded-xl p-3 flex-shrink-0 w-28 text-center hover:border-[#00c96e]/50 transition"
+                className="bg-card border border-border rounded-xl p-3 flex-shrink-0 w-28 text-center hover:border-primary/50 transition"
               >
                 <p className="text-2xl mb-1">{ach.icon}</p>
-                <p className="text-[#e8f0ff] text-xs font-semibold mb-2 truncate">
+                <p className="text-foreground text-xs font-semibold mb-2 truncate">
                   {ach.title}
                 </p>
-                <div className="w-full h-1.5 bg-[#1d3a6a] rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-[#00c96e] to-[#00a55a]"
+                    className="h-full bg-gradient-to-r from-primary to-green-600"
                     style={{ width: `${ach.progress}%` }}
                   />
                 </div>
@@ -270,7 +269,7 @@ const MobileDashboard = React.memo(() => {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#0a1628] border-t border-[#1d3a6a] px-4 py-3 flex justify-around items-center">
+      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border px-4 py-3 flex justify-around items-center">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -280,21 +279,20 @@ const MobileDashboard = React.memo(() => {
               className="flex flex-col items-center gap-1 py-2"
             >
               <div
-                className={`p-2 rounded-xl transition ${
-                  isActive ? "bg-[#00c96e]/20" : "hover:bg-[#1d3a6a]/50"
-                }`}
+                className={`p-2 rounded-xl transition ${isActive ? "bg-primary/20" : "hover:bg-muted/50"
+                  }`}
               >
                 <item.icon
-                  className={`w-5 h-5 ${isActive ? "text-[#00c96e]" : "text-[#7a9cc8]"}`}
+                  className={`w-5 h-5 ${isActive ? "text-primary" : "text-muted-foreground"}`}
                 />
               </div>
               <span
-                className={`text-xs font-medium ${isActive ? "text-[#00c96e]" : "text-[#7a9cc8]"}`}
+                className={`text-xs font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}
               >
                 {item.label}
               </span>
               {isActive && (
-                <div className="w-1 h-1 rounded-full bg-[#00c96e]" />
+                <div className="w-1 h-1 rounded-full bg-primary" />
               )}
             </Link>
           );

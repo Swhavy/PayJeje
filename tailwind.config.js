@@ -1,7 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
-  content: ["./client/**/*.{js,ts,jsx,ts}"],
+  content: ["./client/**/*.{js,ts,jsx,tsx}"],
   prefix: "",
   theme: {
     container: {
@@ -92,6 +92,23 @@ export default {
           700: "#15803d",
           800: "#166534",
           900: "#14532d",
+        },
+        // Meal Rewards Obsidian Ember & Emerald tokens
+        meal: {
+          surface: "#111317",
+          "surface-lowest": "#0c0e12",
+          "surface-low": "#1a1c20",
+          "surface-card": "#1e2024",
+          "surface-high": "#282a2e",
+          "surface-highest": "#333539",
+          ember: "#ff6b00",
+          "ember-light": "#ffb693",
+          emerald: "#44e092",
+          "emerald-dark": "#004729",
+          text: "#e2e2e8",
+          "text-muted": "#e2bfb0",
+          outline: "#a98a7d",
+          "outline-variant": "#5a4136",
         },
       },
       borderRadius: {

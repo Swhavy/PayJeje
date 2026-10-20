@@ -8,6 +8,7 @@
  */
 
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import EnvVar from "./var.js";
 import { beforeUserSignedIn } from "firebase-functions/v2/identity";
 import { Resend } from "resend";
@@ -27,12 +28,18 @@ import { getMessaging } from "firebase-admin/messaging";
 //import puppeteer from "puppeteer-core";
 import * as functions from "firebase-functions";
 import { type } from "node:os";
+import crypto from "node:crypto";
+import util from "node:util";
 //import { user } from "firebase-functions/v1/auth";
 //import { log } from "console";
 //import CryptoJS from 'crypto-js'
 //import { setDoc } from 'firebase/firestore'
 
-admin.initializeApp();
+import { EXCEL_COMPETITOR_PRICES } from "./excelPricingData.js";
+
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 const db = admin.firestore();
 
 // admin.projectConfigManager().updateProjectConfig({
@@ -53,6 +60,12 @@ const FLW_SECRET_KEY = new EnvVar("FLW_MSECRET_KEY");
 const FLW_WEBHOOK_HASH = new EnvVar("FLW_WEBHOOK_HASH");
 //const FLW_WEBHOOK_HASH = defineSecret("FLW_WEBHOOK_HASH");
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
+export const PIN_PEPPER_SECRETS = {
+  1: defineSecret("PIN_PEPPER_SECRET_V1"),
+  // 2: defineSecret("PIN_PEPPER_SECRET_V2"),  // add when you rotate
+};
+export const PIN_PEPPER_SECRET = PIN_PEPPER_SECRETS[1];
+const ALL_PIN_SECRETS = Object.values(PIN_PEPPER_SECRETS);
 
 export const flutterwaveWebhook = onRequest(async (req, res) => {
   const payload = req.body;
@@ -69,27 +82,61 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
     return res.status(401).send("says it is Unauthorized");
   }
 
-  const tx_ref = payload?.data["tx_ref"]
-    ? payload?.data["tx_ref"]
-    : payload?.data["reference"];
-  const tx_refParts = tx_ref.split("-");
-  const userID = tx_refParts[1] || null;
+  const transactionData = payload.data || {};
+  console.log("transaction occured: ", payload);
+  const rawTxRef = transactionData["tx_ref"] || transactionData["reference"];
+  const tx_ref = String(rawTxRef);
 
-  //userRef
-  // const userSnapshot = await db
-  //   .collection('users')
-  //   .where('email', '==', email)
-  //   .limit(1)
-  //   .get()
+  const isInboundTransfer =
+    payload.event === "transfer.completed" &&
+    payload.data?.debit_currency === "PSA" &&
+    payload.data?.narration === "WALLET FUNDING";
 
-  const transactionData = payload.data;
+  let userID = null;
+
+  if (isInboundTransfer) {
+    // Strictly identify the receiving user by their dedicated Virtual Account Number (users.accountNumber)
+    const acctNum =
+      transactionData.account_number ||
+      transactionData.account?.account_number ||
+      transactionData.accountNumber ||
+      transactionData.virtual_account_number;
+    if (acctNum) {
+      const acctQuery = await db
+        .collection("users")
+        .where("accountNumber", "==", String(acctNum).trim())
+        .limit(1)
+        .get();
+      if (!acctQuery.empty) {
+        userID = acctQuery.docs[0].id;
+      }
+    }
+  } else {
+    // For Outbound Transfers (Withdrawals): we control the tx_ref format (PWK-UID-TIMESTAMP)
+    if (tx_ref.includes("-")) {
+      const tx_refParts = tx_ref.split("-");
+      const candidateUid = tx_refParts[1];
+      if (candidateUid) {
+        const checkUser = await db.collection("users").doc(candidateUid).get();
+        if (checkUser.exists) {
+          userID = candidateUid;
+        }
+      }
+    }
+  }
 
   if (payload.event) {
-    //BVN Verification
+    // BVN Verification
     if (payload.event == "bvn.completed") {
+      if (!userID) {
+        logger.error(
+          `BVN completed webhook received but userID could not be resolved. tx_ref=${tx_ref}`,
+        );
+        return res.status(200).send("User not found");
+      }
       let q = await db
         .collection("users")
-        .where("nameOnCard", "==", transactionData["bvn_data"]["nameOnCard"])
+        .where("nameOnCard", "==", transactionData["bvn_data"]?.["nameOnCard"])
         .limit(1)
         .get();
       if (!q.empty) res.status(200).send("success");
@@ -101,59 +148,152 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         .doc("bvnGenerated")
         .set(
           {
-            firstName: data["first_name"],
-            lastName: data["last_name"],
-            status: data["status"],
-            email: data["bvn_data"]["email"],
-            gender: data["bvn_data"]["gender"],
-            DOB: data["bvn_data"]["dateOfBirth"],
-            tel1: data["bvn_data"]["phoneNumber1"],
-            tel2: data["bvn_data"]["phoneNumber2"],
-            maritalStatus: data["bvn_data"]["maritalStatus"],
-            stateOfOrigin: data["bvn_data"]["stateOfOrigin"],
-            lgaOfResidence: data["bvn_data"]["lgaOfResidence"],
-            stateOfResidence: data["bvn_data"]["stateOfResidence"],
-            nin: data["bvn_data"]["nin"],
-            nameOnCard: data["bvn_data"]["nameOnCard"],
-            ["createdAt"]: admin.firebase.FieldValue.serverTimestamp(),
+            firstName: data?.["first_name"],
+            lastName: data?.["last_name"],
+            status: data?.["status"],
+            email: data?.["bvn_data"]?.["email"],
+            gender: data?.["bvn_data"]?.["gender"],
+            DOB: data?.["bvn_data"]?.["dateOfBirth"],
+            tel1: data?.["bvn_data"]?.["phoneNumber1"],
+            tel2: data?.["bvn_data"]?.["phoneNumber2"],
+            maritalStatus: data?.["bvn_data"]?.["maritalStatus"],
+            stateOfOrigin: data?.["bvn_data"]?.["stateOfOrigin"],
+            lgaOfResidence: data?.["bvn_data"]?.["lgaOfResidence"],
+            stateOfResidence: data?.["bvn_data"]?.["stateOfResidence"],
+            nin: data?.["bvn_data"]?.["nin"],
+            nameOnCard: data?.["bvn_data"]?.["nameOnCard"],
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
     }
 
-    // payments
+    // Inbound Payments / Card Charges
     else if (payload.event == "charge.completed") {
-      //idempotency
-      let q = await db
-        .collection("users")
-        .doc(userID)
-        .collection("Transactions")
-        .where("flw_ref", "==", transactionData.flw_ref)
-        .limit(1)
-        .get();
-
-      if (!q.empty) res.status(200).send("success");
-
-      await db
-        .collection("users")
-        .doc(userID)
-        .collection("Transactions")
-        .doc(tx_ref)
-        .set(
-          {
-            ...transactionData,
-            createdAt: admin.firestore.Timestamp.fromDate(
-              new Date(transactionData.createdAt),
-            ),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
+      if (!userID) {
+        logger.error(
+          `❌ [Webhook Error]: Could not resolve userID for charge.completed with tx_ref=${tx_ref}, account_number=${transactionData?.account_number}`,
+          transactionData,
         );
-      logger.info("transaction recorded:", transactionData);
-    } // end of payments
+        return res.status(200).send("User not found for charge");
+      }
 
-    // Withdrawal
+      const isSuccessful =
+        String(transactionData.status || "").toLowerCase() === "successful";
+      const creditAmount = Number(
+        transactionData.amount ||
+        transactionData.charged_amount ||
+        transactionData.settlement_amount ||
+        0,
+      );
+      const userRef = db.collection("users").doc(userID);
+      const txDocRef = userRef.collection("Transactions").doc(tx_ref);
+
+      const senderName =
+        transactionData.fullname ||
+        transactionData.customer?.name ||
+        transactionData.meta?.sender_name ||
+        "External Bank Transfer";
+      const senderAccountNumber =
+        transactionData.meta?.sender_account_number || "";
+      const senderBankCode = transactionData.meta?.sender_bank_code || "";
+      const recipientAccountNumber =
+        transactionData.account_number ||
+        transactionData.account?.account_number ||
+        "";
+      const recipientBankName = transactionData.bank_name || "Wema Bank PLC";
+
+      try {
+        await db.runTransaction(async (t) => {
+          const userDoc = await t.get(userRef);
+          if (!userDoc.exists) {
+            throw new Error(`User ${userID} does not exist`);
+          }
+          const existingTx = await t.get(txDocRef);
+          if (existingTx.exists && existingTx.data()?.status === "successful") {
+            logger.info(
+              `⚡ [Idempotent Webhook]: Transaction ${tx_ref} was already processed for user ${userID}`,
+            );
+            return;
+          }
+
+          if (isSuccessful && creditAmount > 0) {
+            t.update(userRef, {
+              walletBalance: admin.firestore.FieldValue.increment(creditAmount),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            logger.info(
+              `💰 [Wallet Credited]: Added ₦${creditAmount} to user ${userID}'s wallet balance via inbound charge!`,
+            );
+          }
+
+          t.set(
+            txDocRef,
+            {
+              ...transactionData,
+              tx_ref,
+              flw_ref:
+                transactionData.flw_ref || transactionData.reference || "",
+              amount: creditAmount,
+              fee: Number(transactionData.fee || 0),
+              currency: transactionData.currency || "NGN",
+              type: "credit",
+              category: "Wallet Funding",
+              senderName,
+              senderAccountNumber,
+              senderBankCode,
+              recipientAccountNumber,
+              recipientBankName,
+              narration:
+                transactionData.narration || `Transfer from ${senderName}`,
+              status: isSuccessful
+                ? "successful"
+                : transactionData.status || "failed",
+              createdAt:
+                transactionData.created_at || transactionData.createdAt
+                  ? admin.firestore.Timestamp.fromDate(
+                    new Date(
+                      transactionData.created_at || transactionData.createdAt,
+                    ),
+                  )
+                  : admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        });
+
+        logger.info(
+          `✅ [charge.completed processed successfully]: tx_ref=${tx_ref} for user ${userID}`,
+        );
+        return res.status(200).send("success");
+      } catch (err) {
+        logger.error(`❌ [charge.completed failed to process]:`, err);
+        return res.status(200).send("success");
+      }
+    }
+
+    // Transfers (Inbound PSA Funding & Outbound Withdrawals)
     else if (payload.event == "transfer.completed") {
+      if (!userID) {
+        logger.error(
+          `❌ [Webhook Error]: Could not resolve userID for transfer.completed with tx_ref=${tx_ref}, account_number=${transactionData?.account_number}`,
+          transactionData,
+        );
+        return res.status(200).send("User not found for transfer");
+      }
+
+      const isCredit =
+        payload.event === "transfer.completed" &&
+        transactionData.debit_currency === "PSA" &&
+        transactionData.narration === "WALLET FUNDING";
+      console.log(`${isCredit ? "💰 credit" : "💸 debit"} :` + transactionData);
+
+      //for credits the tx_ref field is generated upon receiving the webhook
+      const tx_ref = isCredit
+        ? `PWK-${userID}-${Date.now()}`
+        : transactionData?.reference;
+
       const txDocRef = db
         .collection("users")
         .doc(userID)
@@ -167,7 +307,7 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         existingDoc.data()?.failureReason === "Request timed out" &&
         incomingStatus === "PENDING";
 
-      // Idempotency: skip if this exact status was already recorded
+      // 1. Idempotency Guard: skip if this exact status was already recorded
       if (
         (existingDoc.exists && existingDoc.data().status === incomingStatus) ||
         timedOutAndStillPending
@@ -180,7 +320,6 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         return res.status(200).send("success");
       }
 
-      const isCredit = transactionData.debit_currency === "PSA";
       const isTerminalSuccess = incomingStatus === "SUCCESSFUL";
       const isTerminalFailure =
         incomingStatus === "FAILED" || incomingStatus === "CANCELLED";
@@ -189,6 +328,18 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         ["SUCCESSFUL", "FAILED", "CANCELLED"].includes(
           existingDoc.data().status,
         );
+
+      const numAmount = Number(transactionData.amount || 0);
+      const senderName =
+        transactionData.fullname ||
+        transactionData.meta?.sender_name ||
+        (isCredit ? "External Bank Transfer" : "PayWaka User");
+      const senderAccountNumber =
+        transactionData.meta?.sender_account_number || "";
+      const senderBankCode = transactionData.meta?.sender_bank_code || "";
+      const recipientAccountNumber = transactionData.account_number || "";
+      const recipientBankName =
+        transactionData.bank_name || (isCredit ? "Wema Bank PLC" : "Bank");
 
       try {
         await db.runTransaction(async (t) => {
@@ -199,32 +350,28 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
             throw new Error(`User ${userID} not found`);
           }
 
-          // Guard: never touch balance if this tx already reached a terminal state before
+          // 2. Transition Guard: never touch balance if this tx already reached a terminal state before
           if (!wasAlreadyTerminal) {
             if (isTerminalSuccess) {
-              // Withdrawal succeeded — balance was already deducted at queue time, nothing to do here
-              // (Only credit flows would increment here)
-              if (isCredit) {
-                t.set(
-                  userRef,
-                  {
-                    walletBalance: admin.firestore.FieldValue.increment(
-                      transactionData.amount,
-                    ),
-                  },
-                  { merge: true },
+              // Inbound transfer succeeded -> credit user's wallet
+              if (isCredit && numAmount > 0) {
+                t.update(userRef, {
+                  walletBalance:
+                    admin.firestore.FieldValue.increment(numAmount),
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                logger.info(
+                  `💰 [PSA Inbound Transfer]: Credited ₦${numAmount} to user ${userID}'s wallet!`,
                 );
               }
-            } else if (isTerminalFailure && !isCredit) {
+            } else if (isTerminalFailure && !isCredit && numAmount > 0) {
               // Withdrawal failed/cancelled — refund the amount that was deducted upfront
-              t.set(
-                userRef,
-                {
-                  walletBalance: admin.firestore.FieldValue.increment(
-                    transactionData.amount,
-                  ),
-                },
-                { merge: true },
+              t.update(userRef, {
+                walletBalance: admin.firestore.FieldValue.increment(numAmount),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              logger.info(
+                `🔄 [Withdrawal Refund]: Refunded ₦${numAmount} to user ${userID}'s wallet!`,
               );
             }
           }
@@ -233,7 +380,24 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
             txDocRef,
             {
               ...transactionData,
+              tx_ref,
+              flw_ref:
+                transactionData.reference || transactionData.flw_ref || "",
+              amount: numAmount,
+              fee: Number(transactionData.fee || 0),
+              currency: transactionData.currency || "NGN",
               type: isCredit ? "inflow" : "outflow",
+              category: isCredit ? "Wallet Funding" : "Withdrawal",
+              senderName,
+              senderAccountNumber,
+              senderBankCode,
+              recipientAccountNumber,
+              recipientBankName,
+              narration:
+                transactionData.narration ||
+                (isCredit
+                  ? `Transfer from ${senderName}`
+                  : `Withdrawal to ${recipientBankName}`),
               status: incomingStatus,
               failureReason: isTerminalFailure
                 ? (transactionData.provider_response ?? null)
@@ -242,9 +406,13 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
                   : null,
               createdAt: existingDoc.exists
                 ? existingDoc.data().createdAt
-                : admin.firestore.Timestamp.fromDate(
-                    new Date(transactionData.created_at),
-                  ),
+                : transactionData.created_at || transactionData.createdAt
+                  ? admin.firestore.Timestamp.fromDate(
+                    new Date(
+                      transactionData.created_at || transactionData.createdAt,
+                    ),
+                  )
+                  : admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
@@ -252,12 +420,12 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         });
 
         logger.info(
-          `transaction ${tx_ref} updated to status ${incomingStatus}`,
+          `transaction ${tx_ref} updated to status ${incomingStatus} for user ${userID}`,
         );
         return res.status(200).send("success");
       } catch (err) {
         logger.error("Failed to process transfer.completed:", err);
-        return res.status(500).send("error");
+        return res.status(200).send("success");
       }
     } // end of payments
 
@@ -354,7 +522,7 @@ export const initiateBVNConsent = onCall(async (req, context) => {
 });
 
 //wallet functions
-const createWallet = async (
+export const createWallet = async (
   email,
   phonenumber,
   firstName,
@@ -364,6 +532,10 @@ const createWallet = async (
 ) => {
   if (!email || !phonenumber || !firstName || !lastName || !country || !uid)
     return logger.error("Missing required parameters for createWallet");
+
+  if (process.env.FUNCTIONS_EMULATOR === "true" && (email.includes("@paywaka.demo") || email.includes("@paywaka.test"))) {
+    return { status: "success", accountReference: `mock_ref_${uid}`, isMock: true };
+  }
 
   const payload = {
     account_name: `${firstName} ${lastName}`,
@@ -418,8 +590,7 @@ const createWallet = async (
 
     try {
       logger.info(
-        `Creating wallet attempt ${attempt + 1}/${
-          MAX_RETRIES + 1
+        `Creating wallet attempt ${attempt + 1}/${MAX_RETRIES + 1
         } for user ${uid}`,
       );
 
@@ -495,8 +666,7 @@ const createWallet = async (
 
       if (wallet.status === "success") {
         logger.info(
-          `Wallet created successfully for user ${uid} on attempt ${
-            attempt + 1
+          `Wallet created successfully for user ${uid} on attempt ${attempt + 1
           }`,
         );
 
@@ -692,8 +862,7 @@ const createVirtualAccount = async (accountReference, uid) => {
 
     try {
       logger.info(
-        `Creating Virtual wallet attempt ${attempt + 1}/${
-          MAX_RETRIES + 1
+        `Creating Virtual wallet attempt ${attempt + 1}/${MAX_RETRIES + 1
         } for user ${uid}`,
       );
 
@@ -736,8 +905,7 @@ const createVirtualAccount = async (accountReference, uid) => {
 
       if (wallet.status === "success") {
         logger.info(
-          `Virtual Wallet created successfully for user ${uid} on attempt ${
-            attempt + 1
+          `Virtual Wallet created successfully for user ${uid} on attempt ${attempt + 1
           }`,
           wallet,
         );
@@ -985,6 +1153,7 @@ export const getWallets = async (email) => {
     if (info.status === "success") {
       const data = info.data;
       const userWallet = await data.find((usr) => usr.email === email);
+
       if (!userWallet)
         return {
           status: "error",
@@ -992,7 +1161,7 @@ export const getWallets = async (email) => {
         };
       return {
         status: "success",
-        message: "Wallet fetched successfully",
+        message: "Wallet fetch successfully",
         accountReference: userWallet?.account_reference,
         barter_id: userWallet?.barter_id,
         accountNumber: userWallet?.nuban,
@@ -1276,7 +1445,6 @@ export const withdraw = onCall(async (req, context) => {
     clearTimeout(timeout);
 
     const response = await res.json();
-    console.log("withdrawal Data:", response);
 
     if (
       response?.status === "success" &&
@@ -2093,13 +2261,16 @@ export const handleNewRefferal = onDocumentCreated(
   },
   async (event) => {
     const snapshot = event.data;
-    const data = event.data.data();
-    logger.info("New user signup detected, processing referral...", snapshot);
-    if (!snapshot) {
-      console.log("No data associated with the event");
+    if (!snapshot || typeof snapshot.data !== "function") {
+      logger.info("No data associated with the event");
       return null;
     }
     const userData = snapshot.data();
+    if (!userData) {
+      logger.info("Empty user document snapshot, skipping.");
+      return null;
+    }
+    logger.info("New user signup detected, processing referral...", snapshot);
 
     const uid = event.params.userId;
 
@@ -2653,14 +2824,14 @@ export const checkin = onCall(async (req, context) => {
     const referrerUid = userData?.referredByUid;
     referrerUid
       ? db
-          .collection("users")
-          .doc(referrerUid)
-          .collection("referrals")
-          .doc(uid)
-          .set(
-            { points: admin.firestore.FieldValue.increment(points) },
-            { merge: true },
-          )
+        .collection("users")
+        .doc(referrerUid)
+        .collection("referrals")
+        .doc(uid)
+        .set(
+          { points: admin.firestore.FieldValue.increment(points) },
+          { merge: true },
+        )
       : null;
   }
 
@@ -2978,3 +3149,3925 @@ export const onUserLogin = onDocumentUpdated(
     await referrerRef.set({ lastLogin: data?.lastLogin }, { merge: true });
   },
 );
+
+// ==========================================
+// LIVE BILLS PROVIDER INTEGRATION (CLUBKONNECT / NELLOBYTE)
+// ==========================================
+
+function getClubKonnectUserId() {
+  return process.env.CLUBKONNECT_USER_ID;
+}
+
+function getClubKonnectApiKey() {
+  return process.env.CLUBKONNECT_API_KEY;
+}
+
+function getClubKonnectNetworkCode(networkName) {
+  if (!networkName) return "01";
+  const name = String(networkName).toLowerCase();
+  if (name.includes("mtn")) return "01";
+  if (name.includes("glo")) return "02";
+  if (name.includes("9mob") || name.includes("etisalat")) return "03";
+  if (name.includes("airtel")) return "04";
+  return "01";
+}
+
+function isClubKonnectOrderSuccess(res) {
+  if (!res) return false;
+  const status = String(res.status || "").toUpperCase();
+  const statusCode = String(res.statuscode || "");
+  const remark = String(
+    res.remark || res.description || res.msg || "",
+  ).toUpperCase();
+  const orderId = res.orderid || res.order_id || res.OrderID;
+
+  // 1. HARD FAILURE CHECKS: If remark or status explicitly mentions failure or invalid inputs, it is NEVER a success!
+  if (
+    remark.includes("INVALID") ||
+    remark.includes("FAILED") ||
+    remark.includes("DECLINED") ||
+    remark.includes("UNSUCCESSFUL") ||
+    remark.includes("ERROR") ||
+    remark.includes("CANCELLED") ||
+    remark.includes("REJECTED") ||
+    remark.includes("NOT FOUND") ||
+    remark.includes("INSUFFICIENT") ||
+    remark.includes("LOW BALANCE") ||
+    status.includes("FAIL") ||
+    status.includes("CANCEL") ||
+    status.includes("INVALID") ||
+    status.includes("REJECT") ||
+    status.includes("ERROR") ||
+    status.includes("MISSING") ||
+    statusCode === "400" ||
+    statusCode === "404" ||
+    statusCode === "500"
+  ) {
+    return false;
+  }
+
+  // 2. SUCCESS INDICATORS: Order was received/completed without failure remarks
+  const hasSuccessStatus =
+    status === "ORDER_RECEIVED" ||
+    status === "ORDER_COMPLETED" ||
+    status === "ORDER_ON_HOLD" ||
+    status === "ORDER_PROCESSING" ||
+    status === "SUCCESSFUL" ||
+    status === "SUCCESS" ||
+    status === "100" ||
+    status === "200" ||
+    statusCode === "100" ||
+    statusCode === "200";
+
+  return Boolean(orderId && hasSuccessStatus);
+}
+
+function isClubKonnectBalanceOutage(res) {
+  if (!res) return false;
+  const status = String(res.status || "").toUpperCase();
+  const desc = String(
+    res.description || res.msg || res.remark || "",
+  ).toUpperCase();
+  return (
+    status.includes("INSUFFICIENT") ||
+    status.includes("LOW_WALLET") ||
+    status.includes("LOW_BALANCE") ||
+    desc.includes("INSUFFICIENT") ||
+    desc.includes("LOW BALANCE")
+  );
+}
+
+function resolveProviderFailureReason(
+  result,
+  isProviderBalanceIssue,
+  isNetworkOrHtmlError,
+  defaultMsg = "Transaction failed",
+) {
+  if (isNetworkOrHtmlError) {
+    return "Provider Connection Error / Invalid API Response";
+  }
+  if (isProviderBalanceIssue) {
+    return "Insufficient Reseller Gateway Balance / Temporary Provider Maintenance";
+  }
+  const rawStatus = String(result?.status || "").toUpperCase();
+  const rawDesc = String(
+    result?.description || result?.remark || result?.msg || "",
+  );
+  const descUpper = rawDesc.toUpperCase();
+
+  if (
+    rawStatus.includes("INVALID_METER") ||
+    descUpper.includes("INVALID METER") ||
+    descUpper.includes("INVALID ACCOUNT") ||
+    rawStatus.includes("METER_NOT_FOUND") ||
+    descUpper.includes("METER NOT FOUND")
+  ) {
+    return "Invalid meter / account number. Please verify your meter details with your distribution company.";
+  }
+  if (
+    rawStatus.includes("INVALID_SMARTCARD") ||
+    descUpper.includes("SMARTCARD") ||
+    rawStatus.includes("INVALID_IUC") ||
+    descUpper.includes("INVALID IUC")
+  ) {
+    return "Invalid decoder / smartcard IUC number. Please verify your decoder details.";
+  }
+  if (
+    rawStatus.includes("INVALID_PHONE") ||
+    descUpper.includes("PHONE") ||
+    descUpper.includes("INVALID MOBILE")
+  ) {
+    return "Invalid recipient phone number format.";
+  }
+  if (rawStatus.includes("INVALID_AMOUNT") || descUpper.includes("AMOUNT")) {
+    return rawDesc || "Invalid purchase amount specified for this service.";
+  }
+  if (
+    rawStatus.includes("MISSING_ORDERID") ||
+    rawStatus.includes("ORDER_NOT_FOUND")
+  ) {
+    return (
+      rawDesc ||
+      "Provider gateway did not accept this transaction. Please verify your account/meter details."
+    );
+  }
+
+  return (
+    rawDesc ||
+    (rawStatus !== "ORDER_COMPLETED" ? result?.status : null) ||
+    defaultMsg
+  );
+}
+
+async function verifyClubKonnectOrderStatus(requestId) {
+  const userId = getClubKonnectUserId();
+  const apiKey = getClubKonnectApiKey();
+  const queryUrl = `https://www.nellobytesystems.com/APIQueryV1.asp?UserID=${userId}&APIKey=${apiKey}&RequestID=${requestId}`;
+  try {
+    logger.info(
+      `🔍 [2-Step Verification]: Querying order status for RequestID ${requestId}...`,
+    );
+    const queryRes = await fetchClubKonnectApi(queryUrl, 10000);
+    if (queryRes.success && queryRes.data) {
+      const isSuccess = isClubKonnectOrderSuccess(queryRes.data);
+      logger.info(
+        `🔍 [2-Step Verification Result for ${requestId}]: isSuccess=${isSuccess}`,
+        queryRes.data,
+      );
+      return { checked: true, isSuccess, data: queryRes.data };
+    }
+  } catch (err) {
+    logger.error(`❌ [2-Step Verification Error for ${requestId}]:`, err);
+  }
+  return { checked: false, isSuccess: false, data: null };
+}
+
+async function fetchClubKonnectApi(targetUrl, timeoutMs = 15000) {
+  const customHeaders = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 PayWaka/1.0",
+    Accept: "application/json, text/plain, */*",
+    "Cache-Control": "no-cache",
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  logger.info(
+    `📡 [ClubKonnect API Outbound Request]: ${targetUrl.replace(/APIKey=[^&]+/i, "APIKey=***")}`,
+  );
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: "GET",
+      headers: customHeaders,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const rawText = await res.text();
+    logger.info(
+      `📥 [ClubKonnect API Inbound Response (HTTP ${res.status})]: ${rawText.substring(0, 500)}`,
+    );
+    console.log("what's happening", rawText)
+
+    if (!res.ok || rawText.trim().startsWith("<")) {
+      return {
+        success: false,
+        error: new Error(`HTTP ${res.status}: Invalid HTML or Gateway Error`),
+        rawText,
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(rawText);
+      return { success: true, data: parsed, rawText };
+    } catch (parseErr) {
+      return {
+        success: true,
+        data: { status: "RAW_RESPONSE", rawText },
+        rawText,
+      };
+    }
+  } catch (err) {
+    clearTimeout(timeoutId);
+    logger.error(`❌ [ClubKonnect API Fetch Failed]: ${err.message}`);
+    return { success: false, error: err };
+  }
+}
+
+function getFlutterwaveMerchantId() {
+  return process.env.FLW_MERCHANT_ID || "100381242";
+}
+
+async function recordPendingSettlement({
+  uid,
+  requestId,
+  category,
+  amount,
+  provider = "ClubKonnect",
+  userDocData = {},
+}) {
+  const dateKey = new Date().toISOString().split("T")[0];
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+
+  await db
+    .collection("admin_pending_settlements")
+    .doc(requestId)
+    .set({
+      tx_ref: requestId,
+      uid,
+      userEmail: userDocData.email || "",
+      accountReference: userDocData.accountReference || "",
+      accountNumber: userDocData.accountNumber || "",
+      bankCode: userDocData.bankCode || "035",
+      bankName: userDocData.bankName || "Wema Bank PLC",
+      barter_id: userDocData.barter_id || "",
+      merchantId: getFlutterwaveMerchantId(),
+      category,
+      amount: Number(amount),
+      provider,
+      status: "PENDING_SWEEP", // PENDING_SWEEP, SETTLED_SUCCESSFULLY, CANCELLED_REFUNDED, SWEEP_FAILED
+      dateKey,
+      createdAt: now,
+      created_at: isoNow,
+    });
+}
+
+async function cancelPendingSettlement(requestId, failureReasonStr) {
+  const dateKey = new Date().toISOString().split("T")[0];
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+
+  await db
+    .collection("admin_pending_settlements")
+    .doc(requestId)
+    .set(
+      {
+        status: "CANCELLED_REFUNDED",
+        failureReason:
+          failureReasonStr ||
+          "Transaction failed and refunded to in-app wallet",
+        dateKey,
+        updatedAt: now,
+        updated_at: isoNow,
+      },
+      { merge: true },
+    );
+}
+
+// ==========================================
+// TRANSACTION PIN SECURITY ENGINE
+// ==========================================
+
+const scryptAsync = util.promisify(crypto.scrypt);
+
+// Weak-PIN blocklist: repeated digits (0000-9999), 1234, 4321, ascending, descending, and trivial patterns
+const WEAK_PINS = new Set([
+  // Repeating digits
+  "0000", "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999",
+  // Simple common pins
+  "1234", "4321", "1212", "6969", "2580", "0852",
+  // Ascending sequences
+  "0123", "2345", "3456", "4567", "5678", "6789",
+  // Descending sequences
+  "9876", "8765", "7654", "6543", "5432", "3210"
+]);
+
+export function validatePinFormat(pin) {
+  if (pin === undefined || pin === null || typeof pin !== "string" || !/^\d{4}$/.test(String(pin).trim())) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Transaction PIN must be exactly 4 digits (0-9)."
+    );
+  }
+  const cleanPin = String(pin).trim();
+  const d0 = Number(cleanPin[0]);
+  const d1 = Number(cleanPin[1]);
+  const d2 = Number(cleanPin[2]);
+  const d3 = Number(cleanPin[3]);
+
+  const isRepeating = cleanPin[0] === cleanPin[1] && cleanPin[1] === cleanPin[2] && cleanPin[2] === cleanPin[3];
+  const isAscending = d1 === d0 + 1 && d2 === d1 + 1 && d3 === d2 + 1;
+  const isDescending = d1 === d0 - 1 && d2 === d1 - 1 && d3 === d2 - 1;
+
+  if (WEAK_PINS.has(cleanPin) || isRepeating || isAscending || isDescending) {
+    throw new HttpsError(
+      "invalid-argument",
+      "This PIN is too common or predictable. Please choose a stronger 4-digit PIN."
+    );
+  }
+  return cleanPin;
+}
+
+export function generatePinSalt() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+export function getPinPepper(version = 1) {
+  const vKey = `PIN_PEPPER_SECRET_V${version}`;
+
+  if (process.env[vKey]) return process.env[vKey];
+
+  const secretDef = PIN_PEPPER_SECRETS[version];
+  if (secretDef) {
+    try {
+      const secretVal = secretDef.value();
+      if (secretVal) return secretVal;
+    } catch (_) { }
+  }
+
+  throw new Error(`PIN pepper not configured for version ${version}`);
+}
+
+export function deriveHmacPin(pin, pepper) {
+  return crypto.createHmac("sha256", pepper).update(pin).digest("hex");
+}
+
+export async function hashTransactionPin(pin, salt, pepperVersion = 1) {
+  const pepper = getPinPepper(pepperVersion);
+  const hmacPin = deriveHmacPin(pin, pepper);
+  const derivedKey = await scryptAsync(hmacPin, salt, 64);
+  return derivedKey.toString("hex");
+}
+
+export async function verifyPinMatch(inputPin, salt, storedHash, pepperVersion = 1) {
+  const pepper = getPinPepper(pepperVersion);
+  const hmacPin = deriveHmacPin(inputPin, pepper);
+  const computedBuf = await scryptAsync(hmacPin, salt, 64);
+  const storedBuf = Buffer.from(storedHash, "hex");
+  if (computedBuf.length !== storedBuf.length) return false;
+  return crypto.timingSafeEqual(computedBuf, storedBuf);
+}
+
+export async function sendPinSecurityNotification(uid, action) {
+  try {
+    const isChange = action === "PIN_CHANGED";
+    const title = isChange
+      ? "Security Alert: Transaction PIN Changed"
+      : "Security Alert: Transaction PIN Reset";
+    const body = isChange
+      ? "Your PayWaka transaction PIN was just updated. If you did not make this change, please contact support immediately."
+      : "Your PayWaka transaction PIN was reset following a security verification. If you did not initiate this reset, contact support immediately.";
+
+    // 1. In-App Notification Record in users/{uid}/notifications
+    const notifRef = db.collection("users").doc(uid).collection("notifications").doc();
+    await notifRef.set({
+      title,
+      message: body,
+      type: "security",
+      action,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 2. Fetch User Details for Email & Push
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.exists ? (userDoc.data() || {}) : {};
+    const userEmail = userData.userEmail || userData.email;
+    const displayName = userData.userName || userData.firstName || "Valued Customer";
+
+    // 3. Push Notification via FCM
+    try {
+      const tokensSnap = await db.collection("users").doc(uid).collection("fcmTokens").get();
+      if (!tokensSnap.empty) {
+        const tokens = tokensSnap.docs.map((d) => d.data().token).filter(Boolean);
+        if (tokens.length > 0) {
+          await getMessaging().sendEachForMulticast({
+            tokens,
+            notification: { title, body },
+          });
+          logger.info(`📱 Security push notification dispatched to ${tokens.length} token(s) for user ${uid}`);
+        }
+      }
+    } catch (fcmErr) {
+      logger.warn(`Push notification skipped or failed for user ${uid}: ${fcmErr.message}`);
+    }
+
+    // 4. Email Notification via Resend (if configured)
+    if (userEmail && process.env.RESEND_API_KEY) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const eventTime = new Date().toLocaleString("en-GB", {
+          timeZone: "Africa/Lagos",
+          dateStyle: "full",
+          timeStyle: "short",
+        });
+
+        await resend.emails.send({
+          from: "PayWaka Security <onboarding@resend.dev>",
+          to: userEmail,
+          subject: title,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #060d18; color: #ffffff; padding: 32px 24px; border-radius: 12px;">
+              <h2 style="color: #22c55e; margin-top: 0;">PayWaka Security Notification</h2>
+              <p style="font-size: 16px; color: #c9d8e8;">Hi <strong>${displayName}</strong>,</p>
+              <p style="font-size: 15px; color: #c9d8e8; line-height: 1.6;">${body}</p>
+              <div style="background: #0a1628; border: 1px solid #1e3a5f; border-radius: 8px; padding: 16px; margin: 24px 0;">
+                <p style="margin: 0 0 8px; font-size: 13px; color: #6b8aad;"><strong>Event:</strong> ${isChange ? "PIN Changed" : "PIN Reset"}</p>
+                <p style="margin: 0 0 8px; font-size: 13px; color: #6b8aad;"><strong>Time:</strong> ${eventTime} (WAT)</p>
+                <p style="margin: 0; font-size: 13px; color: #6b8aad;"><strong>Status:</strong> Completed Successfully</p>
+              </div>
+              <p style="font-size: 13px; color: #ef4444; line-height: 1.5;">
+                If you did not authorize this change, please navigate to your PayWaka settings or contact support immediately to secure your account.
+              </p>
+              <p style="font-size: 12px; color: #3d5a73; margin-top: 32px; border-top: 1px solid #1e3a5f; padding-top: 16px;">
+                © ${new Date().getFullYear()} PayWaka. All rights reserved.
+              </p>
+            </div>
+          `,
+        });
+        logger.info(`✉️ Security alert email dispatched to ${userEmail} for user ${uid}`);
+      } catch (emailErr) {
+        logger.warn(`Resend email notification failed for user ${uid}: ${emailErr.message}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`Failed to process security notification for user ${uid}:`, err);
+  }
+}
+
+export async function verifyUserPinCore(uid, rawPin) {
+  if (!rawPin) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Transaction PIN is required to complete this transaction."
+    );
+  }
+  const pin = String(rawPin).trim();
+  if (!/^\d{4}$/.test(pin)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Transaction PIN must be exactly 4 digits (0-9)."
+    );
+  }
+
+  const pinCredRef = db.collection("users").doc(uid).collection("private_security").doc("pin_credentials");
+
+  let verificationResult = null;
+
+  await db.runTransaction(async (t) => {
+    const credDoc = await t.get(pinCredRef);
+    if (!credDoc.exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Transaction PIN has not been created yet. Please set up your 4-digit PIN first."
+      );
+    }
+
+    const credData = credDoc.data() || {};
+    let { hash, salt, attempts = 0, lockedUntil } = credData;
+
+    const now = new Date();
+    // Check temporary security lockout
+    if (lockedUntil) {
+      const lockDate = lockedUntil.toDate ? lockedUntil.toDate() : new Date(lockedUntil);
+      if (lockDate > now) {
+        const remainingMinutes = Math.ceil((lockDate.getTime() - now.getTime()) / (60 * 1000));
+        throw new HttpsError(
+          "resource-exhausted",
+          `Security lockout: Too many failed PIN attempts. Account locked for your safety. Try again in ${remainingMinutes} minute${remainingMinutes > 1 ? "s" : ""}.`
+        );
+      } else {
+        // Lockout expired: reset attempts counter so first wrong attempt does not immediately re-lock
+        attempts = 0;
+        lockedUntil = null;
+      }
+    }
+
+    const isMatch = await verifyPinMatch(pin, salt, hash, credData.pepperVersion || 1);
+
+    if (!isMatch) {
+      const newAttempts = (Number(attempts) || 0) + 1;
+      const updateData = {
+        attempts: newAttempts,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      if (newAttempts >= 5) {
+        const newLockDate = new Date(Date.now() + 15 * 60 * 1000);
+        updateData.lockedUntil = admin.firestore.Timestamp.fromDate(newLockDate);
+        t.update(pinCredRef, updateData);
+
+        // Audit log entry for lockout event
+        const auditRef = db.collection("admin_audit_logs").doc();
+        t.set(auditRef, {
+          uid,
+          action: "PIN_LOCKOUT",
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        verificationResult = {
+          success: false,
+          errorType: "lockout",
+          message: "Security lockout: Too many failed PIN attempts. Your account has been locked for 15 minutes.",
+        };
+      } else {
+        updateData.lockedUntil = null;
+        t.update(pinCredRef, updateData);
+        const remaining = 5 - newAttempts;
+        verificationResult = {
+          success: false,
+          errorType: "mismatch",
+          message: `Incorrect transaction PIN. ${remaining} attempt${remaining > 1 ? "s" : ""} remaining before temporary lockout.`,
+        };
+      }
+    } else {
+      // Success! Reset attempts to 0 and clear lockedUntil in Firestore
+      if (credData.attempts > 0 || credData.lockedUntil || attempts > 0 || lockedUntil) {
+        t.update(pinCredRef, {
+          attempts: 0,
+          lockedUntil: null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      verificationResult = { success: true };
+    }
+  });
+
+  if (!verificationResult?.success) {
+    if (verificationResult?.errorType === "lockout") {
+      throw new HttpsError("resource-exhausted", verificationResult.message);
+    }
+    throw new HttpsError("permission-denied", verificationResult?.message || "Incorrect transaction PIN.");
+  }
+
+  return true;
+}
+
+export const createTransactionPin = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to create transaction PIN.");
+  }
+
+  const { pin } = request.data || {};
+  const validPin = validatePinFormat(pin);
+
+  const userRef = db.collection("users").doc(uid);
+  const pinCredRef = userRef.collection("private_security").doc("pin_credentials");
+
+  // Server-side check: Must reject if pin_credentials already exists
+  const credDoc = await pinCredRef.get();
+  if (credDoc.exists) {
+    throw new HttpsError(
+      "already-exists",
+      "Transaction PIN already exists. Use the change PIN option in Settings or reset PIN if forgotten."
+    );
+  }
+
+  const salt = generatePinSalt();
+  const hash = await hashTransactionPin(validPin, salt, 1);
+
+  const batch = db.batch();
+  batch.set(pinCredRef, {
+    hash,
+    salt,
+    pepperVersion: 1,
+    attempts: 0,
+    lockedUntil: null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  batch.set(
+    userRef,
+    {
+      hasTransactionPin: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  // Write audit log
+  const auditRef = db.collection("admin_audit_logs").doc();
+  batch.set(auditRef, {
+    uid,
+    action: "PIN_CREATED",
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+
+  logger.info(`🔐 Transaction PIN securely created for user: ${uid}`);
+  return { success: true, message: "Transaction PIN created successfully." };
+});
+
+export const changeTransactionPin = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to change transaction PIN.");
+  }
+
+  const { currentPin, newPin } = request.data || {};
+  if (!currentPin || typeof currentPin !== "string" || !/^\d{4}$/.test(String(currentPin).trim())) {
+    throw new HttpsError("invalid-argument", "Current PIN must be exactly 4 digits.");
+  }
+  const validCurrentPin = String(currentPin).trim();
+  const validNewPin = validatePinFormat(newPin);
+
+  if (validCurrentPin === validNewPin) {
+    throw new HttpsError(
+      "invalid-argument",
+      "New PIN must be different from your current PIN."
+    );
+  }
+
+  // Verify current PIN (verifies timing-safe hash, tracks attempts and lockouts in transaction)
+  await verifyUserPinCore(uid, validCurrentPin);
+
+  const salt = generatePinSalt();
+  const hash = await hashTransactionPin(validNewPin, salt, 1);
+
+  const pinCredRef = db.collection("users").doc(uid).collection("private_security").doc("pin_credentials");
+  const batch = db.batch();
+  batch.set(pinCredRef, {
+    hash,
+    salt,
+    pepperVersion: 1,
+    attempts: 0,
+    lockedUntil: null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  batch.set(db.collection("users").doc(uid), {
+    hasTransactionPin: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  // Write audit log
+  const auditRef = db.collection("admin_audit_logs").doc();
+  batch.set(auditRef, {
+    uid,
+    action: "PIN_CHANGED",
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+
+  // Send security notification to user (email, push, in-app) - isolated from PIN transaction
+  try {
+    await sendPinSecurityNotification(uid, "PIN_CHANGED");
+  } catch (notifErr) {
+    logger.warn(`Security notification dispatch failed for user ${uid}:`, notifErr);
+  }
+
+  logger.info(`🔐 Transaction PIN changed successfully for user: ${uid}`);
+  return { success: true, message: "Transaction PIN changed successfully." };
+});
+
+export const resetTransactionPin = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to reset transaction PIN.");
+  }
+
+  // Verify recent re-authentication window (fresh login within last 5 minutes = 300 seconds)
+  const authTime = request.auth?.token?.auth_time;
+  if (!authTime && !isEmulator) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Unable to verify recent authentication. Please re-authenticate and try again."
+    );
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (authTime && (nowSeconds - authTime > 300)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Security requirement: Your login session is not fresh. Please enter your account password to verify your identity before resetting your PIN."
+    );
+  }
+
+  const { newPin } = request.data || {};
+  const validNewPin = validatePinFormat(newPin);
+
+  const salt = generatePinSalt();
+  const hash = await hashTransactionPin(validNewPin, salt, 1);
+
+  const pinCredRef = db.collection("users").doc(uid).collection("private_security").doc("pin_credentials");
+  const userRef = db.collection("users").doc(uid);
+
+  const batch = db.batch();
+  // Reset also clears attempts and lockedUntil
+  batch.set(pinCredRef, {
+    hash,
+    salt,
+    pepperVersion: 1,
+    attempts: 0,
+    lockedUntil: null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  batch.set(userRef, {
+    hasTransactionPin: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  // Write audit log
+  const auditRef = db.collection("admin_audit_logs").doc();
+  batch.set(auditRef, {
+    uid,
+    action: "PIN_RESET",
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+
+  // Send security notification to user (email, push, in-app) - isolated from PIN transaction
+  try {
+    await sendPinSecurityNotification(uid, "PIN_RESET");
+  } catch (notifErr) {
+    logger.warn(`Security notification dispatch failed for user ${uid}:`, notifErr);
+  }
+
+  logger.info(`🔐 Transaction PIN securely reset for user: ${uid}`);
+  return { success: true, message: "Transaction PIN reset successfully." };
+});
+
+export const verifyTransactionPin = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to verify transaction PIN.");
+  }
+
+  const { pin } = request.data || {};
+  await verifyUserPinCore(uid, pin);
+  return { success: true, valid: true };
+});
+
+/**
+ * Idempotently awards points for eligible completed transactions.
+ * Approved Business Rule: ₦50 eligible spend = 1 point (Math.floor(amount / 50)).
+ * Eligible categories: Airtime, Data, Electricity, Cable.
+ * 
+ * Double-layer update:
+ * 1. Append-only Points Ledger: users/{uid}/points/earn_{requestId}
+ * 2. Aggregate Spendable Balance: users/{uid}.points (atomic increment)
+ * 3. Idempotency: users/{uid}/Transactions/{requestId}.points_awarded flag + ledger doc existence
+ */
+export async function awardTransactionPointsCore({ uid, requestId, category, amount }) {
+  const numAmount = Number(amount || 0);
+  if (!uid || !requestId || numAmount < 50) {
+    return { pointsEarned: 0, awarded: false };
+  }
+
+  const pointsAwarded = Math.floor(numAmount / 50);
+  if (pointsAwarded <= 0) {
+    return { pointsEarned: 0, awarded: false };
+  }
+
+  const userRef = db.collection("users").doc(uid);
+  const ledgerDocRef = userRef.collection("points").doc(`earn_${requestId}`);
+  const txDocRef = userRef.collection("Transactions").doc(requestId);
+
+  try {
+    let alreadyAwarded = false;
+    await db.runTransaction(async (t) => {
+      const [ledgerSnap, txSnap] = await Promise.all([
+        t.get(ledgerDocRef),
+        t.get(txDocRef),
+      ]);
+
+      const txData = txSnap.exists ? txSnap.data() : {};
+      if (ledgerSnap.exists || txData.points_awarded) {
+        alreadyAwarded = true;
+        return;
+      }
+
+      // 1. Update aggregate spendable balance
+      t.set(
+        userRef,
+        {
+          points: admin.firestore.FieldValue.increment(pointsAwarded),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      // 2. Append-only ledger record
+      t.set(ledgerDocRef, {
+        type: "transaction_earn",
+        points: pointsAwarded,
+        direction: "credit",
+        source: String(category).toLowerCase(),
+        referenceId: requestId,
+        amountNaira: numAmount,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // 3. Mark transaction doc as points awarded
+      if (txSnap.exists) {
+        t.set(
+          txDocRef,
+          {
+            points_awarded: true,
+            points_amount: pointsAwarded,
+            points_awarded_at: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+    });
+
+    if (alreadyAwarded) {
+      logger.info(`ℹ️ Points already awarded for transaction ${requestId}. Skipped.`);
+      return { pointsEarned: pointsAwarded, awarded: false, duplicate: true };
+    }
+
+    logger.info(`🎉 Awarded ${pointsAwarded} points to user ${uid} for ${category} (₦${numAmount}).`);
+    return { pointsEarned: pointsAwarded, awarded: true };
+  } catch (err) {
+    logger.error(`❌ Failed to award transaction points for ${requestId}:`, err);
+    return { pointsEarned: 0, awarded: false, error: err.message };
+  }
+}
+
+// 1. BUY AIRTIME
+export const clubkonnectBuyAirtime = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Authentication required to perform airtime purchase.",
+    );
+  }
+  const { network, phone, amount, pin } = request.data || {};
+  const numAmount = Number(amount || 0);
+  if (!network || !phone || !numAmount || numAmount <= 0) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Network, valid phone number, and positive amount are required.",
+    );
+  }
+
+  // Verify user transaction PIN before proceeding with wallet debit
+  await verifyUserPinCore(uid, pin);
+
+  const userId = getClubKonnectUserId();
+  const apiKey = getClubKonnectApiKey();
+  const networkCode = getClubKonnectNetworkCode(network);
+  const requestId = `PWK_${uid}_${Date.now()}`;
+  const userRef = db.collection("users").doc(uid);
+  let cachedUserData = {};
+
+  try {
+    await db.runTransaction(async (t) => {
+      const userDoc = await t.get(userRef);
+      if (userDoc.exists) {
+        cachedUserData = userDoc.data() || {};
+        const currentBalance = Number(cachedUserData.walletBalance || 0);
+        if (currentBalance < numAmount) {
+          throw new Error("Insufficient wallet balance for airtime purchase.");
+        }
+        t.update(userRef, {
+          walletBalance: admin.firestore.FieldValue.increment(-numAmount),
+        });
+      } else if (process.env.FUNCTIONS_EMULATOR === "true") {
+        cachedUserData = {
+          email: "dev_user@paywaka.com",
+          accountReference: "PSAF010632D562280420",
+          accountNumber: "7353739008",
+          bankCode: "035",
+          bankName: "Wema Bank PLC",
+          barter_id: "234000003484364",
+          walletBalance: 100000,
+        };
+        t.set(userRef, cachedUserData, { merge: true });
+      } else {
+        throw new Error("User account not found or has zero balance.");
+      }
+    });
+  } catch (err) {
+    logger.error(`Transaction failed for airtime: ${requestId}`, err);
+    throw new HttpsError(
+      "failed-precondition",
+      err.message || "Balance deduction failed.",
+    );
+  }
+
+  const primaryUrl = `https://www.nellobytesystems.com/APIAirtimeV1.asp?UserID=${userId}&APIKey=${apiKey}&MobileNetwork=${networkCode}&Amount=${numAmount}&MobileNumber=${phone}&RequestID=${requestId}`;
+
+  let result;
+  let isSuccess = false;
+  let isProviderBalanceIssue = false;
+  let isNetworkOrHtmlError = false;
+
+  const fetchRes = await fetchClubKonnectApi(primaryUrl);
+  if (!fetchRes.success) {
+    logger.error(`Airtime API fetch error for ${requestId}:`, fetchRes.error);
+    isSuccess = false;
+    isNetworkOrHtmlError = true;
+    result = {
+      status: "NETWORK_ERROR",
+      description: fetchRes.error?.message || "Provider connection failed",
+    };
+  } else {
+    result = fetchRes.data;
+    isSuccess = isClubKonnectOrderSuccess(result);
+    isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
+  }
+
+  // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
+  if (!isSuccess) {
+    logger.warn(
+      `⚠️ Airtime primary purchase returned non-success for ${requestId}. Executing Step 2 Status Query...`,
+    );
+    await new Promise((r) => setTimeout(r, 1200));
+    const step2Check = await verifyClubKonnectOrderStatus(requestId);
+    if (step2Check.isSuccess) {
+      logger.info(
+        `✅ [Step 2 Check Succeeded]: Airtime was received/fulfilled by provider for ${requestId}!`,
+      );
+      isSuccess = true;
+      result = step2Check.data || result;
+    }
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+
+  if (!isSuccess) {
+    // AUTOMATIC USER WALLET REFUND
+    await userRef.set(
+      { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
+      { merge: true },
+    );
+
+    const failureReasonStr = resolveProviderFailureReason(
+      result,
+      isProviderBalanceIssue,
+      isNetworkOrHtmlError,
+      "Airtime recharge failed",
+    );
+
+    await cancelPendingSettlement(requestId, failureReasonStr);
+
+    await db.collection("system_failed_payouts").doc(requestId).set({
+      tx_ref: requestId,
+      uid,
+      category: "Airtime",
+      amount: numAmount,
+      customerId: phone,
+      reason: failureReasonStr,
+      providerResponse: result,
+      createdAt: now,
+      created_at: isoNow,
+      resolved: false,
+    });
+
+    await userRef
+      .collection("Transactions")
+      .doc(requestId)
+      .set({
+        tx_ref: requestId,
+        narration: `Airtime Recharge (${network}) - Refunded`,
+        category: "Airtime",
+        type: "debit",
+        amount: numAmount,
+        status: "failed",
+        phone,
+        customerId: phone,
+        failureReason: failureReasonStr,
+        created_at: isoNow,
+        createdAt: now,
+        response: result,
+      });
+
+    return {
+      status: "provider_error",
+      message: isProviderBalanceIssue
+        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
+        : failureReasonStr,
+      tx_ref: requestId,
+      refunded: true,
+      data: result,
+    };
+  }
+
+  // SUCCESS PATH: Record pending subaccount sweep for midnight batch
+  await recordPendingSettlement({
+    uid,
+    requestId,
+    category: "Airtime",
+    amount: numAmount,
+    userDocData: cachedUserData,
+  });
+  await userRef
+    .collection("Transactions")
+    .doc(requestId)
+    .set({
+      tx_ref: requestId,
+      narration: `Airtime Recharge (${network})`,
+      category: "Airtime",
+      type: "debit",
+      amount: numAmount,
+      status: "completed",
+      phone,
+      customerId: phone,
+      created_at: isoNow,
+      createdAt: now,
+      response: result,
+    });
+
+  await userRef.collection("airtime").doc(requestId).set({
+    network,
+    phone,
+    amount: numAmount,
+    status: "completed",
+    createdAt: now,
+  });
+
+  const ptsRes = await awardTransactionPointsCore({
+    uid,
+    requestId,
+    category: "Airtime",
+    amount: numAmount,
+  });
+
+  return {
+    status: "success",
+    message: "Airtime purchase successful",
+    data: result,
+    tx_ref: requestId,
+    pointsEarned: ptsRes.pointsEarned,
+  };
+});
+
+// 2. BUY DATA
+export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Authentication required to purchase data.",
+    );
+  }
+  const { network, plan, phone, pin } = request.data || {};
+  if (!network || !plan || !phone) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Network, plan code, and phone number are required.",
+    );
+  }
+
+  // Verify user transaction PIN before proceeding with price calculation and wallet debit
+  await verifyUserPinCore(uid, pin);
+
+  const netUpper = String(network).toUpperCase();
+  const planCodeStr = String(plan).trim();
+
+  // 1. Server-side purchase-time price recomputation
+  const config = await getPricingConfigCore();
+  const planDocRef = db.collection("data_plan_pricing").doc(`${netUpper}_${planCodeStr}`);
+  const planDocSnap = await planDocRef.get();
+
+  let costPrice = 0;
+  let competitorPrice = null;
+  let customDisplayPrice = null;
+  let overrideMode = "AUTOMATIC";
+
+  if (planDocSnap.exists) {
+    const planData = planDocSnap.data() || {};
+    costPrice = Number(planData.costPrice || 0);
+    competitorPrice = planData.competitorPrice;
+    customDisplayPrice = planData.customDisplayPrice;
+    overrideMode = planData.overrideMode || "AUTOMATIC";
+  } else {
+    // Fallback: fetch live cost from ClubKonnect if plan not in Firestore yet
+    try {
+      const userId = getClubKonnectUserId();
+      const res = await fetch(`https://www.nellobytesystems.com/APIDatabundlePlansV2.asp?UserID=${userId}`);
+      const rawData = typeof res.json === "function" ? await res.json() : JSON.parse(await res.text());
+      const mobileNetworkObj = rawData?.MOBILE_NETWORK || {};
+      let rawPlans = [];
+      if (netUpper.includes("MTN") && mobileNetworkObj.MTN) rawPlans = mobileNetworkObj.MTN[0]?.PRODUCT || [];
+      else if (netUpper.includes("GLO") && mobileNetworkObj.Glo) rawPlans = mobileNetworkObj.Glo[0]?.PRODUCT || [];
+      else if (netUpper.includes("AIRTEL") && mobileNetworkObj.Airtel) rawPlans = mobileNetworkObj.Airtel[0]?.PRODUCT || [];
+      else if ((netUpper.includes("9MOB") || netUpper.includes("ETISALAT")) && (mobileNetworkObj.m_9mobile || mobileNetworkObj["9mobile"])) {
+        rawPlans = (mobileNetworkObj.m_9mobile || mobileNetworkObj["9mobile"])[0]?.PRODUCT || [];
+      }
+      const matched = rawPlans.find((p) => String(p.PRODUCT_ID || p.PRODUCT_CODE).trim() === planCodeStr);
+      if (matched) {
+        costPrice = Number(matched.PRODUCT_AMOUNT || 0);
+      }
+    } catch (err) {
+      logger.error("Error fetching fallback plan cost:", err);
+    }
+  }
+
+  if (!costPrice || costPrice <= 0) {
+    throw new HttpsError("invalid-argument", "Invalid data plan or cost price unavailable.");
+  }
+
+  const pricingResult = calculatePlanPricing(
+    costPrice,
+    netUpper,
+    competitorPrice,
+    customDisplayPrice,
+    overrideMode,
+    config,
+  );
+
+  const numAmount = pricingResult.displayPrice;
+
+  const userId = getClubKonnectUserId();
+  const apiKey = getClubKonnectApiKey();
+  const networkCode = getClubKonnectNetworkCode(network);
+  const requestId = `PWK_${uid}_${Date.now()}`;
+  const userRef = db.collection("users").doc(uid);
+  let cachedUserData = {};
+
+  try {
+    await db.runTransaction(async (t) => {
+      const userDoc = await t.get(userRef);
+      if (userDoc.exists) {
+        cachedUserData = userDoc.data() || {};
+        const currentBalance = Number(cachedUserData.walletBalance || 0);
+        if (currentBalance < numAmount) {
+          throw new Error(
+            `Insufficient PayWaka wallet balance. Data plan price is ₦${numAmount.toLocaleString()}. Please add funds to your wallet.`,
+          );
+        }
+        t.update(userRef, {
+          walletBalance: admin.firestore.FieldValue.increment(-numAmount),
+        });
+      } else if (process.env.FUNCTIONS_EMULATOR === "true") {
+        cachedUserData = {
+          email: "dev_user@paywaka.com",
+          accountReference: "PSAF010632D562280420",
+          accountNumber: "7353739008",
+          bankCode: "035",
+          bankName: "Wema Bank PLC",
+          barter_id: "234000003484364",
+          walletBalance: 100000,
+        };
+        t.set(userRef, cachedUserData, { merge: true });
+      } else {
+        throw new Error("User account not found or has zero balance.");
+      }
+    });
+  } catch (err) {
+    logger.error(`Transaction failed for data: ${requestId}`, err);
+    throw new HttpsError(
+      "failed-precondition",
+      err.message || "Balance deduction failed.",
+    );
+  }
+
+  const primaryUrl = `https://www.nellobytesystems.com/APIDatabundleV1.asp?UserID=${userId}&APIKey=${apiKey}&MobileNetwork=${networkCode}&DataPlan=${planCodeStr}&MobileNumber=${phone}&RequestID=${requestId}`;
+
+  let result;
+  let isSuccess = false;
+  let isProviderBalanceIssue = false;
+  let isNetworkOrHtmlError = false;
+
+  const dataFetch = await fetchClubKonnectApi(primaryUrl);
+  if (!dataFetch.success) {
+    logger.error(`Data API fetch error for ${requestId}:`, dataFetch.error);
+    isSuccess = false;
+    isNetworkOrHtmlError = true;
+    result = {
+      status: "NETWORK_ERROR",
+      description: dataFetch.error?.message || "Provider connection failed",
+    };
+  } else {
+    result = dataFetch.data;
+    logger.info("📶 [DATA BUNDLE PURCHASE RAW PROVIDER RESPONSE]:", result);
+    isSuccess = isClubKonnectOrderSuccess(result);
+    isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
+  }
+
+  // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
+  if (!isSuccess) {
+    logger.warn(
+      `⚠️ Data primary purchase returned non-success for ${requestId}. Executing Step 2 Status Query...`,
+    );
+    await new Promise((r) => setTimeout(r, 1200));
+    const step2Check = await verifyClubKonnectOrderStatus(requestId);
+    if (step2Check.isSuccess) {
+      logger.info(
+        `✅ [Step 2 Check Succeeded]: Data plan was received/fulfilled by provider for ${requestId}!`,
+      );
+      isSuccess = true;
+      result = step2Check.data || result;
+    }
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+
+  if (!isSuccess) {
+    await userRef.set(
+      { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
+      { merge: true },
+    );
+
+    const failureReasonStr = resolveProviderFailureReason(
+      result,
+      isProviderBalanceIssue,
+      isNetworkOrHtmlError,
+      "Data plan purchase failed",
+    );
+
+    await cancelPendingSettlement(requestId, failureReasonStr);
+
+    await db.collection("system_failed_payouts").doc(requestId).set({
+      tx_ref: requestId,
+      uid,
+      category: "Data",
+      amount: numAmount,
+      customerId: phone,
+      reason: failureReasonStr,
+      providerResponse: result,
+      createdAt: now,
+      created_at: isoNow,
+      resolved: false,
+    });
+
+    await userRef
+      .collection("Transactions")
+      .doc(requestId)
+      .set({
+        tx_ref: requestId,
+        narration: `Data Purchase (${netUpper}) - Refunded`,
+        category: "Data",
+        type: "debit",
+        amount: numAmount,
+        status: "failed",
+        phone,
+        customerId: phone,
+        failureReason: failureReasonStr,
+        created_at: isoNow,
+        createdAt: now,
+        response: result,
+      });
+
+    return {
+      status: "provider_error",
+      message: isProviderBalanceIssue
+        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
+        : failureReasonStr,
+      tx_ref: requestId,
+      refunded: true,
+      data: result,
+    };
+  }
+
+  // SUCCESS PATH: Record pending subaccount sweep for midnight batch
+  await recordPendingSettlement({
+    uid,
+    requestId,
+    category: "Data",
+    amount: numAmount,
+    userDocData: cachedUserData,
+  });
+
+  const txDocRef = userRef.collection("Transactions").doc(requestId);
+  await txDocRef.set({
+    tx_ref: requestId,
+    narration: `Data Purchase (${netUpper})`,
+    category: "Data",
+    type: "debit",
+    amount: numAmount,
+    costPrice: pricingResult.costPrice,
+    profit: pricingResult.profit,
+    isHero: pricingResult.isHero,
+    status: "completed",
+    phone,
+    customerId: phone,
+    created_at: isoNow,
+    createdAt: now,
+    response: result,
+  });
+
+  // IDEMPOTENT CASHBACK CREDITING: Check if cashback has already been awarded
+  if (pricingResult.cashbackAmount > 0) {
+    try {
+      await db.runTransaction(async (t) => {
+        const txDocSnap = await t.get(txDocRef);
+        const txData = txDocSnap.exists ? txDocSnap.data() : {};
+        if (!txData.cashback_awarded) {
+          t.update(userRef, {
+            walletBalance: admin.firestore.FieldValue.increment(pricingResult.cashbackAmount),
+          });
+          t.set(
+            txDocRef,
+            {
+              cashback_awarded: true,
+              cashback_amount: pricingResult.cashbackAmount,
+              cashback_rate: pricingResult.cashbackRate,
+              cashback_awarded_at: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
+      });
+    } catch (cbErr) {
+      logger.error(`Cashback crediting error for ${requestId}:`, cbErr);
+    }
+  }
+
+  const ptsRes = await awardTransactionPointsCore({
+    uid,
+    requestId,
+    category: "Data",
+    amount: numAmount,
+  });
+
+  return {
+    status: "success",
+    message: "Data purchase successful",
+    data: result,
+    tx_ref: requestId,
+    chargedAmount: numAmount,
+    cashbackEarned: pricingResult.cashbackAmount,
+    pointsEarned: ptsRes.pointsEarned,
+  };
+});
+
+// 3. PAY ELECTRICITY
+export const clubkonnectPayElectricity = onCall(
+  { cors: true, secrets: ALL_PIN_SECRETS },
+  async (request) => {
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+    const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+    if (!uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Authentication required to perform electricity payment.",
+      );
+    }
+    const { company, meterType, meterNo, amount, phone, pin } = request.data || {};
+    const numAmount = Number(amount || 0);
+    if (!company || !meterNo || !numAmount || numAmount <= 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Electricity company, meter number, and valid positive amount are required.",
+      );
+    }
+
+    // Verify user transaction PIN before proceeding with wallet debit
+    await verifyUserPinCore(uid, pin);
+
+    const userId = getClubKonnectUserId();
+    const apiKey = getClubKonnectApiKey();
+    const typeParam = meterType || "01";
+    const requestId = `PWK_${uid}_${Date.now()}`;
+    const userRef = db.collection("users").doc(uid);
+    let cachedUserData = {};
+
+    try {
+      await db.runTransaction(async (t) => {
+        const userDoc = await t.get(userRef);
+        if (userDoc.exists) {
+          cachedUserData = userDoc.data() || {};
+          const currentBalance = Number(cachedUserData.walletBalance || 0);
+          if (currentBalance < numAmount) {
+            throw new Error(
+              "Insufficient PayWaka wallet balance. Please add funds to your wallet to complete this purchase.",
+            );
+          }
+          t.update(userRef, {
+            walletBalance: admin.firestore.FieldValue.increment(-numAmount),
+          });
+        } else if (process.env.FUNCTIONS_EMULATOR === "true") {
+          cachedUserData = {
+            email: "dev_user@paywaka.com",
+            accountReference: "PSAF010632D562280420",
+            accountNumber: "7353739008",
+            bankCode: "035",
+            bankName: "Wema Bank PLC",
+            barter_id: "234000003484364",
+            walletBalance: 100000,
+          };
+          t.set(userRef, cachedUserData, { merge: true });
+        } else {
+          throw new Error("User account not found or has zero balance.");
+        }
+      });
+    } catch (err) {
+      logger.error(`Transaction failed for elec: ${requestId}`, err);
+      throw new HttpsError(
+        "failed-precondition",
+        err.message || "Balance deduction failed.",
+      );
+    }
+
+    const primaryUrl = `https://www.nellobytesystems.com/APIElectricityV1.asp?UserID=${userId}&APIKey=${apiKey}&ElectricCompany=${company}&MeterType=${typeParam}&MeterNo=${meterNo}&Amount=${numAmount}&PhoneNo=${phone || ""}&RequestID=${requestId}`;
+
+    let result;
+    let isSuccess = false;
+    let isProviderBalanceIssue = false;
+    let isNetworkOrHtmlError = false;
+
+    const elecFetch = await fetchClubKonnectApi(primaryUrl);
+    if (!elecFetch.success) {
+      logger.error(
+        `Electricity API fetch error for ${requestId}:`,
+        elecFetch.error,
+      );
+      isSuccess = false;
+      isNetworkOrHtmlError = true;
+      result = {
+        status: "NETWORK_ERROR",
+        description: elecFetch.error?.message || "Provider connection failed",
+      };
+    } else {
+      result = elecFetch.data;
+      logger.info("🔌 [ELECTRICITY PURCHASE RAW PROVIDER RESPONSE]:", result);
+      isSuccess = isClubKonnectOrderSuccess(result);
+      isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
+    }
+
+    // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
+    if (!isSuccess) {
+      logger.warn(
+        `⚠️ Electricity primary payment returned non-success for ${requestId}. Executing Step 2 Status Query...`,
+        result,
+      );
+      await new Promise((r) => setTimeout(r, 1200));
+      const step2Check = await verifyClubKonnectOrderStatus(requestId);
+      if (step2Check.isSuccess) {
+        logger.info(
+          `✅ [Step 2 Check Succeeded]: Electricity bill was received/fulfilled by provider for ${requestId}!`,
+          step2Check.data,
+        );
+        isSuccess = true;
+        result = step2Check.data || result;
+      }
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const isoNow = new Date().toISOString();
+
+    if (!isSuccess) {
+      await userRef.set(
+        { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
+        { merge: true },
+      );
+
+      const failureReasonStr = resolveProviderFailureReason(
+        result,
+        isProviderBalanceIssue,
+        isNetworkOrHtmlError,
+        "Electricity payment failed",
+      );
+
+      await cancelPendingSettlement(requestId, failureReasonStr);
+
+      await db.collection("system_failed_payouts").doc(requestId).set({
+        tx_ref: requestId,
+        uid,
+        category: "Electricity",
+        amount: numAmount,
+        customerId: meterNo,
+        reason: failureReasonStr,
+        providerResponse: result,
+        createdAt: now,
+        created_at: isoNow,
+        resolved: false,
+      });
+
+      await userRef
+        .collection("Transactions")
+        .doc(requestId)
+        .set({
+          tx_ref: requestId,
+          narration: `Electricity Payment (${company}) - Refunded`,
+          category: "Electricity",
+          type: "debit",
+          amount: numAmount,
+          status: "failed",
+          meterNo,
+          customerId: meterNo,
+          failureReason: failureReasonStr,
+          created_at: isoNow,
+          createdAt: now,
+          response: result,
+        });
+
+      return {
+        status: "provider_error",
+        message: isProviderBalanceIssue
+          ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
+          : failureReasonStr,
+        tx_ref: requestId,
+        refunded: true,
+        data: result,
+      };
+    }
+
+    // SUCCESS PATH: Record pending subaccount sweep for midnight batch
+    await recordPendingSettlement({
+      uid,
+      requestId,
+      category: "Electricity",
+      amount: numAmount,
+      userDocData: cachedUserData,
+    });
+    await userRef
+      .collection("Transactions")
+      .doc(requestId)
+      .set({
+        tx_ref: requestId,
+        narration: `Electricity Payment (${company})`,
+        category: "Electricity",
+        type: "debit",
+        amount: numAmount,
+        status: "completed",
+        meterNo,
+        customerId: meterNo,
+        tokenPin: result.token || result.pin || "",
+        created_at: isoNow,
+        createdAt: now,
+        response: result,
+      });
+
+    await userRef
+      .collection("utility")
+      .doc(requestId)
+      .set({
+        billType: "electricity",
+        provider: company,
+        amount: numAmount,
+        customerId: meterNo,
+        token: result.token || result.pin || "",
+        status: "completed",
+        createdAt: now,
+      });
+
+    const ptsRes = await awardTransactionPointsCore({
+      uid,
+      requestId,
+      category: "Electricity",
+      amount: numAmount,
+    });
+
+    return {
+      status: "success",
+      message: "Electricity payment successful",
+      token: result.token || result.pin,
+      data: result,
+      tx_ref: requestId,
+      pointsEarned: ptsRes.pointsEarned,
+    };
+  },
+);
+
+// 4. PAY CABLE
+export const clubkonnectPayCable = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Authentication required to perform cable TV payment.",
+    );
+  }
+  const { cableTV, packageCode, smartCardNo, amount, phone, pin } =
+    request.data || {};
+  const numAmount = Number(amount || 0);
+  if (!cableTV || !packageCode || !smartCardNo) {
+    throw new HttpsError(
+      "invalid-argument",
+      "CableTV, package code, and smartcard number are required.",
+    );
+  }
+
+  // Verify user transaction PIN before proceeding with wallet debit
+  await verifyUserPinCore(uid, pin);
+
+  const userId = getClubKonnectUserId();
+  const apiKey = getClubKonnectApiKey();
+  const requestId = `PWK_${uid}_${Date.now()}`;
+  const userRef = db.collection("users").doc(uid);
+  let cachedUserData = {};
+
+  if (numAmount > 0) {
+    try {
+      await db.runTransaction(async (t) => {
+        const userDoc = await t.get(userRef);
+        if (userDoc.exists) {
+          cachedUserData = userDoc.data() || {};
+          const currentBalance = Number(cachedUserData.walletBalance || 0);
+          if (currentBalance < numAmount) {
+            throw new Error(
+              "Insufficient PayWaka wallet balance. Please add funds to your wallet to complete this purchase.",
+            );
+          }
+          t.update(userRef, {
+            walletBalance: admin.firestore.FieldValue.increment(-numAmount),
+          });
+        } else if (process.env.FUNCTIONS_EMULATOR === "true") {
+          cachedUserData = {
+            email: "dev_user@paywaka.com",
+            accountReference: "PSAF010632D562280420",
+            accountNumber: "7353739008",
+            bankCode: "035",
+            bankName: "Wema Bank PLC",
+            barter_id: "234000003484364",
+            walletBalance: 100000,
+          };
+          t.set(userRef, cachedUserData, { merge: true });
+        } else {
+          throw new Error("User account not found or has zero balance.");
+        }
+      });
+    } catch (err) {
+      logger.error(`Transaction failed for cable: ${requestId}`, err);
+      throw new HttpsError(
+        "failed-precondition",
+        err.message || "Balance deduction failed.",
+      );
+    }
+  }
+
+  const primaryUrl = `https://www.nellobytesystems.com/APICableTVV1.asp?UserID=${userId}&APIKey=${apiKey}&CableTV=${cableTV}&Package=${packageCode}&SmartCardNo=${smartCardNo}&PhoneNo=${phone || ""}&RequestID=${requestId}`;
+
+  let result;
+  let isSuccess = false;
+  let isProviderBalanceIssue = false;
+  let isNetworkOrHtmlError = false;
+
+  const cableFetch = await fetchClubKonnectApi(primaryUrl);
+  if (!cableFetch.success) {
+    logger.error(`Cable API fetch error for ${requestId}:`, cableFetch.error);
+    isSuccess = false;
+    isNetworkOrHtmlError = true;
+    result = {
+      status: "NETWORK_ERROR",
+      description: cableFetch.error?.message || "Provider connection failed",
+    };
+  } else {
+    result = cableFetch.data;
+    logger.info("📺 [CABLE TV PURCHASE RAW PROVIDER RESPONSE]:", result);
+    isSuccess = isClubKonnectOrderSuccess(result);
+    isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
+  }
+
+  // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
+  if (!isSuccess) {
+    logger.warn(
+      `⚠️ Cable primary payment returned non-success for ${requestId}. Executing Step 2 Status Query...`,
+    );
+    await new Promise((r) => setTimeout(r, 1200));
+    const step2Check = await verifyClubKonnectOrderStatus(requestId);
+    if (step2Check.isSuccess) {
+      logger.info(
+        `✅ [Step 2 Check Succeeded]: Cable subscription was received/fulfilled by provider for ${requestId}!`,
+      );
+      isSuccess = true;
+      result = step2Check.data || result;
+    }
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+
+  if (!isSuccess) {
+    if (numAmount > 0) {
+      await userRef.set(
+        { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
+        { merge: true },
+      );
+    }
+
+    const failureReasonStr = resolveProviderFailureReason(
+      result,
+      isProviderBalanceIssue,
+      isNetworkOrHtmlError,
+      "Cable TV payment failed",
+    );
+
+    await cancelPendingSettlement(requestId, failureReasonStr);
+
+    await db.collection("system_failed_payouts").doc(requestId).set({
+      tx_ref: requestId,
+      uid,
+      category: "Cable",
+      amount: numAmount,
+      customerId: smartCardNo,
+      reason: failureReasonStr,
+      providerResponse: result,
+      createdAt: now,
+      created_at: isoNow,
+      resolved: false,
+    });
+
+    await userRef
+      .collection("Transactions")
+      .doc(requestId)
+      .set({
+        tx_ref: requestId,
+        narration: `Cable Payment (${cableTV}) - Refunded`,
+        category: "Cable",
+        type: "debit",
+        amount: numAmount,
+        status: "failed",
+        smartCardNo,
+        customerId: smartCardNo,
+        failureReason: failureReasonStr,
+        created_at: isoNow,
+        createdAt: now,
+        response: result,
+      });
+
+    return {
+      status: "provider_error",
+      message: isProviderBalanceIssue
+        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
+        : failureReasonStr,
+      tx_ref: requestId,
+      refunded: true,
+      data: result,
+    };
+  }
+
+  // SUCCESS PATH: Record pending subaccount sweep for midnight batch
+  await recordPendingSettlement({
+    uid,
+    requestId,
+    category: "Cable",
+    amount: numAmount,
+    userDocData: cachedUserData,
+  });
+  await userRef
+    .collection("Transactions")
+    .doc(requestId)
+    .set({
+      tx_ref: requestId,
+      narration: `Cable Payment (${cableTV})`,
+      category: "Cable",
+      type: "debit",
+      amount: numAmount,
+      status: "completed",
+      smartCardNo,
+      customerId: smartCardNo,
+      created_at: isoNow,
+      createdAt: now,
+      response: result,
+    });
+
+  await userRef.collection("cable").doc(requestId).set({
+    cableTV,
+    packageCode,
+    smartCardNo,
+    amount: numAmount,
+    status: "completed",
+    createdAt: now,
+  });
+
+  const ptsRes = await awardTransactionPointsCore({
+    uid,
+    requestId,
+    category: "Cable",
+    amount: numAmount,
+  });
+
+  return {
+    status: "success",
+    message: "Cable subscription successful",
+    data: result,
+    tx_ref: requestId,
+    pointsEarned: ptsRes.pointsEarned,
+  };
+});
+
+// 5. FETCH CABLE PACKAGES
+export const clubkonnectFetchCablePackages = onCall(
+  { cors: true },
+  async (request) => {
+    const userId = getClubKonnectUserId();
+    const { provider } = request.data || {};
+    const provUpper = String(provider || "DSTV")
+      .toUpperCase()
+      .trim();
+
+    // Rigorously verified fallback catalog matching live ClubKonnect specifications
+    const FALLBACK_CABLE_PACKAGES = {
+      GOTV: [
+        {
+          id: "gotv-smallie",
+          name: "GOtv Smallie - Monthly",
+          amount: 1900,
+          package_code: "gotv-smallie",
+          item_code: "gotv-smallie",
+          short_name: "GOtv Smallie - Monthly - ₦1,900",
+        },
+        {
+          id: "gotv-smallie-3months",
+          name: "GOtv Smallie - Quarterly",
+          amount: 5100,
+          package_code: "gotv-smallie-3months",
+          item_code: "gotv-smallie-3months",
+          short_name: "GOtv Smallie - Quarterly - ₦5,100",
+        },
+        {
+          id: "gotv-smallie-1year",
+          name: "GOtv Smallie - Yearly",
+          amount: 15000,
+          package_code: "gotv-smallie-1year",
+          item_code: "gotv-smallie-1year",
+          short_name: "GOtv Smallie - Yearly - ₦15,000",
+        },
+        {
+          id: "gotv-jinja",
+          name: "GOtv Jinja",
+          amount: 3900,
+          package_code: "gotv-jinja",
+          item_code: "gotv-jinja",
+          short_name: "GOtv Jinja - ₦3,900",
+        },
+        {
+          id: "gotv-jolli",
+          name: "GOtv Jolli",
+          amount: 5800,
+          package_code: "gotv-jolli",
+          item_code: "gotv-jolli",
+          short_name: "GOtv Jolli - ₦5,800",
+        },
+        {
+          id: "gotv-max",
+          name: "GOtv Max",
+          amount: 8500,
+          package_code: "gotv-max",
+          item_code: "gotv-max",
+          short_name: "GOtv Max - ₦8,500",
+        },
+        {
+          id: "gotv-supa",
+          name: "GOtv Supa",
+          amount: 11400,
+          package_code: "gotv-supa",
+          item_code: "gotv-supa",
+          short_name: "GOtv Supa - ₦11,400",
+        },
+        {
+          id: "gotv-supa-plus",
+          name: "GOtv Supa Plus",
+          amount: 16800,
+          package_code: "gotv-supa-plus",
+          item_code: "gotv-supa-plus",
+          short_name: "GOtv Supa Plus - ₦16,800",
+        },
+      ],
+      DSTV: [
+        {
+          id: "dstv-padi",
+          name: "DStv Padi",
+          amount: 4400,
+          package_code: "dstv-padi",
+          item_code: "dstv-padi",
+          short_name: "DStv Padi - ₦4,400",
+        },
+        {
+          id: "dstv-yanga",
+          name: "DStv Yanga",
+          amount: 6000,
+          package_code: "dstv-yanga",
+          item_code: "dstv-yanga",
+          short_name: "DStv Yanga - ₦6,000",
+        },
+        {
+          id: "dstv-confam",
+          name: "DStv Confam",
+          amount: 11000,
+          package_code: "dstv-confam",
+          item_code: "dstv-confam",
+          short_name: "DStv Confam - ₦11,000",
+        },
+        {
+          id: "dstv-compact",
+          name: "DStv Compact",
+          amount: 19000,
+          package_code: "dstv-compact",
+          item_code: "dstv-compact",
+          short_name: "DStv Compact - ₦19,000",
+        },
+        {
+          id: "dstv-compact-plus",
+          name: "DStv Compact Plus",
+          amount: 30000,
+          package_code: "dstv-compact-plus",
+          item_code: "dstv-compact-plus",
+          short_name: "DStv Compact Plus - ₦30,000",
+        },
+        {
+          id: "dstv-premium",
+          name: "DStv Premium",
+          amount: 44000,
+          package_code: "dstv-premium",
+          item_code: "dstv-premium",
+          short_name: "DStv Premium - ₦44,000",
+        },
+      ],
+      STARTIMES: [
+        {
+          id: "nova",
+          name: "Nova (Antenna) - 1 Month",
+          amount: 2100,
+          package_code: "nova",
+          item_code: "nova",
+          short_name: "Nova (Antenna) - ₦2,100",
+        },
+        {
+          id: "basic",
+          name: "Basic (Antenna) - 1 Month",
+          amount: 3700,
+          package_code: "basic",
+          item_code: "basic",
+          short_name: "Basic (Antenna) - ₦3,700",
+        },
+        {
+          id: "smart",
+          name: "Basic (Dish) - 1 Month",
+          amount: 4700,
+          package_code: "smart",
+          item_code: "smart",
+          short_name: "Basic (Dish) - ₦4,700",
+        },
+        {
+          id: "classic",
+          name: "Classic (Antenna) - 1 Month",
+          amount: 6000,
+          package_code: "classic",
+          item_code: "classic",
+          short_name: "Classic (Antenna) - ₦6,000",
+        },
+        {
+          id: "super",
+          name: "Super (Dish) - 1 Month",
+          amount: 9800,
+          package_code: "super",
+          item_code: "super",
+          short_name: "Super (Dish) - ₦9,800",
+        },
+      ],
+      SHOWMAX: [
+        {
+          id: "showmax-entertainment",
+          name: "Showmax Entertainment",
+          amount: 2900,
+          package_code: "showmax-entertainment",
+          item_code: "showmax-entertainment",
+          short_name: "Showmax Entertainment - ₦2,900",
+        },
+        {
+          id: "showmax-premier-league",
+          name: "Showmax Premier League",
+          amount: 3200,
+          package_code: "showmax-premier-league",
+          item_code: "showmax-premier-league",
+          short_name: "Showmax Premier League - ₦3,200",
+        },
+        {
+          id: "showmax-all",
+          name: "Showmax All Access",
+          amount: 5400,
+          package_code: "showmax-all",
+          item_code: "showmax-all",
+          short_name: "Showmax All Access - ₦5,400",
+        },
+      ],
+    };
+
+    try {
+      const res = await fetch(
+        `https://www.nellobytesystems.com/APICableTVPackagesV2.asp?UserID=${userId}`,
+      );
+      const data = await res.json();
+      const tvObj = data?.TV_ID || data?.CABLETV || {};
+      let rawPackages = [];
+
+      if ((provUpper === "01" || provUpper.includes("DSTV")) && tvObj.DStv) {
+        rawPackages = tvObj.DStv[0]?.PRODUCT || tvObj.DStv[0]?.PACKAGE || [];
+      } else if (
+        (provUpper === "02" || provUpper.includes("GOTV")) &&
+        tvObj.GOtv
+      ) {
+        rawPackages = tvObj.GOtv[0]?.PRODUCT || tvObj.GOtv[0]?.PACKAGE || [];
+      } else if (
+        (provUpper === "03" ||
+          provUpper.includes("STARTIMES") ||
+          provUpper.includes("STARTIME")) &&
+        tvObj.Startimes
+      ) {
+        rawPackages =
+          tvObj.Startimes[0]?.PRODUCT || tvObj.Startimes[0]?.PACKAGE || [];
+      } else if (
+        (provUpper === "04" || provUpper.includes("SHOWMAX")) &&
+        tvObj.Showmax
+      ) {
+        rawPackages =
+          tvObj.Showmax[0]?.PRODUCT || tvObj.Showmax[0]?.PACKAGE || [];
+      }
+
+      if (rawPackages.length > 0) {
+        const formatted = rawPackages.map((p) => {
+          const amt = Number(p.PACKAGE_AMOUNT || p.amount || 0);
+          const name = p.PACKAGE_NAME || p.name || "Package";
+          const pkgCode = p.PACKAGE_ID || p.PACKAGE_CODE || p.package_code;
+          return {
+            id: pkgCode,
+            name: name,
+            short_name: `${name} - ₦${amt.toLocaleString()}`,
+            amount: amt,
+            package_code: pkgCode,
+            item_code: pkgCode,
+          };
+        });
+        return { status: "success", data: formatted };
+      }
+    } catch (err) {
+      logger.error("Error fetching live cable packages:", err);
+    }
+
+    // Fallback to verified catalog matching provider
+    const key =
+      provUpper === "02" || provUpper.includes("GOTV")
+        ? "GOTV"
+        : provUpper === "03" ||
+          provUpper.includes("STARTIMES") ||
+          provUpper.includes("STARTIME")
+          ? "STARTIMES"
+          : provUpper === "04" || provUpper.includes("SHOWMAX")
+            ? "SHOWMAX"
+            : "DSTV";
+
+    const fallback =
+      FALLBACK_CABLE_PACKAGES[key] || FALLBACK_CABLE_PACKAGES.GOTV;
+    return { status: "success", data: fallback };
+  },
+);
+
+// ============================================================================
+// DYNAMIC DATA PLAN PRICING ENGINE & ADMIN MANAGED CATALOG MODULE
+// ============================================================================
+
+export const DEFAULT_PRICING_CONFIG = {
+  networks: {
+    MTN: { marginRate: 0.30, cashbackRate: 0.025 },
+    GLO: { marginRate: 0.20, cashbackRate: 0.020 },
+    AIRTEL: { marginRate: 0.28, cashbackRate: 0.025 },
+    "9MOBILE": { marginRate: 0.15, cashbackRate: 0.015 },
+  },
+  undercutSpreadMin: 20,
+  undercutDiscount: 10,
+  largePlanThreshold: 10000,
+  heroCashbackRate: 0.005,
+};
+
+export const parsePlanValidity = (productName) => {
+  const name = String(productName || "").toLowerCase();
+  const matchDays = name.match(/(\d+)\s*(?:day|days|day\(s\)|d)\b/i);
+  if (matchDays)
+    return `${matchDays[1]} ${Number(matchDays[1]) === 1 ? "Day" : "Days"}`;
+  const matchWeeks = name.match(/(\d+)\s*(?:week|weeks|wk|wks)\b/i);
+  if (matchWeeks) return `${Number(matchWeeks[1]) * 7} Days`;
+  const matchMonths = name.match(/(\d+)\s*(?:month|months|mo|mos)\b/i);
+  if (matchMonths) return `${Number(matchMonths[1]) * 30} Days`;
+  if (
+    name.includes("daily") ||
+    name.includes("24hr") ||
+    name.includes("24 hour") ||
+    name.includes("1day")
+  )
+    return "1 Day";
+  if (
+    name.includes("weekly") ||
+    name.includes("1week") ||
+    name.includes("7day")
+  )
+    return "7 Days";
+  if (
+    name.includes("fortnight") ||
+    name.includes("2week") ||
+    name.includes("14day")
+  )
+    return "14 Days";
+  if (
+    name.includes("monthly") ||
+    name.includes("30day") ||
+    name.includes("1month") ||
+    name.includes("sme")
+  )
+    return "30 Days";
+  return "30 Days";
+};
+
+export function calculatePlanPricing(
+  costPrice,
+  network,
+  competitorPrice = null,
+  customDisplayPrice = null,
+  overrideMode = "AUTOMATIC",
+  config = DEFAULT_PRICING_CONFIG,
+) {
+  const netUpper = String(network || "MTN").toUpperCase();
+  const netKey = netUpper.includes("GLO")
+    ? "GLO"
+    : netUpper.includes("AIRTEL")
+      ? "AIRTEL"
+      : netUpper.includes("9MOB") || netUpper.includes("ETISALAT")
+        ? "9MOBILE"
+        : "MTN";
+
+  const netConfig = config?.networks?.[netKey] || DEFAULT_PRICING_CONFIG.networks[netKey];
+
+  const undercutSpreadMin = Number(config?.undercutSpreadMin ?? 20);
+  const undercutDiscount = Number(config?.undercutDiscount ?? 10);
+  const largePlanThreshold = Number(config?.largePlanThreshold ?? 10000);
+  const heroCashbackRate = Number(config?.heroCashbackRate ?? 0.005);
+  const standardMarginRate = Number(netConfig?.marginRate ?? 0.30);
+  const standardCashbackRate = Number(netConfig?.cashbackRate ?? 0.025);
+
+  const numCost = Number(costPrice || 0);
+  const numComp =
+    competitorPrice !== null && competitorPrice !== undefined && competitorPrice !== ""
+      ? Number(competitorPrice)
+      : null;
+  const numCustom =
+    customDisplayPrice !== null && customDisplayPrice !== undefined && customDisplayPrice !== ""
+      ? Number(customDisplayPrice)
+      : null;
+
+  // Rule 6: Manual Override Mode
+  if (overrideMode === "MANUAL" && numCustom && numCustom > 0) {
+    const isHero = numComp !== null && !isNaN(numComp) && numComp > 0;
+    const cashbackRate = isHero ? heroCashbackRate : standardCashbackRate;
+    const margin = Math.max(0, numCustom - numCost);
+    const cashbackAmount = Math.round(margin * cashbackRate * 100) / 100;
+    const profit = Math.round((numCustom - numCost - cashbackAmount) * 100) / 100;
+
+    return {
+      displayPrice: numCustom,
+      costPrice: numCost,
+      competitorPrice: numComp,
+      isHero,
+      cashbackRate,
+      cashbackAmount,
+      profit,
+      ruleApplied: "MANUAL_OVERRIDE",
+    };
+  }
+
+  let displayPrice = 0;
+  let isHero = false;
+  let ruleApplied = "STANDARD_MARGIN";
+
+  if (numComp !== null && !isNaN(numComp) && numComp > 0) {
+    const spread = numComp - numCost;
+
+    if (numComp >= largePlanThreshold) {
+      // Rule 3: Large Plan Match
+      displayPrice = numComp;
+      isHero = true;
+      ruleApplied = "LARGE_PLAN_MATCH";
+    } else if (spread > undercutSpreadMin) {
+      // Rule 2: Competitor Undercut Rule
+      const floorTarget = Math.round((numCost * 1.01) / 10) * 10;
+      const undercutTarget = numComp - undercutDiscount;
+      displayPrice = Math.max(floorTarget, undercutTarget);
+      isHero = true;
+      ruleApplied = "COMPETITOR_UNDERCUT";
+    } else if (spread > 0) {
+      // Rule 4a: Tight Margin Match
+      displayPrice = numComp;
+      isHero = true;
+      ruleApplied = "TIGHT_MARGIN_MATCH";
+    } else {
+      // Rule 4b: Loss Prevention Fallback
+      displayPrice = Math.round((numCost * (1 + standardMarginRate)) / 10) * 10;
+      isHero = false;
+      ruleApplied = "LOSS_PREVENTION_FALLBACK";
+    }
+  } else {
+    // Rule 1: Standard Network Margin (MROUND 10)
+    displayPrice = Math.round((numCost * (1 + standardMarginRate)) / 10) * 10;
+    isHero = false;
+    ruleApplied = "STANDARD_MARGIN";
+  }
+
+  const cashbackRate = isHero ? heroCashbackRate : standardCashbackRate;
+  const margin = Math.max(0, displayPrice - numCost);
+  const cashbackAmount = Math.round(margin * cashbackRate * 100) / 100;
+  const profit = Math.round((displayPrice - numCost - cashbackAmount) * 100) / 100;
+
+  return {
+    displayPrice,
+    costPrice: numCost,
+    competitorPrice: numComp,
+    isHero,
+    cashbackRate,
+    cashbackAmount,
+    profit,
+    ruleApplied,
+  };
+}
+
+export async function getPricingConfigCore() {
+  try {
+    const docSnap = await db.collection("system_settings").doc("pricing_config").get();
+    if (docSnap.exists) {
+      const data = docSnap.data() || {};
+      return {
+        ...DEFAULT_PRICING_CONFIG,
+        ...data,
+        networks: {
+          ...DEFAULT_PRICING_CONFIG.networks,
+          ...(data.networks || {}),
+        },
+      };
+    }
+  } catch (err) {
+    logger.error("Error reading pricing_config:", err);
+  }
+  return DEFAULT_PRICING_CONFIG;
+}
+
+export async function syncClubKonnectDataPlansCore() {
+  const userId = getClubKonnectUserId();
+  const res = await fetch(
+    `https://www.nellobytesystems.com/APIDatabundlePlansV2.asp?UserID=${userId}`,
+  );
+  const data = await res.json();
+  const mobileNetworkObj = data?.MOBILE_NETWORK || {};
+
+  const networkMappings = [
+    { key: "MTN", rawObj: mobileNetworkObj.MTN },
+    { key: "GLO", rawObj: mobileNetworkObj.Glo },
+    { key: "AIRTEL", rawObj: mobileNetworkObj.Airtel },
+    {
+      key: "9MOBILE",
+      rawObj: mobileNetworkObj.m_9mobile || mobileNetworkObj["9mobile"],
+    },
+  ];
+
+  let syncedCount = 0;
+  const batch = db.batch();
+
+  for (const net of networkMappings) {
+    const rawPlans = net.rawObj?.[0]?.PRODUCT || [];
+    for (const p of rawPlans) {
+      const planId = String(p.PRODUCT_ID || p.PRODUCT_CODE).trim();
+      const planName = String(p.PRODUCT_NAME).trim();
+      const rawCost = Number(p.PRODUCT_AMOUNT || 0);
+      const roundedCost = Math.round(rawCost * 100) / 100;
+      const docRef = db.collection("data_plan_pricing").doc(`${net.key}_${planId}`);
+
+      batch.set(
+        docRef,
+        {
+          planId,
+          network: net.key,
+          planName,
+          costPrice: roundedCost,
+          validity_period: parsePlanValidity(planName),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      syncedCount++;
+    }
+  }
+
+  const configRef = db.collection("system_settings").doc("pricing_config");
+  batch.set(
+    configRef,
+    { lastSyncedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+
+  await batch.commit();
+  return syncedCount;
+}
+
+export async function seedPricingFromExcelCore() {
+  const configRef = db.collection("system_settings").doc("pricing_config");
+  await configRef.set(
+    {
+      ...DEFAULT_PRICING_CONFIG,
+      seededAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  const syncedCount = await syncClubKonnectDataPlansCore();
+
+  const excelCompetitorPrices = [
+    { docId: "MTN_22", competitorPrice: 500 },  // 650MB Awoof
+    { docId: "MTN_27", competitorPrice: 1200 }, // 2.44GB Direct Data
+    { docId: "MTN_30", competitorPrice: 2500 }, // 5.10GB Direct Data
+    { docId: "MTN_31", competitorPrice: 3000 }, // 6.5GB Direct Data
+    { docId: "MTN_33", competitorPrice: 10000 },// 24.3GB Direct Data
+    { docId: "MTN_35", competitorPrice: 15000 },// 39GB Direct Data
+  ];
+
+  const batch = db.batch();
+  for (const item of excelCompetitorPrices) {
+    const docRef = db.collection("data_plan_pricing").doc(item.docId);
+    batch.set(docRef, { competitorPrice: item.competitorPrice }, { merge: true });
+  }
+  await batch.commit();
+
+  return syncedCount;
+}
+
+const verifyAdmin = async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  if (isEmulator) return uid;
+  const userSnap = await db.collection("users").doc(uid).get();
+  const userData = userSnap.data() || {};
+  if (userData.role !== "admin" && !userData.isAdmin) {
+    throw new HttpsError("permission-denied", "Admin privileges required.");
+  }
+  return uid;
+};
+
+// 6. FETCH DATA PLANS (Firestore Catalog Reader in <30ms)
+export const clubkonnectFetchDataPlans = onCall(
+  { cors: true },
+  async (request) => {
+    const { network } = request.data || {};
+    const netUpper = String(network || "MTN").toUpperCase();
+    const netKey = netUpper.includes("GLO")
+      ? "GLO"
+      : netUpper.includes("AIRTEL")
+        ? "AIRTEL"
+        : netUpper.includes("9MOB") || netUpper.includes("ETISALAT")
+          ? "9MOBILE"
+          : "MTN";
+
+    try {
+      const config = await getPricingConfigCore();
+      let plansSnap = await db
+        .collection("data_plan_pricing")
+        .where("network", "==", netKey)
+        .get();
+
+      if (plansSnap.empty) {
+        logger.info(`data_plan_pricing empty for ${netKey}, executing auto-sync...`);
+        await syncClubKonnectDataPlansCore();
+        plansSnap = await db
+          .collection("data_plan_pricing")
+          .where("network", "==", netKey)
+          .get();
+      }
+
+      const formattedPlans = [];
+      plansSnap.forEach((doc) => {
+        const p = doc.data() || {};
+        if (p.isActive === false) return;
+
+        const pricingResult = calculatePlanPricing(
+          p.costPrice,
+          netKey,
+          p.competitorPrice,
+          p.customDisplayPrice,
+          p.overrideMode,
+          config,
+        );
+
+        formattedPlans.push({
+          id: p.planId || doc.id.replace(`${netKey}_`, ""),
+          biller_name: `${netKey} ${p.planName}`,
+          amount: pricingResult.displayPrice,
+          costPrice: pricingResult.costPrice,
+          cashbackAmount: pricingResult.cashbackAmount,
+          isHero: pricingResult.isHero,
+          item_code: p.planId || doc.id.replace(`${netKey}_`, ""),
+          validity_period: p.validity_period || parsePlanValidity(p.planName),
+          validity: p.validity_period || parsePlanValidity(p.planName),
+        });
+      });
+
+      if (formattedPlans.length > 0) {
+        return { status: "success", data: formattedPlans };
+      }
+    } catch (error) {
+      logger.error("Error fetching dynamic data plans from Firestore:", error);
+    }
+
+    return { status: "error", message: "Failed to fetch data plans" };
+  },
+);
+
+// ADMIN CALLABLES & EXPORTS
+export const adminSyncClubKonnect = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  const syncedCount = await syncClubKonnectDataPlansCore();
+  return { status: "success", message: `Synced ${syncedCount} data plans from ClubKonnect.` };
+});
+
+export const adminGetPricingConfig = onCall({ cors: true }, async (request) => {
+  console.log("📥 [adminGetPricingConfig] Invocation by UID:", request.auth?.uid || "unauthenticated");
+  try {
+    await verifyAdmin(request);
+    const config = await getPricingConfigCore();
+    const plansSnap = await db.collection("data_plan_pricing").get();
+    const plans = [];
+    const flaggedPlans = [];
+
+    plansSnap.forEach((doc) => {
+      const data = doc.data() || {};
+      const fallbackFields = [];
+      const fallbackReasons = [];
+
+      if (
+        data.costPrice === undefined ||
+        data.costPrice === null ||
+        data.costPrice === "" ||
+        isNaN(Number(data.costPrice)) ||
+        Number(data.costPrice) <= 0
+      ) {
+        fallbackFields.push("costPrice");
+        fallbackReasons.push(
+          data.costPrice === undefined || data.costPrice === null
+            ? "costPrice is missing (fallback default: 0)"
+            : `costPrice is invalid '${data.costPrice}' (fallback default: 0)`
+        );
+      }
+
+      if (!data.network || typeof data.network !== "string") {
+        fallbackFields.push("network");
+        fallbackReasons.push("network is missing (fallback default: 'MTN')");
+      }
+
+      if (!data.validity_period && !data.validity) {
+        fallbackFields.push("validity");
+        fallbackReasons.push("validity is missing (fallback default: '30 Days')");
+      }
+
+      if (!data.planName || typeof data.planName !== "string" || !data.planName.trim()) {
+        fallbackFields.push("planName");
+        fallbackReasons.push(`planName is missing (fallback default: '${doc.id}')`);
+      }
+
+      if (data.isActive === undefined || data.isActive === null) {
+        fallbackFields.push("isActive");
+        fallbackReasons.push("isActive is missing (fallback default: true)");
+      }
+
+      if (!data.overrideMode) {
+        fallbackFields.push("overrideMode");
+        fallbackReasons.push("overrideMode is missing (fallback default: 'AUTOMATIC')");
+      }
+
+      const netUpper = String(data.network || "MTN").toUpperCase();
+      const netKey = netUpper.includes("GLO")
+        ? "GLO"
+        : netUpper.includes("AIRTEL")
+          ? "AIRTEL"
+          : netUpper.includes("9MOB") || netUpper.includes("ETISALAT")
+            ? "9MOBILE"
+            : "MTN";
+
+      if (!config?.networks?.[netKey]) {
+        fallbackFields.push("networkConfig");
+        fallbackReasons.push(`network config missing for '${netKey}' (fallback to DEFAULT_PRICING_CONFIG)`);
+      }
+
+      const fallbackApplied = fallbackFields.length > 0;
+
+      if (fallbackApplied) {
+        flaggedPlans.push({
+          id: doc.id,
+          planName: data.planName || doc.id,
+          network: data.network || "UNKNOWN",
+          fallbackFields,
+          fallbackReasons,
+        });
+        logger.warn(`⚠️ [adminGetPricingConfig] Plan ${doc.id} required fallback defaults:`, {
+          planId: doc.id,
+          fallbackFields,
+          fallbackReasons,
+        });
+        console.warn(`⚠️ [adminGetPricingConfig] Plan ${doc.id} fallback needed: ${fallbackReasons.join("; ")}`);
+      }
+
+      const validityVal = data.validity_period || data.validity || "30 Days";
+      const pricingResult = calculatePlanPricing(
+        data.costPrice,
+        data.network,
+        data.competitorPrice,
+        data.customDisplayPrice,
+        data.overrideMode,
+        config,
+      );
+
+      plans.push({
+        id: doc.id,
+        planName: data.planName || doc.id,
+        ...data,
+        validity_period: validityVal,
+        validity: validityVal,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+        isHero: pricingResult.isHero,
+        overrideMode: data.overrideMode || "AUTOMATIC",
+        fallbackApplied,
+        fallbackFields,
+        fallbackReasons,
+        ...pricingResult,
+      });
+    });
+
+    if (flaggedPlans.length > 0) {
+      logger.warn(
+        `🚨 [adminGetPricingConfig] VISIBILITY WARNING: ${flaggedPlans.length}/${plansSnap.size} plans required fallback defaults. Upstream sync may have dropped fields. Flagged plan IDs: ${flaggedPlans.map((p) => `${p.id} [${p.fallbackFields.join(",")}]`).join("; ")}`
+      );
+      console.warn(
+        `🚨 [adminGetPricingConfig] VISIBILITY WARNING: ${flaggedPlans.length} plans required fallback defaults.`
+      );
+    } else {
+      console.log(`✅ [adminGetPricingConfig] All ${plans.length} plans loaded cleanly without fallbacks.`);
+    }
+
+    console.log(`✅ [adminGetPricingConfig] Returning ${plans.length} plans (${flaggedPlans.length} flagged for fallbacks).`);
+    return {
+      status: "success",
+      config,
+      plans,
+      flaggedCount: flaggedPlans.length,
+      hasFallbackPlans: flaggedPlans.length > 0,
+      flaggedPlansSummary: flaggedPlans.map((p) => ({
+        id: p.id,
+        fallbackFields: p.fallbackFields,
+        fallbackReasons: p.fallbackReasons,
+      })),
+    };
+  } catch (err) {
+    console.error("❌ [adminGetPricingConfig] CRITICAL ERROR:", err);
+    logger.error("adminGetPricingConfig error:", err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError("internal", err.message || "Failed to fetch pricing config");
+  }
+});
+
+export const adminUpdatePricingConfig = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  const { networks, undercutSpreadMin, undercutDiscount, largePlanThreshold, heroCashbackRate } =
+    request.data || {};
+  const updateData = {};
+  if (networks) updateData.networks = networks;
+  if (undercutSpreadMin !== undefined) updateData.undercutSpreadMin = Number(undercutSpreadMin);
+  if (undercutDiscount !== undefined) updateData.undercutDiscount = Number(undercutDiscount);
+  if (largePlanThreshold !== undefined) updateData.largePlanThreshold = Number(largePlanThreshold);
+  if (heroCashbackRate !== undefined) updateData.heroCashbackRate = Number(heroCashbackRate);
+  updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.collection("system_settings").doc("pricing_config").set(updateData, { merge: true });
+  return { status: "success", message: "Pricing configuration updated successfully." };
+});
+
+export const adminUpdatePlanPrice = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  const { docId, competitorPrice, customDisplayPrice, overrideMode, isActive } = request.data || {};
+  if (!docId) throw new HttpsError("invalid-argument", "Plan docId is required.");
+
+  const updateData = {};
+  if (competitorPrice !== undefined)
+    updateData.competitorPrice = competitorPrice === "" || competitorPrice === null ? null : Number(competitorPrice);
+  if (customDisplayPrice !== undefined)
+    updateData.customDisplayPrice = customDisplayPrice === "" || customDisplayPrice === null ? null : Number(customDisplayPrice);
+  if (overrideMode) updateData.overrideMode = overrideMode;
+  if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+  updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.collection("data_plan_pricing").doc(docId).set(updateData, { merge: true });
+  return { status: "success", message: "Plan price updated successfully." };
+});
+
+export const adminSeedPricingFromExcel = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  const count = await seedPricingFromExcelCore();
+  return { status: "success", message: `Seeded pricing logic and ${count} plan initial configurations.` };
+});
+
+export const scheduledClubKonnectSync = onSchedule("every 6 hours", async (event) => {
+  logger.info("⏰ Executing scheduled 6-hour ClubKonnect data plan cost sync...");
+  try {
+    const count = await syncClubKonnectDataPlansCore();
+    logger.info(`✅ Scheduled sync complete! Updated ${count} data plans.`);
+  } catch (err) {
+    logger.error("❌ Scheduled ClubKonnect sync failed:", err);
+  }
+});
+
+// EXPORT CALLABLE ALIASES
+export const buyAirtime = clubkonnectBuyAirtime;
+export const buyData = clubkonnectBuyData;
+export const payElectricity = clubkonnectPayElectricity;
+export const payCable = clubkonnectPayCable;
+export const fetchDataPlans = clubkonnectFetchDataPlans;
+export const fetchCablePackages = clubkonnectFetchCablePackages;
+
+// 6. END-OF-DAY NET SUBACCOUNT SETTLEMENT BATCH ENGINE
+export async function executeSubaccountSettlementBatch() {
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+  const dateKey = new Date().toISOString().split("T")[0];
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const merchantId = getFlutterwaveMerchantId();
+
+  logger.info(
+    `🚀 Starting Nightly Subaccount Settlement Batch for ${dateKey}...`,
+  );
+
+  const pendingSnap = await db
+    .collection("admin_pending_settlements")
+    .where("status", "==", "PENDING_SWEEP")
+    .get();
+
+  if (pendingSnap.empty) {
+    logger.info("ℹ️ No pending subaccount settlements found to sweep tonight.");
+    return {
+      status: "success",
+      message: "No pending settlements to process",
+      settledCount: 0,
+      totalAmount: 0,
+    };
+  }
+
+  // Group pending debits by user accountReference
+  const grouped = {};
+  pendingSnap.docs.forEach((d) => {
+    const data = d.data();
+    const ref = data.accountReference || data.uid;
+    if (!grouped[ref]) {
+      grouped[ref] = {
+        accountReference: data.accountReference || "",
+        accountNumber: data.accountNumber || "",
+        bankCode: data.bankCode || "035",
+        bankName: data.bankName || "Wema Bank PLC",
+        barter_id: data.barter_id || "",
+        uid: data.uid,
+        userEmail: data.userEmail || "",
+        totalAmount: 0,
+        docIds: [],
+      };
+    }
+    grouped[ref].totalAmount += Number(data.amount || 0);
+    grouped[ref].docIds.push(d.id);
+  });
+
+  let totalSettledAmount = 0;
+  let settledSubaccountsCount = 0;
+  const batchLogRef = db
+    .collection("admin_daily_sweep_batches")
+    .doc(`BATCH_${dateKey}_${Date.now()}`);
+
+  for (const [refKey, group] of Object.entries(grouped)) {
+    const sweepRef = `PWK_SWEEP_${group.uid}_${Date.now()}`;
+    let sweepSuccess = false;
+    let flwResponse = null;
+
+    if (isEmulator || !group.accountReference) {
+      // Emulator / Mock mode simulation
+      logger.info(
+        `🧪 [Emulator Sweep Simulation]: Sweeping ₦${group.totalAmount} from Subaccount (${group.accountReference || group.uid}) to Merchant ID ${merchantId}`,
+      );
+      sweepSuccess = true;
+      flwResponse = {
+        status: "success",
+        message: "Simulated sweep in emulator mode",
+        id: `EMU_${Date.now()}`,
+      };
+    } else {
+      // Live Flutterwave debit_subaccount call to pull funds from user subaccount into merchant pool
+      try {
+        const flwSecKey =
+          process.env.FLW_MSECRET_KEY || process.env.FLW_SECRET_KEY;
+        const res = await fetch("https://api.flutterwave.com/v3/transfers", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${flwSecKey}`,
+            "Content-Type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            amount: group.totalAmount,
+            currency: "NGN",
+            debit_currency: "NGN",
+            debit_subaccount: group.accountReference, // Sweeps directly from customer's PSA
+            narration: `PayWaka Daily Net Bill Settlement - ${group.userEmail}`,
+            reference: sweepRef,
+          }),
+        });
+        flwResponse = await res.json();
+        sweepSuccess =
+          flwResponse?.status === "success" ||
+          flwResponse?.status === "NEW" ||
+          flwResponse?.status === "PENDING";
+      } catch (err) {
+        logger.error(
+          `❌ Flutterwave sweep transfer failed for ${group.accountReference}:`,
+          err,
+        );
+        sweepSuccess = false;
+        flwResponse = { error: err.message };
+      }
+    }
+
+    // Update the pending settlements in Firestore
+    const batch = db.batch();
+    group.docIds.forEach((docId) => {
+      const docRef = db.collection("admin_pending_settlements").doc(docId);
+      batch.update(docRef, {
+        status: sweepSuccess ? "SETTLED_SUCCESSFULLY" : "SWEEP_FAILED",
+        sweepRef,
+        sweepResponse: flwResponse,
+        settledAt: now,
+        settled_at: isoNow,
+      });
+    });
+    await batch.commit();
+
+    if (sweepSuccess) {
+      totalSettledAmount += group.totalAmount;
+      settledSubaccountsCount++;
+    }
+  }
+
+  await batchLogRef.set({
+    dateKey,
+    totalSettledAmount,
+    settledSubaccountsCount,
+    totalItems: pendingSnap.size,
+    merchantId,
+    createdAt: now,
+    created_at: isoNow,
+  });
+
+  logger.info(
+    `✅ Daily Subaccount Settlement Batch Finished. Total: ₦${totalSettledAmount} across ${settledSubaccountsCount} subaccounts.`,
+  );
+  return {
+    status: "success",
+    settledCount: settledSubaccountsCount,
+    totalAmount: totalSettledAmount,
+  };
+}
+
+// 7. SCHEDULED DAILY SWEEP CRON (23:59 Daily Lagos Time)
+export const nightlyConsolidatedSubaccountSweep = onSchedule(
+  {
+    schedule: "59 23 * * *",
+    timeZone: "Africa/Lagos",
+  },
+  async () => {
+    return await executeSubaccountSettlementBatch();
+  },
+);
+
+// 8. ADMIN ONCALL TRIGGER FOR IMMEDIATE SWEEP RECONCILIATION
+export const adminTriggerDailySettlement = onCall(
+  { cors: true },
+  async (request) => {
+    return await executeSubaccountSettlementBatch();
+  },
+);
+
+// =========================================================================
+// MEAL REWARDS & COUPON SYSTEM (PHASE 4: CUSTOMER VOUCHER ISSUANCE)
+// =========================================================================
+
+const DEMO_OFFERS_CATALOG = {
+  "coupon-demo-jollof": {
+    offerId: "coupon-demo-jollof",
+    campaignId: "camp-demo-jollof",
+    vendorId: "paywaka-demo-foods",
+    vendorName: "PayWaka Demo Foods",
+    title: "₦500 Meal Discount Voucher",
+    pointsCost: 100,
+    discountNaira: 500,
+    minSpendNaira: 2500,
+    status: "active",
+  },
+  "coupon-demo-pizza": {
+    offerId: "coupon-demo-pizza",
+    campaignId: "camp-demo-pizza",
+    vendorId: "demo-woodfire-pizza",
+    vendorName: "Demo Woodfire Pizza",
+    title: "₦1,000 Woodfire Discount",
+    pointsCost: 200,
+    discountNaira: 1000,
+    minSpendNaira: 5000,
+    status: "active",
+  },
+  "coupon-demo-burger": {
+    offerId: "coupon-demo-burger",
+    campaignId: "camp-demo-burger",
+    vendorId: "test-kitchen-lagos",
+    vendorName: "Test Kitchen Lagos",
+    title: "₦750 Gourmet Burger Voucher",
+    pointsCost: 150,
+    discountNaira: 750,
+    minSpendNaira: 3800,
+    status: "active",
+  },
+  "coupon-demo-pastry": {
+    offerId: "coupon-demo-pastry",
+    campaignId: "camp-demo-pastry",
+    vendorId: "artisan-bakehouse-demo",
+    vendorName: "Artisan Bakehouse Demo",
+    title: "₦400 Pastry & Coffee Voucher",
+    pointsCost: 80,
+    discountNaira: 400,
+    minSpendNaira: 2000,
+    status: "active",
+  },
+  "coupon-demo-suya": {
+    offerId: "coupon-demo-suya",
+    campaignId: "camp-demo-suya",
+    vendorId: "demo-grill-hub",
+    vendorName: "Demo Grill Hub",
+    title: "₦600 Suya Feast Voucher",
+    pointsCost: 120,
+    discountNaira: 600,
+    minSpendNaira: 3000,
+    status: "active",
+  },
+};
+
+/**
+ * Authoritative Server-Side Voucher Issuance Engine
+ * Enforces all Phase 3 & Phase 4 invariants:
+ * - Caller authentication
+ * - 4-digit PayWaka Transaction PIN security & temporary lockout checks
+ * - users/{uid}.points is sole authoritative spendable balance (atomic decrement)
+ * - Dedicated negative ledger entry users/{uid}/points/spend_pts_{idempotencyKey}
+ * - 48h server expiration window
+ * - Active voucher restriction (max 1 active unexpired voucher per offer)
+ * - Lifetime claim limit (max 2 claims per offer)
+ * - Campaign budget NOT consumed at issuance (budget reserved for Phase 5 vendor redemption)
+ * - Idempotency by claimRequestId / idempotencyKey
+ */
+export async function redeemMealCouponCore({ uid, couponId, pin, idempotencyKey, overrideNow = null }) {
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to redeem meal coupon.");
+  }
+  if (!couponId || typeof couponId !== "string") {
+    throw new HttpsError("invalid-argument", "Valid couponId is required.");
+  }
+
+  // 1. Verify 4-digit Transaction PIN via existing security engine
+  await verifyUserPinCore(uid, pin);
+
+  const safeIdempotencyKey =
+    idempotencyKey && typeof idempotencyKey === "string" && idempotencyKey.trim()
+      ? idempotencyKey.trim()
+      : `claim_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+  const nowMs = overrideNow ? overrideNow.getTime() : Date.now();
+  const nowDate = new Date(nowMs);
+  const expiresAt = new Date(nowMs + 48 * 3600 * 1000); // 48h from server issuance
+
+  const userRef = db.collection("users").doc(uid);
+
+  // 2. Resolve Campaign Reference BEFORE entering transaction to prevent query locks
+  let campaignRef = db.collection("meal_campaigns").doc(couponId);
+  let resolvedCampSnap = await campaignRef.get();
+  let catalogFallback = null;
+
+  if (!resolvedCampSnap.exists) {
+    const qSnap = await db.collection("meal_campaigns").where("offerId", "==", couponId).limit(1).get();
+    if (!qSnap.empty) {
+      resolvedCampSnap = qSnap.docs[0];
+      campaignRef = resolvedCampSnap.ref;
+    } else {
+      const couponRef = db.collection("meal_coupons").doc(couponId);
+      const couponSnap = await couponRef.get();
+      if (couponSnap.exists) {
+        resolvedCampSnap = couponSnap;
+        campaignRef = couponRef;
+      } else if (DEMO_OFFERS_CATALOG[couponId]) {
+        catalogFallback = DEMO_OFFERS_CATALOG[couponId];
+      }
+    }
+  }
+
+  if (!resolvedCampSnap.exists && !catalogFallback) {
+    throw new HttpsError("not-found", "Meal campaign or coupon offer not found.");
+  }
+
+  const result = await db.runTransaction(async (t) => {
+    // 2. Fetch Campaign definition by direct document reference inside transaction
+    let campaignDoc = resolvedCampSnap.exists ? await t.get(campaignRef) : null;
+    let campaignData = campaignDoc && campaignDoc.exists ? campaignDoc.data() : catalogFallback;
+
+    if (!campaignData) {
+      throw new HttpsError("not-found", "Meal campaign or coupon offer not found.");
+    }
+
+    if (campaignData.status !== "active") {
+      throw new HttpsError("failed-precondition", "This meal offer is currently inactive or concluded.");
+    }
+
+    const campaignId = campaignDoc?.exists ? campaignDoc.id : campaignData.campaignId || couponId;
+    const offerId = campaignData.offerId || couponId;
+    const pointsCost = Number(campaignData.pointsCost || 100);
+    const discountNaira = Number(campaignData.discountNaira || campaignData.discountAmount || 500);
+    const minSpendNaira = Number(campaignData.minSpendNaira || campaignData.minSpend || 2500);
+    const vendorId = campaignData.vendorId || "paywaka-demo-foods";
+    const vendorName = campaignData.vendorName || "PayWaka Partner Food";
+
+    // 3. Fetch User spendable balance
+    const userDoc = await t.get(userRef);
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "User account not found.");
+    }
+    const userData = userDoc.data() || {};
+    const currentPoints = Number(userData.points || 0);
+    if (currentPoints < pointsCost) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Insufficient PayWaka Points. Required: ${pointsCost} pts, Available: ${currentPoints} pts.`
+      );
+    }
+
+    // 4. Fetch User Meal Claim record for this specific offer
+    const claimRef = db.collection("users").doc(uid).collection("mealClaims").doc(offerId);
+    const claimDoc = await t.get(claimRef);
+    const claimData = claimDoc.exists
+      ? claimDoc.data()
+      : { lifetimeClaimCount: 0, activeVoucherId: null, activeVoucherExpiresAt: null, claimHistory: {} };
+
+    // 4a. Idempotency Check: if already processed for this idempotency key, return existing voucher
+    if (claimData.claimHistory && claimData.claimHistory[safeIdempotencyKey]) {
+      const existingVoucherId = claimData.claimHistory[safeIdempotencyKey].voucherId;
+      const existingVoucherSnap = await t.get(db.collection("meal_vouchers").doc(existingVoucherId));
+      if (existingVoucherSnap.exists) {
+        const vData = existingVoucherSnap.data();
+        return {
+          success: true,
+          voucher: {
+            ...vData,
+            expiresAt: vData.expiresAt?.toDate ? vData.expiresAt.toDate().toISOString() : vData.expiresAt,
+          },
+          idempotent: true,
+          lifetimeClaimCount: claimData.lifetimeClaimCount,
+          pointsRemaining: currentPoints,
+          message: "Voucher already issued for this claim request.",
+        };
+      }
+    }
+
+    // 4b. Lifetime Claim Limit Check (max 2)
+    if (Number(claimData.lifetimeClaimCount || 0) >= 2) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Lifetime claim limit reached. You can claim this offer a maximum of 2 times."
+      );
+    }
+
+    // 4c. Active Voucher Restriction (max 1 active unexpired voucher per offer)
+    if (claimData.activeVoucherId) {
+      const activeExpiresAtMs = claimData.activeVoucherExpiresAt?.toMillis
+        ? claimData.activeVoucherExpiresAt.toMillis()
+        : claimData.activeVoucherExpiresAt?.toDate
+        ? claimData.activeVoucherExpiresAt.toDate().getTime()
+        : claimData.activeVoucherExpiresAt
+        ? new Date(claimData.activeVoucherExpiresAt).getTime()
+        : 0;
+
+      if (nowMs < activeExpiresAtMs) {
+        const activeVoucherDoc = await t.get(db.collection("meal_vouchers").doc(claimData.activeVoucherId));
+        if (activeVoucherDoc.exists) {
+          const vData = activeVoucherDoc.data();
+          if (vData.status === "active") {
+            throw new HttpsError(
+              "already-exists",
+              "You already hold an active unredeemed voucher for this offer. You can only hold 1 active voucher per offer at a time."
+            );
+          }
+        }
+      }
+    }
+
+    // 5. Generate Voucher ID & Unique Codes
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const voucherId = `vch_${uid.slice(0, 5)}_${Date.now().toString(36)}_${randomSuffix}`;
+    const codeOfferPart = offerId.replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase() || "MEAL";
+    const codeDigits = Math.floor(1000 + Math.random() * 9000);
+    const voucherCode = `PWK-${codeOfferPart}-${codeDigits}`;
+    const voucherPin = String(Math.floor(1000 + Math.random() * 9000)); // Distinct voucher PIN
+
+    // 6. Deduct points from users/{uid}.points
+    t.update(userRef, {
+      points: admin.firestore.FieldValue.increment(-pointsCost),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 7. Write Negative Ledger Entry users/{uid}/points/spend_pts_{idempotencyKey}
+    const ledgerDocRef = db.collection("users").doc(uid).collection("points").doc(`spend_pts_${safeIdempotencyKey}`);
+    t.set(ledgerDocRef, {
+      type: "meal_voucher_spend",
+      points: -pointsCost,
+      direction: "debit",
+      source: "meal_coupon",
+      referenceId: safeIdempotencyKey,
+      voucherId: voucherId,
+      offerId: offerId,
+      campaignId: campaignId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 8. If campaign document doesn't exist yet, seed it now so future reads work
+    if (!campaignDoc?.exists) {
+      t.set(campaignRef, {
+        id: campaignId,
+        offerId: offerId,
+        vendorId: vendorId,
+        vendorName: vendorName,
+        pointsCost: pointsCost,
+        discountNaira: discountNaira,
+        minSpendNaira: minSpendNaira,
+        status: "active",
+        campaignBudgetNaira: 100000,
+        campaignSpentNaira: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    // 9. Write Voucher Document in meal_vouchers/{voucherId}
+    const voucherDocRef = db.collection("meal_vouchers").doc(voucherId);
+    const voucherRecord = {
+      id: voucherId,
+      userId: uid,
+      campaignId: campaignId,
+      offerId: offerId,
+      vendorId: vendorId,
+      vendorName: vendorName,
+      discountNaira: discountNaira,
+      minSpendNaira: minSpendNaira,
+      pointsDeducted: pointsCost,
+      voucherCode: voucherCode,
+      voucherPin: voucherPin,
+      status: "active",
+      issuedAt: admin.firestore.Timestamp.fromDate(nowDate),
+      createdAt: admin.firestore.Timestamp.fromDate(nowDate),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+      redeemedAt: null,
+      redeemedByVendorStaffUid: null,
+      redeemedVendorBranch: null,
+      redemptionId: null,
+    };
+    t.set(voucherDocRef, voucherRecord);
+
+    // 10. Update Meal Claim tracking doc in users/{uid}/mealClaims/{offerId}
+    const newLifetimeCount = (Number(claimData.lifetimeClaimCount) || 0) + 1;
+    const updatedHistory = { ...(claimData.claimHistory || {}) };
+    updatedHistory[safeIdempotencyKey] = {
+      voucherId: voucherId,
+      claimedAt: admin.firestore.Timestamp.fromDate(nowDate),
+    };
+
+    t.set(
+      claimRef,
+      {
+        offerId: offerId,
+        campaignId: campaignId,
+        userId: uid,
+        lifetimeClaimCount: newLifetimeCount,
+        activeVoucherId: voucherId,
+        activeVoucherExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        lastClaimedAt: admin.firestore.Timestamp.fromDate(nowDate),
+        claimHistory: updatedHistory,
+      },
+      { merge: true }
+    );
+
+    // Note: Campaign budget is NOT consumed here. campaignSpentNaira remains unchanged!
+
+    return {
+      success: true,
+      voucher: {
+        id: voucherId,
+        voucherCode: voucherCode,
+        voucherPin: voucherPin,
+        expiresAt: expiresAt.toISOString(),
+        discountNaira: discountNaira,
+        minSpendNaira: minSpendNaira,
+        pointsDeducted: pointsCost,
+        vendorId: vendorId,
+        vendorName: vendorName,
+        offerId: offerId,
+        status: "active",
+      },
+      lifetimeClaimCount: newLifetimeCount,
+      pointsRemaining: currentPoints - pointsCost,
+    };
+  });
+
+  if (result?.success && !result?.idempotent && result?.voucher) {
+    logger.info(`🎟️ Meal voucher ${result.voucher.id} (${result.voucher.voucherCode}) issued to user ${uid} for offer ${result.voucher.offerId} (-${result.voucher.pointsDeducted} pts).`);
+  }
+
+  return result;
+}
+
+export const redeemMealCoupon = onCall({ cors: true, secrets: ALL_PIN_SECRETS, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testUid : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to redeem meal coupon.");
+  }
+  const { couponId, pin, idempotencyKey } = request.data || {};
+  return await redeemMealCouponCore({ uid, couponId, pin, idempotencyKey });
+});
+
+// =========================================================================
+// MEAL REWARDS & COUPON SYSTEM (PHASE 5: MERCHANT TERMINAL & REDEMPTION)
+// =========================================================================
+
+/**
+ * Configure / assign demo cashier role to an authenticated user for a fictional vendor.
+ * Server-enforced demo authorization mechanism.
+ * 
+ * Security Controls:
+ * - Strictly disabled outside the local emulator environment (FUNCTIONS_EMULATOR !== 'true').
+ * - Caller must be authenticated.
+ * - Regular customers cannot self-provision or elevate privileges.
+ * - Non-admins cannot assign roles to other UIDs or assign universal 'paywaka-demo-all'.
+ * - Cashiers can revoke their own active session (return to customer mode).
+ * - Preserves existing unrelated Firebase Auth custom claims upon role change.
+ */
+export async function setDemoCashierRoleCore({
+  uid,
+  vendorId,
+  branch,
+  cashierName,
+  callerUid,
+  isCallerAdmin = false,
+}) {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  if (!isEmulator) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Demo cashier provisioning is strictly disabled outside the local emulator environment."
+    );
+  }
+
+  const effectiveCallerUid = callerUid || uid;
+  if (!effectiveCallerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to configure cashier role.");
+  }
+
+  const targetUid = uid || effectiveCallerUid;
+
+  // Verify caller administrative privileges
+  let callerIsAdmin = Boolean(isCallerAdmin);
+  if (!callerIsAdmin) {
+    const callerSnap = await db.collection("users").doc(effectiveCallerUid).get();
+    if (callerSnap.exists) {
+      const cData = callerSnap.data() || {};
+      callerIsAdmin = cData.role === "admin" || cData.isAdmin === true;
+    }
+  }
+
+  const isSelf = targetUid === effectiveCallerUid;
+  const isRevocation = vendorId === "customer_only" || vendorId === null || vendorId === "none";
+
+  // Authorization policy enforcement
+  if (!callerIsAdmin) {
+    if (!isSelf) {
+      throw new HttpsError(
+        "permission-denied",
+        "Unauthorized: Ordinary callers cannot assign or modify roles for another user."
+      );
+    }
+    if (!isRevocation) {
+      throw new HttpsError(
+        "permission-denied",
+        "Unauthorized: Regular customers cannot self-provision merchant cashier privileges. Administrator authorization required."
+      );
+    }
+  }
+
+  const targetRef = db.collection("users").doc(targetUid);
+  const targetSnap = await targetRef.get();
+  const targetData = targetSnap.exists ? targetSnap.data() || {} : {};
+  const targetIsRealAdmin = targetData.role === "admin" || targetData.isAdmin === true;
+
+  // Handle Role Revocation / Deactivation
+  if (isRevocation) {
+    const demoteData = {
+      role: "user",
+      vendorId: admin.firestore.FieldValue.delete(),
+      vendorBranch: admin.firestore.FieldValue.delete(),
+      cashierName: admin.firestore.FieldValue.delete(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (targetSnap.exists) {
+      await targetRef.update(demoteData);
+    } else {
+      await targetRef.set({ uid: targetUid, role: "user", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    }
+
+    try {
+      let existingClaims = {};
+      try {
+        const userRecord = await admin.auth().getUser(targetUid);
+        existingClaims = userRecord.customClaims || {};
+      } catch (e) {}
+
+      const updatedClaims = {
+        ...existingClaims,
+        role: "user",
+      };
+      delete updatedClaims.vendorId;
+      delete updatedClaims.vendorBranch;
+      delete updatedClaims.cashierName;
+
+      // Security Guard: If target user is NOT a verified system administrator in Firestore,
+      // strip any administrative claims so a revoked cashier cannot retain administrative privileges.
+      if (!targetIsRealAdmin) {
+        delete updatedClaims.admin;
+        delete updatedClaims.isAdmin;
+        delete updatedClaims.superAdmin;
+      }
+
+      await admin.auth().setCustomUserClaims(targetUid, updatedClaims);
+    } catch (err) {
+      logger.warn(`Could not clear custom claims for demo user ${targetUid}: ${err.message}`);
+    }
+
+    return {
+      success: true,
+      message: `Cashier privileges revoked for user ${targetUid}. User set to customer role.`,
+      role: "user",
+      vendorId: null,
+    };
+  }
+
+  // Handle Cashier Role Provisioning / Assignment
+  if (!vendorId || typeof vendorId !== "string" || !/^[a-zA-Z0-9_\-]{3,64}$/.test(vendorId.trim())) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Valid alphanumeric vendor ID (3-64 characters) is required for demo cashier role."
+    );
+  }
+
+  const cleanVendorId = vendorId.trim();
+
+  // Wildcard 'paywaka-demo-all' requires system administrator privilege
+  if (cleanVendorId === "paywaka-demo-all" && !callerIsAdmin) {
+    throw new HttpsError(
+      "permission-denied",
+      "Universal demo vendor access ('paywaka-demo-all') is reserved for system administrators."
+    );
+  }
+
+  const roleData = {
+    uid: targetUid,
+    role: "vendor",
+    vendorId: cleanVendorId,
+    vendorBranch: branch || "Victoria Island • Lagos",
+    cashierName: cashierName || "Demo Cashier",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (!targetSnap.exists) {
+    roleData.email = `${targetUid}@paywaka.demo`;
+    roleData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+  }
+
+  await targetRef.set(roleData, { merge: true });
+
+  // Update Firebase Auth Custom Claims while PRESERVING unrelated claims
+  try {
+    let existingClaims = {};
+    try {
+      const userRecord = await admin.auth().getUser(targetUid);
+      existingClaims = userRecord.customClaims || {};
+    } catch (e) {}
+
+    const updatedClaims = {
+      ...existingClaims,
+      role: "vendor",
+      vendorId: cleanVendorId,
+    };
+
+    // Security Guard: Only users who are verified system administrators in Firestore
+    // can retain administrative claims. Prevents privilege escalation through custom claims.
+    if (!targetIsRealAdmin) {
+      delete updatedClaims.admin;
+      delete updatedClaims.isAdmin;
+      delete updatedClaims.superAdmin;
+    }
+
+    await admin.auth().setCustomUserClaims(targetUid, updatedClaims);
+  } catch (err) {
+    logger.warn(`Could not set custom claims for demo cashier ${targetUid}: ${err.message}`);
+  }
+
+  return {
+    success: true,
+    message: `User ${targetUid} granted cashier privileges for ${cleanVendorId}.`,
+    role: "vendor",
+    vendorId: cleanVendorId,
+    vendorBranch: roleData.vendorBranch,
+    cashierName: roleData.cashierName,
+  };
+}
+
+/**
+ * Server-side voucher pre-validation for merchant cashier terminal.
+ * Validates existence, vendor matching, status, expiry, and budget without mutating records.
+ */
+export async function validateMealVoucherForMerchantCore({
+  cashierUid,
+  voucherCodeOrId,
+  vendorId,
+  overrideNow,
+}) {
+  if (!cashierUid) {
+    throw new HttpsError("unauthenticated", "Cashier authentication required.");
+  }
+  if (!voucherCodeOrId || typeof voucherCodeOrId !== "string") {
+    throw new HttpsError("invalid-argument", "Valid voucherCode or voucherId is required.");
+  }
+  if (!vendorId || typeof vendorId !== "string") {
+    throw new HttpsError("invalid-argument", "Valid vendorId is required.");
+  }
+
+  // 1. Verify Cashier Authorization against live Firestore user record
+  const userSnap = await db.collection("users").doc(cashierUid).get();
+  if (!userSnap.exists) {
+    throw new HttpsError("permission-denied", "Cashier user profile not found.");
+  }
+  const userData = userSnap.data() || {};
+  const isAuthorizedAdmin = userData.role === "admin" || userData.isAdmin === true;
+  const isAuthorizedVendor =
+    userData.role === "vendor" &&
+    (userData.vendorId === vendorId || (userData.vendorId === "paywaka-demo-all" && isAuthorizedAdmin));
+
+  if (!isAuthorizedAdmin && !isAuthorizedVendor) {
+    throw new HttpsError(
+      "permission-denied",
+      "Cashier is not authorized for this merchant. User must hold the 'vendor' role for this vendor."
+    );
+  }
+
+  // 2. Lookup Voucher
+  const trimmed = voucherCodeOrId.trim();
+  let voucherDoc = await db.collection("meal_vouchers").doc(trimmed).get();
+  if (!voucherDoc.exists) {
+    const qSnap = await db.collection("meal_vouchers").where("voucherCode", "==", trimmed).limit(1).get();
+    if (!qSnap.empty) {
+      voucherDoc = qSnap.docs[0];
+    }
+  }
+
+  if (!voucherDoc.exists) {
+    throw new HttpsError("not-found", "Meal voucher not found.");
+  }
+
+  const voucherData = voucherDoc.data();
+  const nowMs = overrideNow ? overrideNow.getTime() : Date.now();
+  const expiresAtMs = voucherData.expiresAt?.toMillis
+    ? voucherData.expiresAt.toMillis()
+    : voucherData.expiresAt?.toDate
+    ? voucherData.expiresAt.toDate().getTime()
+    : new Date(voucherData.expiresAt).getTime();
+
+  const isExpired = nowMs >= expiresAtMs;
+
+  // 3. Vendor Association Check
+  const isVendorMatch = voucherData.vendorId === vendorId || (vendorId === "paywaka-demo-all" && isAuthorizedAdmin);
+  if (!isVendorMatch) {
+    throw new HttpsError(
+      "permission-denied",
+      `This voucher is issued for a different vendor (${voucherData.vendorName || voucherData.vendorId}).`
+    );
+  }
+
+  // 4. Fetch Campaign
+  const campaignSnap = await db.collection("meal_campaigns").doc(voucherData.campaignId).get();
+  let campaignData = null;
+  if (campaignSnap.exists) {
+    campaignData = campaignSnap.data();
+  }
+
+  const campaignBudget = Number(campaignData?.campaignBudgetNaira || 100000);
+  const campaignSpent = Number(campaignData?.campaignSpentNaira || 0);
+  const discountNaira = Number(voucherData.discountNaira || 500);
+  const isBudgetExhausted = campaignSpent + discountNaira > campaignBudget;
+  const isCampaignActive = campaignData?.status === "active";
+
+  // Eligibility evaluation
+  let eligible = true;
+  let reason = null;
+  let validationMessage = "Voucher is valid and eligible for redemption.";
+
+  if (voucherData.status === "redeemed") {
+    eligible = false;
+    reason = "already-redeemed";
+    validationMessage = "This voucher has already been redeemed.";
+  } else if (isExpired || voucherData.status === "expired") {
+    eligible = false;
+    reason = "expired";
+    validationMessage = "This voucher has expired.";
+  } else if (!isCampaignActive) {
+    eligible = false;
+    reason = "campaign-inactive";
+    validationMessage = "The promotional campaign for this offer is currently inactive.";
+  } else if (isBudgetExhausted) {
+    eligible = false;
+    reason = "budget-exhausted";
+    validationMessage = "The promotional campaign budget for this offer has been exhausted.";
+  }
+
+  return {
+    success: true,
+    eligible,
+    reason,
+    validationMessage,
+    voucher: {
+      id: voucherDoc.id,
+      voucherCode: voucherData.voucherCode,
+      vendorId: voucherData.vendorId,
+      vendorName: voucherData.vendorName,
+      campaignId: voucherData.campaignId,
+      offerId: voucherData.offerId,
+      discountNaira: voucherData.discountNaira,
+      minSpendNaira: voucherData.minSpendNaira,
+      status: voucherData.status,
+      expiresAt: voucherData.expiresAt?.toDate ? voucherData.expiresAt.toDate().toISOString() : voucherData.expiresAt,
+      isExpired,
+      requiresPin: Boolean(voucherData.voucherPin),
+    },
+    campaign: {
+      id: voucherData.campaignId,
+      title: campaignData?.title || voucherData.vendorName,
+      remainingBudgetNaira: Math.max(0, campaignBudget - campaignSpent),
+      status: campaignData?.status || "active",
+    },
+  };
+}
+
+/**
+ * Authoritative Server-Side Voucher Redemption Engine.
+ * Enforces all Phase 5 atomic requirements:
+ * - Cashier authorization against target vendor via live Firestore profile
+ * - Voucher lookup & existence validation
+ * - Voucher status & unexpired server-time validation
+ * - Minimum spend rule enforcement
+ * - Finite positive bill range validation (₦1 to ₦10,000,000)
+ * - Deterministic document-level idempotency locking on meal_idempotency_records/{safeIdempotencyKey}
+ * - Concurrency-safe cross-voucher collision prevention
+ * - Campaign active status & canonical budget invariant: campaignSpentNaira + discountNaira <= campaignBudgetNaira
+ * - Atomic voucher status transition, redemption record creation, and campaign spent increment
+ */
+export async function redeemMealVoucherMerchantCore({
+  cashierUid,
+  voucherCodeOrId,
+  vendorId,
+  vendorBranch,
+  billAmountNaira,
+  voucherPin,
+  idempotencyKey,
+  overrideNow,
+}) {
+  if (!cashierUid) {
+    throw new HttpsError("unauthenticated", "Cashier authentication required.");
+  }
+  if (!voucherCodeOrId || typeof voucherCodeOrId !== "string" || !voucherCodeOrId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid voucherCode or voucherId is required.");
+  }
+  if (!vendorId || typeof vendorId !== "string" || !vendorId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid vendorId is required.");
+  }
+
+  // Monetary Bill Total Validation: Finite positive amount in Naira
+  const billAmount = Number(billAmountNaira);
+  if (!Number.isFinite(billAmount) || billAmount <= 0 || billAmount > 10000000) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Valid positive finite bill total is required (between ₦1 and ₦10,000,000)."
+    );
+  }
+  const normalizedBillAmount = Math.round(billAmount * 100) / 100;
+
+  // Idempotency Key Validation: 8 to 128 characters, alphanumeric + hyphens/underscores
+  if (idempotencyKey !== undefined && idempotencyKey !== null) {
+    if (
+      typeof idempotencyKey !== "string" ||
+      !/^[a-zA-Z0-9_\-:]{8,128}$/.test(idempotencyKey.trim())
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Invalid idempotencyKey: must be an 8-128 character string containing only letters, numbers, hyphens, and underscores."
+      );
+    }
+  }
+
+  const safeIdempotencyKey =
+    idempotencyKey && typeof idempotencyKey === "string" && idempotencyKey.trim()
+      ? idempotencyKey.trim()
+      : `red_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+  const nowMs = overrideNow ? overrideNow.getTime() : Date.now();
+  const nowDate = new Date(nowMs);
+
+  // 1. Verify Cashier Authorization from live user profile
+  const cashierRef = db.collection("users").doc(cashierUid);
+  const preCashierSnap = await cashierRef.get();
+  if (!preCashierSnap.exists) {
+    throw new HttpsError("permission-denied", "Cashier user account not found.");
+  }
+  const preCashierData = preCashierSnap.data() || {};
+  const preIsAdmin = preCashierData.role === "admin" || preCashierData.isAdmin === true;
+  const preIsVendor =
+    preCashierData.role === "vendor" &&
+    (preCashierData.vendorId === vendorId || (preCashierData.vendorId === "paywaka-demo-all" && preIsAdmin));
+
+  if (!preIsAdmin && !preIsVendor) {
+    throw new HttpsError(
+      "permission-denied",
+      "Cashier is not authorized for this merchant. User must hold the 'vendor' role for this vendor."
+    );
+  }
+
+  // 2. Pre-resolve voucher reference before entering transaction to avoid query locks
+  const trimmed = voucherCodeOrId.trim();
+  let voucherRef = db.collection("meal_vouchers").doc(trimmed);
+  let resolvedVoucherSnap = await voucherRef.get();
+  if (!resolvedVoucherSnap.exists) {
+    const qSnap = await db.collection("meal_vouchers").where("voucherCode", "==", trimmed).limit(1).get();
+    if (!qSnap.empty) {
+      resolvedVoucherSnap = qSnap.docs[0];
+      voucherRef = resolvedVoucherSnap.ref;
+    }
+  }
+  if (!resolvedVoucherSnap.exists) {
+    throw new HttpsError("not-found", "Meal voucher not found.");
+  }
+
+  logger.info(`[REDEEM_CORE] Executing for cashier=${cashierUid}, voucher=${voucherCodeOrId}, vendor=${vendorId}, bill=${normalizedBillAmount}, idem=${safeIdempotencyKey}`);
+
+  const result = await db.runTransaction(async (t) => {
+    logger.info(`[REDEEM_TRANSACTION] Started transaction for ${voucherCodeOrId}`);
+    // Re-verify Cashier Authorization inside transaction from live user profile
+    const cashierSnap = await t.get(cashierRef);
+    if (!cashierSnap.exists) {
+      throw new HttpsError("permission-denied", "Cashier user account not found.");
+    }
+    const cashierData = cashierSnap.data() || {};
+    logger.info(`[REDEEM_TRANSACTION] Cashier loaded: role=${cashierData.role}, vendorId=${cashierData.vendorId}`);
+    const isAuthorizedAdmin = cashierData.role === "admin" || cashierData.isAdmin === true;
+    const isAuthorizedVendor =
+      cashierData.role === "vendor" &&
+      (cashierData.vendorId === vendorId || (cashierData.vendorId === "paywaka-demo-all" && isAuthorizedAdmin));
+
+    if (!isAuthorizedAdmin && !isAuthorizedVendor) {
+      throw new HttpsError(
+        "permission-denied",
+        "Cashier is not authorized for this merchant. User must hold the 'vendor' role for this vendor."
+      );
+    }
+
+    // 2. Lookup Voucher inside transaction by direct document reference
+    let voucherDoc = await t.get(voucherRef);
+    if (!voucherDoc.exists) {
+      throw new HttpsError("not-found", "Meal voucher not found.");
+    }
+
+    const voucherData = voucherDoc.data();
+
+    // 3. Deterministic Document-Level Idempotency Locking
+    // Querying specific document ID guarantees serializable concurrency locks
+    const idemRef = db.collection("meal_idempotency_records").doc(safeIdempotencyKey);
+    const idemDoc = await t.get(idemRef);
+
+    if (idemDoc.exists) {
+      const prior = idemDoc.data();
+      // Ensure the key belongs to the exact same voucher
+      if (prior.voucherId !== voucherDoc.id) {
+        throw new HttpsError(
+          "already-exists",
+          `Idempotency key collision: this key was already used for a different voucher (${prior.voucherCode || prior.voucherId}).`
+        );
+      }
+      // Ensure vendor matches
+      if (prior.vendorId !== vendorId) {
+        throw new HttpsError(
+          "already-exists",
+          "Idempotency key collision: this key was previously used for a different vendor."
+        );
+      }
+
+      // Ensure original cashier identity matches: prevent information leakage across cashiers
+      if (prior.cashierUid !== cashierUid && !isAuthorizedAdmin) {
+        throw new HttpsError(
+          "permission-denied",
+          "Idempotency conflict: this key is bound to a redemption initiated by another cashier."
+        );
+      }
+
+      // Ensure request parameters (billAmountNaira) match original logical request
+      if (Math.abs(Number(prior.billAmountNaira || 0) - normalizedBillAmount) > 0.01) {
+        throw new HttpsError(
+          "invalid-argument",
+          `Idempotency conflict: this key was already used with a different bill amount (₦${prior.billAmountNaira}).`
+        );
+      }
+
+      // Verify voucher PIN if voucher requires it
+      if (voucherData.voucherPin && voucherPin !== undefined && voucherPin !== null && String(voucherPin).trim() !== "") {
+        if (String(voucherPin).trim() !== String(voucherData.voucherPin).trim()) {
+          throw new HttpsError("permission-denied", "Incorrect 4-digit voucher claim PIN.");
+        }
+      }
+
+      // Legitimate idempotent retry: return exact original result with zero mutation
+      return {
+        success: true,
+        idempotent: true,
+        redemptionId: prior.redemptionId,
+        redemptionReference: prior.redemptionReference,
+        voucherId: voucherDoc.id,
+        voucherCode: voucherData.voucherCode,
+        billAmountNaira: prior.billAmountNaira,
+        discountNaira: prior.discountNaira,
+        finalPayableNaira: prior.finalPayableNaira,
+        vendorId: prior.vendorId,
+        vendorName: prior.vendorName,
+        vendorBranch: prior.vendorBranch,
+        redeemedAt: prior.redeemedAt?.toDate ? prior.redeemedAt.toDate().toISOString() : prior.redeemedAt,
+        message: "Voucher already redeemed with this claim request.",
+      };
+    }
+
+    // If voucher was redeemed under a different idempotency key
+    if (voucherData.status === "redeemed") {
+      throw new HttpsError("failed-precondition", "This meal voucher has already been redeemed.");
+    }
+
+    if (voucherData.status !== "active") {
+      throw new HttpsError("failed-precondition", `This meal voucher cannot be redeemed (status: ${voucherData.status}).`);
+    }
+
+    // 4. Server-Time Expiration Check
+    const expiresAtMs = voucherData.expiresAt?.toMillis
+      ? voucherData.expiresAt.toMillis()
+      : voucherData.expiresAt?.toDate
+      ? voucherData.expiresAt.toDate().getTime()
+      : new Date(voucherData.expiresAt).getTime();
+
+    if (nowMs >= expiresAtMs) {
+      throw new HttpsError("failed-precondition", "This meal voucher has expired and cannot be redeemed.");
+    }
+
+    // 5. Vendor Association Check
+    if (voucherData.vendorId !== vendorId && !(vendorId === "paywaka-demo-all" && isAuthorizedAdmin)) {
+      throw new HttpsError(
+        "permission-denied",
+        `This voucher is issued for a different vendor (${voucherData.vendorName || voucherData.vendorId}).`
+      );
+    }
+
+    // 6. Voucher PIN Verification (if provided)
+    if (voucherPin !== undefined && voucherPin !== null && String(voucherPin).trim() !== "") {
+      if (String(voucherPin).trim() !== String(voucherData.voucherPin).trim()) {
+        throw new HttpsError("permission-denied", "Incorrect 4-digit voucher claim PIN.");
+      }
+    }
+
+    // 7. Minimum Spend Rule Enforcement
+    const minSpend = Number(voucherData.minSpendNaira || 0);
+    if (normalizedBillAmount < minSpend) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Minimum spend requirement not met. Order total must be at least ₦${minSpend.toLocaleString()} (Provided: ₦${normalizedBillAmount.toLocaleString()}).`
+      );
+    }
+
+    // 8. Fetch Campaign and Canonical Budget Check
+    const campaignRef = db.collection("meal_campaigns").doc(voucherData.campaignId);
+    const campaignDoc = await t.get(campaignRef);
+    if (!campaignDoc.exists) {
+      throw new HttpsError("not-found", "Associated meal campaign not found.");
+    }
+    const campaignData = campaignDoc.data();
+    if (campaignData.status !== "active") {
+      throw new HttpsError("failed-precondition", "The meal campaign for this offer is currently inactive.");
+    }
+
+    // Calculate Authoritative Discount (discount cannot exceed bill total)
+    const nominalDiscount = Number(voucherData.discountNaira || 0);
+    const actualDiscount = Math.min(nominalDiscount, normalizedBillAmount);
+    const finalPayable = Math.max(0, normalizedBillAmount - actualDiscount);
+
+    // Canonical Budget Invariant Check:
+    // campaignSpentNaira + actualDiscount <= campaignBudgetNaira
+    const currentSpent = Number(campaignData.campaignSpentNaira || 0);
+    const budgetTotal = Number(campaignData.campaignBudgetNaira || 0);
+    if (currentSpent + actualDiscount > budgetTotal) {
+      const remainingBudget = Math.max(0, budgetTotal - currentSpent);
+      throw new HttpsError(
+        "resource-exhausted",
+        `Campaign promotional budget exhausted. Remaining budget: ₦${remainingBudget.toLocaleString()}.`
+      );
+    }
+
+    // 9. Generate Unique Redemption IDs
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const redemptionId = `red_${voucherDoc.id.replace(/^vch_/, "").slice(0, 8)}_${Date.now().toString(36)}_${randomSuffix}`;
+    const redemptionReference = `PWK-RED-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const branchName = vendorBranch || cashierData.vendorBranch || "Victoria Island • Lagos";
+
+    // 10. Atomic Write: Update Voucher document in meal_vouchers
+    t.update(voucherRef, {
+      status: "redeemed",
+      redeemedAt: admin.firestore.Timestamp.fromDate(nowDate),
+      redeemedByVendorStaffUid: cashierUid,
+      redeemedVendorBranch: branchName,
+      redemptionId: redemptionId,
+      billAmountNaira: normalizedBillAmount,
+      actualDiscountNaira: actualDiscount,
+      finalPayableNaira: finalPayable,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 11. Atomic Write: Increment Campaign Spent & Redemption Count in meal_campaigns
+    t.update(campaignRef, {
+      campaignSpentNaira: admin.firestore.FieldValue.increment(actualDiscount),
+      redemptionCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 12. Atomic Write: Create Immutable Redemption Audit Document in meal_redemptions
+    const redemptionDocRef = db.collection("meal_redemptions").doc(redemptionId);
+    t.set(redemptionDocRef, {
+      id: redemptionId,
+      redemptionReference: redemptionReference,
+      voucherId: voucherDoc.id,
+      voucherCode: voucherData.voucherCode,
+      userId: voucherData.userId,
+      vendorId: vendorId,
+      vendorName: voucherData.vendorName || "Partner Vendor",
+      vendorBranch: branchName,
+      campaignId: voucherData.campaignId,
+      offerId: voucherData.offerId,
+      cashierUid: cashierUid,
+      cashierName: cashierData.cashierName || "Demo Cashier",
+      billAmountNaira: normalizedBillAmount,
+      discountNaira: actualDiscount,
+      finalPayableNaira: finalPayable,
+      status: "completed",
+      idempotencyKey: safeIdempotencyKey,
+      redeemedAt: admin.firestore.Timestamp.fromDate(nowDate),
+      createdAt: admin.firestore.Timestamp.fromDate(nowDate),
+    });
+
+    // 13. Atomic Write: Deterministic idempotency lock record in meal_idempotency_records
+    t.set(idemRef, {
+      idempotencyKey: safeIdempotencyKey,
+      voucherId: voucherDoc.id,
+      voucherCode: voucherData.voucherCode,
+      vendorId: vendorId,
+      vendorName: voucherData.vendorName || "Partner Vendor",
+      vendorBranch: branchName,
+      cashierUid: cashierUid,
+      redemptionId: redemptionId,
+      redemptionReference: redemptionReference,
+      billAmountNaira: normalizedBillAmount,
+      discountNaira: actualDiscount,
+      finalPayableNaira: finalPayable,
+      redeemedAt: admin.firestore.Timestamp.fromDate(nowDate),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 14. Atomic Write: Audit Log in admin_audit_logs
+    const auditRef = db.collection("admin_audit_logs").doc();
+    t.set(auditRef, {
+      action: "MEAL_VOUCHER_REDEMPTION",
+      redemptionId: redemptionId,
+      voucherId: voucherDoc.id,
+      voucherCode: voucherData.voucherCode,
+      cashierUid: cashierUid,
+      vendorId: voucherData.vendorId,
+      discountNaira: actualDiscount,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      success: true,
+      redemptionId: redemptionId,
+      redemptionReference: redemptionReference,
+      voucherId: voucherDoc.id,
+      voucherCode: voucherData.voucherCode,
+      billAmountNaira: normalizedBillAmount,
+      discountNaira: actualDiscount,
+      finalPayableNaira: finalPayable,
+      vendorId: voucherData.vendorId,
+      vendorName: voucherData.vendorName,
+      vendorBranch: branchName,
+      redeemedAt: nowDate.toISOString(),
+      message: "Voucher successfully validated and redeemed.",
+    };
+  });
+
+  if (result?.success && !result?.idempotent) {
+    logger.info(`✅ Meal voucher ${result.voucherId} (${result.voucherCode}) redeemed at ${result.vendorName} by cashier ${cashierUid} (Bill: ₦${result.billAmountNaira}, Discount: ₦${result.discountNaira}, Paid: ₦${result.finalPayableNaira}).`);
+  }
+
+  return result;
+}
+
+export const setDemoCashierRole = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  if (!isEmulator) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Demo cashier provisioning is strictly disabled outside the local emulator environment."
+    );
+  }
+
+  // Deployed callers cannot spoof identity. request.auth.uid is always authoritative.
+  const callerUid = request.auth?.uid;
+  if (!callerUid && !isEmulator) {
+    throw new HttpsError("unauthenticated", "Authentication required to configure cashier role.");
+  }
+
+  // Test-only identity override is allowed ONLY when unauthenticated AND strictly in emulator test environment
+  const effectiveCallerUid = callerUid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!effectiveCallerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to configure cashier role.");
+  }
+
+  const { targetUid, vendorId, branch, cashierName } = request.data || {};
+  return await setDemoCashierRoleCore({
+    callerUid: effectiveCallerUid,
+    uid: targetUid || effectiveCallerUid,
+    vendorId,
+    branch,
+    cashierName,
+  });
+});
+
+export const validateMealVoucherForMerchant = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  // Deployed callers can NEVER override auth.uid. testUid is strictly ignored if !isEmulator or if request.auth is present!
+  const cashierUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testUid : null);
+  if (!cashierUid) {
+    throw new HttpsError("unauthenticated", "Authentication required for merchant terminal.");
+  }
+  const { voucherCodeOrId, vendorId } = request.data || {};
+  return await validateMealVoucherForMerchantCore({ cashierUid, voucherCodeOrId, vendorId });
+});
+
+export const redeemMealVoucherMerchant = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  // Deployed callers can NEVER override auth.uid. testUid is strictly ignored if !isEmulator or if request.auth is present!
+  const cashierUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testUid : null);
+  logger.info(`[REDEEM_CALLABLE] Entry cashierUid=${cashierUid}, authUid=${request.auth?.uid}`);
+  if (!cashierUid) {
+    throw new HttpsError("unauthenticated", "Authentication required for merchant redemption.");
+  }
+  const { voucherCodeOrId, vendorId, vendorBranch, billAmountNaira, voucherPin, idempotencyKey } = request.data || {};
+  logger.info(`[REDEEM_CALLABLE] Payload: voucherCodeOrId=${voucherCodeOrId}, vendorId=${vendorId}, billAmountNaira=${billAmountNaira}, idem=${idempotencyKey}`);
+  return await redeemMealVoucherMerchantCore({
+    cashierUid,
+    voucherCodeOrId,
+    vendorId,
+    vendorBranch,
+    billAmountNaira,
+    voucherPin,
+    idempotencyKey,
+  });
+});
+
+

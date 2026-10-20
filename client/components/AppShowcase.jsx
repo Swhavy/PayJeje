@@ -11,7 +11,7 @@ export default function AppShowcase() {
   const [activeEarn, setActiveEarn] = useState(false);
 
   return (
-    <section id="app-showcase" className="py-24 bg-[#060d1a] border-b border-[#1d3a6a]/30 relative overflow-hidden">
+    <section id="app-showcase" className="py-24 bg-background border-b border-[#1d3a6a]/30 relative overflow-hidden">
       {/* Background radial glow specifically behind the phone */}
       <div className="absolute top-1/2 left-1/3 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-[#00c96e]/5 blur-[130px] pointer-events-none" />
 
@@ -23,7 +23,7 @@ export default function AppShowcase() {
             <ScrollFadeUp className="relative w-full max-w-[320px]">
               
               {/* Outer Phone Frame */}
-              <div className="relative mx-auto w-[310px] h-[620px] bg-[#060d1a] border-[8px] border-[#152c52] rounded-[42px] shadow-[0_30px_100px_rgba(0,201,110,0.15)] overflow-hidden flex flex-col justify-between">
+              <div className="relative mx-auto w-[310px] h-[620px] bg-background border-[8px] border-[#152c52] rounded-[42px] shadow-[0_30px_100px_rgba(0,201,110,0.15)] overflow-hidden flex flex-col justify-between">
                 
                 {/* Dynamic Island Notch */}
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 w-28 h-6 bg-black rounded-full z-30 flex items-center justify-between px-3">
@@ -32,7 +32,7 @@ export default function AppShowcase() {
                 </div>
 
                 {/* Simulated Screen Content */}
-                <div className="flex-grow pt-10 pb-4 px-4 bg-[#060d1a] flex flex-col justify-between select-none font-sans overflow-y-auto no-scrollbar">
+                <div className="flex-grow pt-10 pb-4 px-4 bg-background flex flex-col justify-between select-none font-sans overflow-y-auto no-scrollbar">
                   
                   {/* Status Bar */}
                   <div className="flex justify-between items-center text-[10px] font-bold text-[#7a9cc8] px-2 mb-4">
@@ -146,7 +146,7 @@ export default function AppShowcase() {
                 </div>
 
                 {/* Bottom Home Indicator */}
-                <div className="w-full h-5 bg-[#060d1a] flex items-center justify-center pb-2">
+                <div className="w-full h-5 bg-background flex items-center justify-center pb-2">
                   <div className="w-24 h-1 bg-[#152c52] rounded-full" />
                 </div>
               </div>

@@ -8,12 +8,17 @@ const _dirname = path.dirname(new URL(import.meta.url).pathname);
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    allowedHosts: [
-      "all",
-      "37d4-197-211-52-73.ngrok-free.app", // 👈 add your ngrok subdomain here
-    ],
-    //host: "::",
+    host: "0.0.0.0",
     port: 8080,
+    watch: {
+      ignored: [
+        "**/test-results/**",
+        "**/playwright-report/**",
+        "**/dist/**",
+        "**/.system_generated/**",
+        "**/functions/**",
+      ],
+    },
     fs: {
       allow: [
         path.resolve(_dirname, "client"),
@@ -25,6 +30,12 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist/spa",
+  },
+  test: {
+    include: [
+      "client/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
+      "shared/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
+    ],
   },
   plugins: [react(), expressPlugin()],
   resolve: {

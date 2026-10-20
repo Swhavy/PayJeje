@@ -1,0 +1,961 @@
+[
+  {
+    "network": "MTN",
+    "plan_code": "500",
+    "label": "500MB - Weekly (SME)",
+    "cost": "307",
+    "competitor_price": "500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "500.00",
+    "label": "500MB - Monthly (SME)",
+    "cost": "307",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "1000",
+    "label": "1GB - Weekly (SME)",
+    "cost": "410",
+    "competitor_price": "800"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "1000.00",
+    "label": "1GB - Monthly (SME)",
+    "cost": "563",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "2000",
+    "label": "2GB - Weekly (SME)",
+    "cost": "820",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "2000.00",
+    "label": "2GB - Monthly (SME)",
+    "cost": "1117",
+    "competitor_price": "1500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "3000",
+    "label": "3GB - Weekly (SME)",
+    "cost": "1230",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "3000.00",
+    "label": "3GB - Monthly (SME)",
+    "cost": "1629",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "5000",
+    "label": "5GB - Weekly (SME)",
+    "cost": "2050",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "5000.00",
+    "label": "5GB - Monthly (SME)",
+    "cost": "2511",
+    "competitor_price": ""
+  },
+  {
+    "network": "MTN",
+    "plan_code": "100.01",
+    "label": "110MB Daily Plan (Awoof Data)",
+    "cost": "97",
+    "competitor_price": "100"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "200.01",
+    "label": "230MB Daily Plan (Awoof Data)",
+    "cost": "194",
+    "competitor_price": "200"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "350.01",
+    "label": "500MB Daily Plan (Awoof Data)",
+    "cost": "339.5",
+    "competitor_price": "350"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "500.01",
+    "label": "1GB Daily Plan + 1.5mins (Awoof Data)",
+    "cost": "485",
+    "competitor_price": "500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "750.01",
+    "label": "2.5GB Daily Plan (Awoof Data)",
+    "cost": "727.5",
+    "competitor_price": "750"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "900.01",
+    "label": "2.5GB 2-Day Plan (Awoof Data)",
+    "cost": "873",
+    "competitor_price": "900"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "1000.01",
+    "label": "3.2GB 2-Day Plan (Awoof Data)",
+    "cost": "970",
+    "competitor_price": "1000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "500.02",
+    "label": "500MB Weekly Plan (Direct Data)",
+    "cost": "485",
+    "competitor_price": "500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "800.01",
+    "label": "1GB Weekly Plan (Direct Data)",
+    "cost": "776",
+    "competitor_price": "800"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "1000.03",
+    "label": "1.5GB Weekly Plan (Direct Data)",
+    "cost": "970",
+    "competitor_price": "1000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "1500.03",
+    "label": "3.5GB Weekly Plan (Direct Data)",
+    "cost": "1455",
+    "competitor_price": "1500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "2500.01",
+    "label": "6GB Weekly Plan (Direct Data)",
+    "cost": "2425",
+    "competitor_price": "2500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "3500.01",
+    "label": "11GB Weekly Bundle (Direct Data)",
+    "cost": "3395",
+    "competitor_price": "3500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "1500.02",
+    "label": "2GB+2mins Monthly Plan (Direct Data)",
+    "cost": "1455",
+    "competitor_price": "1500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "2000.01",
+    "label": "2.7GB+2mins Monthly Plan (Direct Data)",
+    "cost": "1940",
+    "competitor_price": "2000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "2500.02",
+    "label": "3.5GB+5mins Monthly Plan (Direct Data)",
+    "cost": "2425",
+    "competitor_price": "2500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "3500.02",
+    "label": "7GB Monthly Plan (Direct Data)",
+    "cost": "3395",
+    "competitor_price": "3500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "4500.01",
+    "label": "10GB+10mins Monthly Plan (Direct Data)",
+    "cost": "4365",
+    "competitor_price": "4500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "5500.01",
+    "label": "12.5GB Monthly Plan (Direct Data)",
+    "cost": "5335",
+    "competitor_price": "5500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "6500.01",
+    "label": "16.5GB+10mins Monthly Plan (Direct Data)",
+    "cost": "6305",
+    "competitor_price": "6500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "7500.01",
+    "label": "20GB Monthly Plan (Direct Data)",
+    "cost": "7275",
+    "competitor_price": "7500"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "9000.01",
+    "label": "25GB Monthly Plan (Direct Data)",
+    "cost": "8730",
+    "competitor_price": "9000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "11000.01",
+    "label": "36GB Monthly Plan (Direct Data)",
+    "cost": "10670",
+    "competitor_price": "11000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "18000.01",
+    "label": "75GB Monthly Plan (Direct Data)",
+    "cost": "17460",
+    "competitor_price": "18000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "35000.01",
+    "label": "165GB Monthly Plan (Direct Data)",
+    "cost": "33950",
+    "competitor_price": "35000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "40000.01",
+    "label": "150GB 2-Month Plan (Direct Data)",
+    "cost": "38800",
+    "competitor_price": "40000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "5000.01",
+    "label": "20GB Weekly Plan (Direct Data)",
+    "cost": "4850",
+    "competitor_price": "5000"
+  },
+  {
+    "network": "MTN",
+    "plan_code": "90000.03",
+    "label": "480GB 3-Month Plan (Direct Data)",
+    "cost": "87300",
+    "competitor_price": "90000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "200",
+    "label": "200MB (SME)",
+    "cost": "94",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "500",
+    "label": "500MB (SME)",
+    "cost": "230",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1000.11",
+    "label": "1GB (SME)",
+    "cost": "392",
+    "competitor_price": "400"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "3000.11",
+    "label": "3GB (SME)",
+    "cost": "1176",
+    "competitor_price": "1200"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "5000.11",
+    "label": "5GB (SME)",
+    "cost": "1960",
+    "competitor_price": "2000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1000.12",
+    "label": "1GB (SME)",
+    "cost": "409",
+    "competitor_price": "420"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "3000.12",
+    "label": "3GB (SME)",
+    "cost": "1228",
+    "competitor_price": "1260"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "5000.12",
+    "label": "5GB (SME)",
+    "cost": "2046",
+    "competitor_price": "2100"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1000.21",
+    "label": "1GB Night Plan (SME)",
+    "cost": "409",
+    "competitor_price": "420"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "3000.21",
+    "label": "3GB Night Plan (SME)",
+    "cost": "1228",
+    "competitor_price": "1260"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "5000.21",
+    "label": "5GB Night Plan (SME)",
+    "cost": "2046",
+    "competitor_price": "2100"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "10000.21",
+    "label": "10GB Night Plan (SME)",
+    "cost": "4093",
+    "competitor_price": "4200"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1000",
+    "label": "1GB (SME)",
+    "cost": "461",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "2000",
+    "label": "2GB (SME)",
+    "cost": "922",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "3000",
+    "label": "3GB (SME)",
+    "cost": "1383",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "5000",
+    "label": "5GB (SME)",
+    "cost": "2306",
+    "competitor_price": "2400"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "10000",
+    "label": "10GB (SME)",
+    "cost": "4612",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "100.01",
+    "label": "125MB (Awoof Data)",
+    "cost": "97",
+    "competitor_price": "100"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "200.01",
+    "label": "260MB (Awoof Data)",
+    "cost": "194",
+    "competitor_price": "200"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "500.01",
+    "label": "1.5GB (Direct Data)",
+    "cost": "485",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1000.01",
+    "label": "2.6GB (Direct Data)",
+    "cost": "970",
+    "competitor_price": "1000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1500.01",
+    "label": "5GB (Direct Data)",
+    "cost": "1455",
+    "competitor_price": "1500"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "2000.01",
+    "label": "6.15GB (Direct Data)",
+    "cost": "1940",
+    "competitor_price": "2000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "2500.01",
+    "label": "7.5GB (Direct Data)",
+    "cost": "2425",
+    "competitor_price": "2500"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "3000.01",
+    "label": "10GB (Direct Data)",
+    "cost": "2910",
+    "competitor_price": "3000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "4000.01",
+    "label": "12.5GB (Direct Data)",
+    "cost": "3880",
+    "competitor_price": "4000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "5000.01",
+    "label": "16GB (Direct Data)",
+    "cost": "4850",
+    "competitor_price": "5000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "8000.01",
+    "label": "28GB (Direct Data)",
+    "cost": "7760",
+    "competitor_price": "8000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "10000.01",
+    "label": "38GB (Direct Data)",
+    "cost": "9700",
+    "competitor_price": "10000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "15000.01",
+    "label": "64GB (Direct Data)",
+    "cost": "14550",
+    "competitor_price": "15000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "20000.01",
+    "label": "107GB (Direct Data)",
+    "cost": "19400",
+    "competitor_price": "20000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "500.02",
+    "label": "2GB (Awoof Data)",
+    "cost": "485",
+    "competitor_price": "500"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "1500.02",
+    "label": "6GB (Direct Data)",
+    "cost": "1455",
+    "competitor_price": "1500"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "500.03",
+    "label": "2.5GB Weekend Plan [Sat & Sun] (Awoof Data)",
+    "cost": "485",
+    "competitor_price": "500"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "200.02",
+    "label": "875MB Weekend Plan [Sun] (Awoof Data)",
+    "cost": "194",
+    "competitor_price": "200"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "30000.01",
+    "label": "165GB (Direct Data)",
+    "cost": "29100",
+    "competitor_price": "30000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "36000.01",
+    "label": "220GB (Direct Data)",
+    "cost": "38800",
+    "competitor_price": "40000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "50000.01",
+    "label": "320GB (Direct Data)",
+    "cost": "48500",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "60000.01",
+    "label": "380GB (Direct Data)",
+    "cost": "58200",
+    "competitor_price": ""
+  },
+  {
+    "network": "GLO",
+    "plan_code": "75000.01",
+    "label": "475GB (Direct Data)",
+    "cost": "72750",
+    "competitor_price": "75000"
+  },
+  {
+    "network": "GLO",
+    "plan_code": "150000.03",
+    "label": "1TB (1000GB) (Direct Data)",
+    "cost": "150000",
+    "competitor_price": "150000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "499.91",
+    "label": "1GB (Awoof Data)",
+    "cost": "484.91",
+    "competitor_price": "500"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "599.91",
+    "label": "1.5GB (Awoof Data)",
+    "cost": "581.91",
+    "competitor_price": ""
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "749.91",
+    "label": "2GB (Awoof Data)",
+    "cost": "727.41",
+    "competitor_price": "600"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "999.91",
+    "label": "3GB (Awoof Data)",
+    "cost": "969.91",
+    "competitor_price": "750"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "1499.91",
+    "label": "5GB (Awoof Data)",
+    "cost": "1454.91",
+    "competitor_price": ""
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "499.92",
+    "label": "500MB (Direct Data)",
+    "cost": "484.92",
+    "competitor_price": "500"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "799.91",
+    "label": "1GB (Direct Data)",
+    "cost": "775.91",
+    "competitor_price": "800"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "999.92",
+    "label": "1.5GB (Direct Data)",
+    "cost": "969.92",
+    "competitor_price": "1000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "1499.92",
+    "label": "3.5GB (Direct Data)",
+    "cost": "1454.92",
+    "competitor_price": ""
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "2499.91",
+    "label": "6GB (Direct Data)",
+    "cost": "2424.91",
+    "competitor_price": "2000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "2999.91",
+    "label": "10GB (Direct Data)",
+    "cost": "2909.91",
+    "competitor_price": "3000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "4999.91",
+    "label": "18GB (Direct Data)",
+    "cost": "4849.91",
+    "competitor_price": ""
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "1499.93",
+    "label": "2GB (Direct Data)",
+    "cost": "1454.93",
+    "competitor_price": "1500"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "1999.91",
+    "label": "3GB (Direct Data)",
+    "cost": "1939.91",
+    "competitor_price": "2000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "2499.92",
+    "label": "4GB (Direct Data)",
+    "cost": "2424.92",
+    "competitor_price": "2500"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "2999.92",
+    "label": "8GB (Direct Data)",
+    "cost": "2909.92",
+    "competitor_price": "3000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "3999.91",
+    "label": "10GB (Direct Data)",
+    "cost": "3879.91",
+    "competitor_price": "4000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "4999.92",
+    "label": "13GB (Direct Data)",
+    "cost": "4849.92",
+    "competitor_price": ""
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "5999.91",
+    "label": "18GB (Direct Data)",
+    "cost": "5819.91",
+    "competitor_price": "6000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "7999.91",
+    "label": "25GB (Direct Data)",
+    "cost": "7759.91",
+    "competitor_price": "8000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "9999.91",
+    "label": "35GB (Direct Data)",
+    "cost": "9699.91",
+    "competitor_price": "10000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "14999.91",
+    "label": "60GB (Direct Data)",
+    "cost": "14549.91",
+    "competitor_price": "15000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "19999.91",
+    "label": "100GB (Direct Data)",
+    "cost": "19399.91",
+    "competitor_price": "20000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "29999.91",
+    "label": "160GB (Direct Data)",
+    "cost": "29099.91",
+    "competitor_price": "30000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "39999.91",
+    "label": "210GB (Direct Data)",
+    "cost": "38799.91",
+    "competitor_price": ""
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "49999.91",
+    "label": "300GB (Direct Data)",
+    "cost": "48499.91",
+    "competitor_price": "50000"
+  },
+  {
+    "network": "AIRTEL",
+    "plan_code": "59999.91",
+    "label": "350GB (Direct Data)",
+    "cost": "58199.91",
+    "competitor_price": "60000"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "50",
+    "label": "50MB (SME)",
+    "cost": "25",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "100",
+    "label": "100MB (SME)",
+    "cost": "51",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "300",
+    "label": "300MB (SME)",
+    "cost": "153",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "500",
+    "label": "500MB (SME)",
+    "cost": "246",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "1000",
+    "label": "1GB (SME)",
+    "cost": "492",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "2000",
+    "label": "2GB (SME)",
+    "cost": "984",
+    "competitor_price": "1000"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "3000",
+    "label": "3GB (SME)",
+    "cost": "1476",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "4000",
+    "label": "4GB (SME)",
+    "cost": "1968",
+    "competitor_price": "2000"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "5000",
+    "label": "5GB (SME)",
+    "cost": "2460",
+    "competitor_price": "2500"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "10000",
+    "label": "10GB (SME)",
+    "cost": "4920",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "15000",
+    "label": "15GB (SME)",
+    "cost": "7380",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "20000",
+    "label": "20GB (SME)",
+    "cost": "9840",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "25000",
+    "label": "25GB (SME)",
+    "cost": "12300",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "100.01",
+    "label": "100MB (Awoof Data)",
+    "cost": "93",
+    "competitor_price": "100"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "150.01",
+    "label": "180MB (Awoof Data)",
+    "cost": "139.5",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "200.01",
+    "label": "250MB (Awoof Data)",
+    "cost": "186",
+    "competitor_price": "200"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "350.01",
+    "label": "450MB (Awoof Data)",
+    "cost": "325.5",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "500.01",
+    "label": "650MB (Awoof Data)",
+    "cost": "465",
+    "competitor_price": "500"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "1500.01",
+    "label": "1.75GB (Direct Data)",
+    "cost": "1395",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "600.01",
+    "label": "650MB (Direct Data)",
+    "cost": "558",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "1000.01",
+    "label": "1.1GB (Direct Data)",
+    "cost": "930",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "1200.01",
+    "label": "1.4GB (Direct Data)",
+    "cost": "1116",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "2000.01",
+    "label": "2.44GB (Direct Data)",
+    "cost": "1860",
+    "competitor_price": "1200"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "2500.01",
+    "label": "3.17GB (Direct Data)",
+    "cost": "2325",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "3000.01",
+    "label": "3.91GB (Direct Data)",
+    "cost": "2790",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "4000.01",
+    "label": "5.10GB (Direct Data)",
+    "cost": "3720",
+    "competitor_price": "2500"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "5000.01",
+    "label": "6.5GB (Direct Data)",
+    "cost": "4650",
+    "competitor_price": "3000"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "12000.01",
+    "label": "16GB (Direct Data)",
+    "cost": "11160",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "18500.01",
+    "label": "24.3GB (Direct Data)",
+    "cost": "17205",
+    "competitor_price": "10000"
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "20000.01",
+    "label": "26.5GB (Direct Data)",
+    "cost": "18600",
+    "competitor_price": ""
+  },
+  {
+    "network": "9MOBILE",
+    "plan_code": "30000.01",
+    "label": "39GB (Direct Data)",
+    "cost": "27900",
+    "competitor_price": "15000"
+  }
+]

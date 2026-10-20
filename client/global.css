@@ -4,62 +4,61 @@
 @tailwind utilities;
 
 @layer base {
-  @layer base {
-    :root {
-      /* Light mode = elevated navy, not white */
-      --background: 220 46% 8%;
-      --foreground: 220 60% 95%;
-      --card: 220 50% 10%;
-      --card-foreground: 220 60% 95%;
-      --popover: 220 50% 10%;
-      --popover-foreground: 220 60% 95%;
-      --primary: 151 100% 40%;
-      --primary-foreground: 151 100% 4%;
-      --secondary: 220 40% 14%;
-      --secondary-foreground: 220 30% 75%;
-      --muted: 220 36% 13%;
-      --muted-foreground: 220 25% 50%;
-      --accent: 220 38% 16%;
-      --accent-foreground: 220 30% 80%;
-      --destructive: 354 100% 68%;
-      --destructive-foreground: 220 46% 8%;
-      --border: 220 38% 18%;
-      --input: 220 42% 14%;
-      --ring: 151 100% 40%;
-      --radius: 0.625rem;
-      --chart-1: 151 100% 40%;
-      --chart-2: 201 100% 50%;
-      --chart-3: 38 90% 55%;
-      --chart-4: 220 60% 55%;
-      --chart-5: 354 100% 68%;
-    }
+  :root {
+    /* Light mode — warm cream/parchment palette */
+    --background: 36 33% 94%;        /* rgb(245, 242, 235) */
+    --foreground: 222 47% 11%;       /* dark navy text #0f1729 */
+    --card: 0 0% 100%;               /* pure white cards */
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 151 95% 36%;          /* slightly deeper green for light bg contrast */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 36 20% 90%;         /* warm light secondary */
+    --secondary-foreground: 222 30% 30%;
+    --muted: 36 18% 91%;             /* soft warm muted */
+    --muted-foreground: 215 16% 47%; /* medium slate #5a6b82 */
+    --accent: 36 22% 88%;            /* warm accent surface */
+    --accent-foreground: 222 30% 20%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 85%;           /* soft grey border #d8dde6 */
+    --input: 220 13% 88%;            /* light input bg */
+    --ring: 151 95% 36%;
+    --radius: 0.625rem;
+    --chart-1: 151 80% 35%;
+    --chart-2: 201 90% 45%;
+    --chart-3: 38 85% 50%;
+    --chart-4: 220 55% 50%;
+    --chart-5: 354 80% 55%;
+  }
 
-    .dark {
-      --background: 220 52% 4%;
-      --foreground: 220 60% 95%;
-      --card: 220 50% 6%;
-      --card-foreground: 220 60% 95%;
-      --popover: 220 50% 6%;
-      --popover-foreground: 220 60% 95%;
-      --primary: 151 100% 40%;
-      --primary-foreground: 151 100% 4%;
-      --secondary: 220 40% 10%;
-      --secondary-foreground: 220 30% 70%;
-      --muted: 220 36% 9%;
-      --muted-foreground: 220 20% 45%;
-      --accent: 220 38% 12%;
-      --accent-foreground: 220 30% 75%;
-      --destructive: 354 100% 68%;
-      --destructive-foreground: 220 52% 4%;
-      --border: 220 38% 14%;
-      --input: 220 42% 10%;
-      --ring: 151 100% 40%;
-      --chart-1: 151 100% 40%;
-      --chart-2: 201 100% 50%;
-      --chart-3: 38 90% 55%;
-      --chart-4: 220 60% 55%;
-      --chart-5: 354 100% 68%;
-    }
+  .dark {
+    /* Dark mode — deep navy premium palette */
+    --background: 220 65% 4%;        /* #040a14 deep navy */
+    --foreground: 216 60% 95%;       /* #e8f0ff bright white-blue */
+    --card: 220 55% 7%;              /* #0d1a30 elevated navy */
+    --card-foreground: 216 60% 95%;
+    --popover: 220 55% 7%;
+    --popover-foreground: 216 60% 95%;
+    --primary: 151 100% 40%;         /* PayWaka green #00cc6e */
+    --primary-foreground: 151 100% 4%;
+    --secondary: 220 40% 12%;
+    --secondary-foreground: 220 30% 70%;
+    --muted: 220 36% 10%;
+    --muted-foreground: 215 20% 48%;
+    --accent: 220 38% 14%;
+    --accent-foreground: 220 30% 75%;
+    --destructive: 354 100% 68%;
+    --destructive-foreground: 220 52% 4%;
+    --border: 220 35% 16%;           /* subtle navy border #1a2d4a */
+    --input: 220 42% 12%;
+    --ring: 151 100% 40%;
+    --chart-1: 151 100% 40%;
+    --chart-2: 201 100% 50%;
+    --chart-3: 38 90% 55%;
+    --chart-4: 220 60% 55%;
+    --chart-5: 354 100% 68%;
   }
 }
 
@@ -77,10 +76,18 @@
 
 @layer utilities {
   .bg-gradient-hero {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--card)) 60%, hsl(151 100% 12%) 100%);
+  }
+
+  .dark .bg-gradient-hero {
     background: linear-gradient(135deg, #060d1a 0%, #0a1628 60%, #003d20 100%);
   }
 
   .bg-gradient-card {
+    background: linear-gradient(160deg, hsl(var(--card)) 0%, hsl(var(--background)) 100%);
+  }
+
+  .dark .bg-gradient-card {
     background: linear-gradient(160deg, #0f2040 0%, #0a1628 100%);
   }
 
@@ -92,8 +99,8 @@
 html {
   scroll-behavior: smooth;
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  background-color: #060d1a;
-  color: #e8f0ff;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

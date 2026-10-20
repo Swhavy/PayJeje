@@ -5,7 +5,7 @@ export default function Footer() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-[#060d1a] border-t border-[#1d3a6a]/30 pt-20 pb-8 relative overflow-hidden">
+    <footer className="bg-background border-t border-[#1d3a6a]/30 pt-20 pb-8 relative overflow-hidden">
       {/* Subtle bottom-right green light glow */}
       <div className="absolute bottom-0 right-0 w-64 h-64 rounded-full bg-[#00c96e]/2 blur-[80px] pointer-events-none" />
 

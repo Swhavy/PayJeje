@@ -105,46 +105,94 @@ export default function LoginPage() {
 
   const fetchAndDispatchUserData = async (user) => {
     const uid = user.uid;
-    //fetch user data from firestore
     const userRef = doc(db, "users", uid);
-    const prefRef = doc(db, "users", uid,"preferences", uid);
+    const prefRef = doc(db, "users", uid, "preferences", uid);
     const achievements = doc(db, "users", uid, "achievements", "stats");
-    const userAchievements = await getDoc(achievements);
 
-    const userData = await getDoc(userRef);
-    const prefData = await getDoc(prefRef);
-    const docRef = userData.data();
-    const prefDocRef = prefData.data();
-    //fetch wallet balance
-    const wallet = await getWalletBalance(docRef.accountReference);
-    if (wallet.status === "success") {
-      console.log("wallet balance fetched", wallet);
-      dispatch(addUserCred({ walletBalance: wallet.walletBalance }));
-    } else {
-      console.log("error fetching wallet balance", wallet);
-      dispatch(addUserCred({ walletBalance: "null" }));
+    let userData;
+    try {
+      userData = await getDoc(userRef);
+      if (!userData.exists()) {
+        console.warn("[AUTH RECOVERY] Orphaned Auth account detected with no Firestore profile for UID:", uid);
+        const recoveredData = {
+          userName: user.displayName || user.email?.split("@")[0] || "User",
+          userEmail: user.email || "",
+          userPhoto: user.photoURL || null,
+          firstName: user.displayName ? user.displayName.split(" ")[0] : "",
+          lastName:
+            user.displayName && user.displayName.split(" ").length > 1
+              ? user.displayName.split(" ").slice(1).join(" ")
+              : "",
+          userPhone: user.phoneNumber || "",
+          userGender: "",
+          refferalsCount: 0,
+          streak: 0,
+          points: 0,
+        };
+        await setDoc(userRef, recoveredData);
+
+        const userAchievementsSnap = await getDoc(achievements);
+        if (!userAchievementsSnap.exists()) {
+          await setDoc(achievements, {
+            firstSurvey: 0,
+            pointsEarned: 0,
+            billPayer: 0,
+            referralMaster: 0,
+          });
+        }
+        userData = await getDoc(userRef);
+        toast.info("Account profile initialized successfully.");
+      }
+    } catch (err) {
+      console.error("[AUTH RECOVERY] Profile initialization failed:", err);
+      throw new Error("Unable to initialize user profile. Please try again or contact support.");
     }
+
+    const docRef = userData.data() || {};
+    const userAchievements = await getDoc(achievements);
+    const prefData = await getDoc(prefRef);
+    const prefDocRef = prefData.exists() ? prefData.data() : {};
+
+    // fetch wallet balance safely
+    if (docRef.accountReference) {
+      const wallet = await getWalletBalance(docRef.accountReference);
+      if (wallet && wallet.status === "success") {
+        console.log("wallet balance fetched", wallet);
+        dispatch(addUserCred({ walletBalance: wallet.walletBalance }));
+      } else {
+        console.log("error fetching wallet balance", wallet);
+        dispatch(addUserCred({ walletBalance: null }));
+      }
+    } else {
+      dispatch(addUserCred({ walletBalance: null }));
+    }
+
     const payload = {
-      firstName: docRef?.firstName,
-      lastName: docRef?.lastName,
-      userName: docRef?.userName,
-      userEmail: docRef?.userEmail,
-      userState: docRef?.userState,
-      userCountry: docRef?.userCountry,
-      userGender: docRef?.userGender,
-      userPhone: docRef?.userPhone,
-      userPhoto: docRef?.userPhoto,
-      accountReference: docRef?.accountReference,
-      accountNumber: docRef?.accountNumber,
-      bankName: docRef?.bankName,
-      barterID: docRef?.barter_id,
-      referralCode: docRef?.referralCode,
-      refferalsCount: docRef?.refferalsCount,
-      streak: docRef?.streak,
-      points: 0,
+      firstName: docRef.firstName || "",
+      lastName: docRef.lastName || "",
+      userName: docRef.userName || user.displayName || "",
+      userEmail: docRef.userEmail || user.email || "",
+      userState: docRef.userState || "",
+      userCountry: docRef.userCountry || "",
+      userGender: docRef.userGender || "",
+      userPhone: docRef.userPhone || "",
+      userPhoto: docRef.userPhoto || user.photoURL || null,
+      accountReference: docRef.accountReference || null,
+      accountNumber: docRef.accountNumber || null,
+      bankName: docRef.bankName || null,
+      barterID: docRef.barter_id || null,
+      referralCode: docRef.referralCode || null,
+      refferalsCount: docRef.refferalsCount || 0,
+      streak: docRef.streak || 0,
+      hasTransactionPin: !!docRef.hasTransactionPin,
+      points: Number(docRef.points) || 0,
+      role: docRef.role || "user",
+      vendorId: docRef.vendorId || null,
+      vendorBranch: docRef.vendorBranch || null,
+      cashierName: docRef.cashierName || null,
     };
     dispatch(addUserCred({ ...payload, ...prefDocRef, uid }));
-    dispatch(updateAchievement(userAchievements.data()));
+    dispatch(updateAchievement(userAchievements.exists() ? userAchievements.data() : {}));
     return { uid, userRef, docRef };
   };
 
@@ -164,15 +212,7 @@ export default function LoginPage() {
         password,
       );
       const user = userCredential.user;
-      //  user ? "" : setInterval(() => {
-      //     return user
-      //       ? ""
-      //       : toast.warning(
-      //           "Authentication taking long, please have patience with us",
-      //         );
-      //   }, 3000);
 
-      //console.log("user details", user);
       const { uid, userRef, docRef } = await fetchAndDispatchUserData(user);
       //if the user has profile pic, dispatch it to the state if not dispatch null to the userPhoto state
       if (docRef?.userPhoto) {
@@ -208,10 +248,12 @@ export default function LoginPage() {
         );
       } else if (error.code === "auth/network-request-failed") {
         return toast.error("Seem's you might be having a network issue");
-      } else if (error.code === "auth/wrong-password") {
+      } else if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
         return toast.error(
           "Hmmm.. we don't think that's the right password please recheck an then try again.",
         );
+      } else if (error.message && error.message.includes("profile")) {
+        return toast.error(error.message);
       }
       return toast.error(
         "An error occurred this might be to an invalid credential or an unverified email",
@@ -293,6 +335,7 @@ export default function LoginPage() {
               //   setAppContext({ ...appContext, spinner: true });
               // }
             } else {
+              console.log("user", user.emailVerified)
               auth.signOut();
               toast.error("Please verify your email before logging in.");
               navigate("/auth/login");
@@ -381,6 +424,7 @@ export default function LoginPage() {
           referralCode: userData?.referralCode,
           refferalsCount: userData?.refferalsCount,
           streak: userData?.streak,
+          hasTransactionPin: !!userData?.hasTransactionPin,
           points: 0,
         };
         dispatch(addUserCred({ ...payload, ...prefData, uid }));
@@ -421,7 +465,7 @@ export default function LoginPage() {
   if (mfaResolver) {
     return (
       <div className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-[#0a1628] border border-[#1a2f4a] rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+        <div className="bg-card border border-[#1a2f4a] rounded-2xl p-8 max-w-sm w-full shadow-2xl">
           {/* Icon */}
           <div className="flex justify-center mb-6">
             <div className="w-14 h-14 bg-[#00FF41]/10 border border-[#00FF41]/20 rounded-full flex items-center justify-center">
@@ -430,7 +474,7 @@ export default function LoginPage() {
           </div>
 
           {/* Heading */}
-          <h2 className="text-xl font-bold text-white text-center mb-2">
+          <h2 className="text-xl font-bold text-foreground text-center mb-2">
             Two-Factor Authentication
           </h2>
           <p className="text-[#8aa6b8] text-sm text-center mb-8">
@@ -445,7 +489,7 @@ export default function LoginPage() {
             placeholder="000000"
             value={otpCode}
             onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-            className="w-full px-4 py-4 bg-[#111f35] border border-[#1a2f4a] rounded-xl text-white text-center text-3xl tracking-[0.5em] font-mono placeholder-[#2a4a62] focus:outline-none focus:border-[#00FF41] focus:ring-1 focus:ring-[#00FF41] transition-all mb-4"
+            className="w-full px-4 py-4 bg-[#111f35] border border-[#1a2f4a] rounded-xl text-foreground text-center text-3xl tracking-[0.5em] font-mono placeholder-[#2a4a62] focus:outline-none focus:border-[#00FF41] focus:ring-1 focus:ring-[#00FF41] transition-all mb-4"
             autoFocus
           />
 
@@ -475,7 +519,7 @@ export default function LoginPage() {
           {/* Back link */}
           <button
             onClick={() => setMfaResolver(null)}
-            className="w-full mt-4 text-[#8aa6b8] text-sm hover:text-white transition-colors"
+            className="w-full mt-4 text-[#8aa6b8] text-sm hover:text-foreground transition-colors"
           >
             ← Back to sign in
           </button>
@@ -648,7 +692,7 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                className="w-full bg-green-600 hover:bg-green-700 text-foreground"
                 disabled={isLoading || oauthLoading !== null}
               >
                 {isLoading ? "Signing in..." : "Sign In"}

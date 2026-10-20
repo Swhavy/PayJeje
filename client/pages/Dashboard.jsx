@@ -39,6 +39,7 @@ import {
   CreditCard,
   Bell,
   X,
+  RotateCcw,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import TopEarnersCarousel from "../components/TopEarnersCarousel";
@@ -53,6 +54,8 @@ import { useSpinner } from "@/components/SpinnerProvider";
 import { db } from "@/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 import QuickEarnModal from "@/components/QuickEarn";
+import TransactionsModal from "@/components/TransactionsModal";
+import TransactionPinSetupModal from "@/components/TransactionPinSetupModal";
 import { addUserCred } from "../Features/userSlice";
 
 
@@ -101,7 +104,7 @@ const actions = [
     bgColor: "bg-yellow-500/10",
     iconColor: "text-yellow-400",
     buttonText: "Start Now",
-    buttonColor: "bg-zinc-800 text-zinc-400",
+    buttonColor: "bg-muted text-muted-foreground",
   },
   {
     id: 2,
@@ -113,7 +116,7 @@ const actions = [
     bgColor: "bg-blue-500/10",
     iconColor: "text-blue-400",
     buttonText: "Watch Now",
-    buttonColor: "bg-zinc-800 text-zinc-400",
+    buttonColor: "bg-muted text-muted-foreground",
   },
   {
     id: 3,
@@ -125,7 +128,7 @@ const actions = [
     bgColor: "bg-purple-500/10",
     iconColor: "text-purple-400",
     buttonText: "Share Link",
-    buttonColor: "bg-purple-600 hover:bg-purple-500 text-white",
+    buttonColor: "bg-purple-600 hover:bg-purple-500 text-foreground",
   },
 ];
 
@@ -135,9 +138,9 @@ const DashboardPage = React.memo(() => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [accountPopup, setAccountPopup] = useState(false);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
-   const [hide, setHide] = useState(
-     localStorage.getItem("hideBalance") === "true",
-   );
+  const [hide, setHide] = useState(
+    localStorage.getItem("hideBalance") === "true",
+  );
   const [depositAmount, setDepositAmount] = useState("");
   const { setAppContext, appContext, alertMsg, setAlertMsg } = useSpinner();
   const [mounted, setMounted] = useState(false);
@@ -152,11 +155,15 @@ const DashboardPage = React.memo(() => {
     bankName,
     accountReference,
     accountNumber: account,
+    hasTransactionPin,
   } = user;
+  const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const { inflowData, loading, error } = useInflowData(uid);
   const { PointsData, refData, isloading, iserror } = useReferallData(uid);
   const { trxn, loadMore } = useTransactionFetch();
-  console.log("trxn", trxn);
+  const [visibleTxCount, setVisibleTxCount] = useState(5);
+  const [selectedTx, setSelectedTx] = useState(null);
+  const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [invites, setInvites] = useState({ count: 0, rate: 0 });
   const [achievementsState, setAchievementsState] = useState({});
   const [isInsightsExpanded, setIsInsightsExpanded] = useState(() => {
@@ -178,6 +185,16 @@ const DashboardPage = React.memo(() => {
       return next;
     });
   };
+
+  useEffect(() => {
+    // If the user has logged in and has not set up their 4-digit transaction PIN, prompt them
+    if (uid && hasTransactionPin === false) {
+      const timer = setTimeout(() => {
+        setIsPinSetupOpen(true);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [uid, hasTransactionPin]);
 
   //achievement state
   useEffect(() => {
@@ -270,55 +287,57 @@ const DashboardPage = React.memo(() => {
     () => [
       {
         title: "Total Points",
-        value: PointsData?.pntsData?.currentAmount,
-        change: `${PointsData?.pntsData?.percentageChange}%`,
+        value: user?.points ?? PointsData?.pntsData?.currentAmount ?? 0,
+        change: `${PointsData?.pntsData?.percentageChange ?? 0}%`,
+        isIncrease: PointsData?.pntsData?.isIncrease ?? true,
         icon: Star,
-        color: PointsData?.pntsData?.isIncrease
-          ? "text-yellow-600 dark:text-yellow-400"
-          : "text-red-600 dark:text-red-400",
-        bgColor: PointsData?.pntsData?.isIncrease
-          ? "bg-yellow-100 dark:bg-yellow-900"
-          : "bg-red-100 dark:bg-red-900",
+        color: "text-yellow-400",
+        bgColor: "bg-yellow-500/10 border-yellow-500/25",
       },
       {
         title: "Wallet Balance",
-        value: `₦ ${walletBalance.toLocaleString()}` || "Refresh",
-        //change: "+8%",
+        value: `₦ ${Number(walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         icon: Wallet,
-        color: "text-green-600 dark:text-green-400",
-        bgColor: "bg-green-100 dark:bg-green-900",
+        color: "text-primary dark:text-green-400",
+        bgColor: "bg-green-500/10 border-green-500/25",
       },
       {
-        title: "Referrals",
-        value: refData?.currentAmount,
-        change: `${refData?.percentageChange}%`,
+        title: "Monthly Inflow",
+        value: `₦${Number(inflowData?.currentAmount || 0).toLocaleString()}`,
+        change: `${inflowData?.percentageChange ?? 0}%`,
+        isIncrease: inflowData?.isIncrease ?? true,
+        icon: TrendingUp,
+        color: "text-blue-400",
+        bgColor: "bg-blue-500/10 border-blue-500/25",
+      },
+      {
+        title: "Total Referrals",
+        value: user?.refferalsCount ?? user?.referralsCount ?? refData?.currentAmount ?? 0,
+        change: `${refData?.percentageChange ?? 0}%`,
+        isIncrease: refData?.isIncrease ?? true,
         icon: Users,
-        color: refData?.isIncrease
-          ? "text-purple-600 dark:text-purple-400"
-          : "text-red-600 dark:text-red-400",
-        bgColor: refData?.isIncrease
-          ? "bg-purple-100 dark:bg-purple-900"
-          : "bg-red-100 dark:bg-red-900",
+        color: "text-purple-400",
+        bgColor: "bg-purple-500/10 border-purple-500/25",
       },
     ],
-    [PointsData, refData],
+    [user, PointsData, inflowData, refData, walletBalance],
   );
 
   if (!mounted) {
     return null;
   }
 
-   const visibility = () => {
-     setHide(!hide);
-     localStorage.setItem("hideBalance", !hide);
-   };
+  const visibility = () => {
+    setHide(!hide);
+    localStorage.setItem("hideBalance", !hide);
+  };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         {/* MOBILE VIEW FIRST DISPLAY ELEMENT: Sleek Gradient Wallet Hero */}
         <div className="block lg:hidden">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-tr from-green-950 via-zinc-950 to-emerald-950 border border-emerald-500/20 p-5 shadow-2xl">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-tr from-green-950 via-card to-emerald-950 border border-emerald-500/20 p-5 shadow-2xl">
             {/* Ambient Background Glow lines */}
             <div className="absolute top-0 right-0 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-36 h-36 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
@@ -326,7 +345,7 @@ const DashboardPage = React.memo(() => {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 {/* Consistent User Avatar placeholder inside dashboard top */}
-                <div className="w-11 h-11 rounded-full border border-emerald-500/30 overflow-hidden bg-zinc-800">
+                <div className="w-11 h-11 rounded-full border border-emerald-500/30 overflow-hidden bg-muted">
                   {userPhoto ? (
                     <img
                       src={userPhoto}
@@ -334,16 +353,16 @@ const DashboardPage = React.memo(() => {
                       alt="User"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-sm font-bold text-green-400 bg-green-500/15">
+                    <div className="w-full h-full flex items-center justify-center text-sm font-bold text-primary dark:text-green-400 bg-green-500/15">
                       {userName.slice(0, 2).toUpperCase()}
                     </div>
                   )}
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-zinc-400">
+                  <h2 className="text-sm font-bold text-muted-foreground">
                     Welcome, {userName}!
                   </h2>
-                  <p className="text-[10px] text-zinc-500">Gold Tier Member</p>
+                  <p className="text-[10px] text-muted-foreground">Gold Tier Member</p>
                 </div>
               </div>
               <Badge className="bg-yellow-500/10 border-yellow-500/20 text-yellow-500 flex items-center gap-1 py-1 px-2">
@@ -353,17 +372,17 @@ const DashboardPage = React.memo(() => {
             </div>
 
             {/* Breathtaking Wallet Balance Gradient Bar/Card */}
-            <div className="rounded-2xl bg-gradient-to-r from-green-600 via-emerald-500 to-teal-600 p-4 text-white shadow-xl relative overflow-hidden group">
+            <div className="rounded-2xl bg-gradient-to-r from-green-600 via-emerald-500 to-teal-600 p-4 text-foreground shadow-xl relative overflow-hidden group">
               {/* Shimmer overlay effect */}
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out" />
 
               <div className="flex justify-between items-start">
                 <div>
-                  <span className="text-[10px] font-bold tracking-wider uppercase text-white/70">
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-foreground/70">
                     Wallet Balance
                   </span>
-                  <div className="text-2xl font-black tracking-tight mt-1 text-white">
-                    <span> ₦{walletBalance?.toLocaleString()}</span>
+                  <div className="text-2xl font-black tracking-tight mt-1 text-foreground">
+                    <span> ₦ {walletBalance ? walletBalance?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}</span>
                     <div>
                       {" "}
                       {hide ? (
@@ -378,17 +397,17 @@ const DashboardPage = React.memo(() => {
                   </div>
                 </div>
                 <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
-                  <Wallet className="h-4.5 w-4.5 text-white" />
+                  <Wallet className="h-4.5 w-4.5 text-foreground" />
                 </div>
               </div>
 
               <div className="flex items-center justify-between mt-4.5 pt-3 border-t border-white/10">
-                <span className="text-[10px] text-white/80 font-medium">
+                <span className="text-[10px] text-foreground/80 font-medium">
                   Instant utility payments activated
                 </span>
                 <button
                   onClick={() => setAccountPopup(true)}
-                  className="bg-white text-green-700 hover:bg-zinc-100 active:scale-95 text-[11px] font-extrabold py-1.5 px-3 rounded-xl transition-all flex items-center gap-1 shadow-md shadow-green-900/10"
+                  className="bg-card text-primary hover:bg-muted active:scale-95 text-[11px] font-extrabold py-1.5 px-3 rounded-xl transition-all flex items-center gap-1 shadow-md shadow-green-900/10"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Top Up</span>
@@ -403,7 +422,7 @@ const DashboardPage = React.memo(() => {
           <div className="flex items-center gap-4">
             {/* User profile image placeholder for consistent branding */}
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-green-600 to-emerald-400 p-0.5 shadow-xl shadow-green-500/10">
-              <div className="w-full h-full rounded-2xl bg-[#060d1a] p-0.5 overflow-hidden">
+              <div className="w-full h-full rounded-2xl bg-background p-0.5 overflow-hidden">
                 {userPhoto ? (
                   <img
                     src={userPhoto}
@@ -411,17 +430,17 @@ const DashboardPage = React.memo(() => {
                     alt={userName}
                   />
                 ) : (
-                  <div className="w-full h-full rounded-[14px] flex items-center justify-center text-lg font-bold text-green-400 bg-green-500/10">
+                  <div className="w-full h-full rounded-[14px] flex items-center justify-center text-lg font-bold text-primary dark:text-green-400 bg-green-500/10">
                     {userName.slice(0, 2).toUpperCase()}
                   </div>
                 )}
               </div>
             </div>
             <div>
-              <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
                 Welcome back, {userName}! 👋
               </h1>
-              <p className="text-zinc-400 text-sm mt-0.5">
+              <p className="text-muted-foreground text-sm mt-0.5">
                 Here's what is happening with your Paywaka wallet today.
               </p>
             </div>
@@ -437,7 +456,7 @@ const DashboardPage = React.memo(() => {
             <Button
               variant="outline"
               onClick={() => setAccountPopup(true)}
-              className="border-zinc-800 text-white hover:bg-zinc-900 bg-transparent rounded-xl"
+              className="border-border text-foreground hover:bg-muted bg-transparent rounded-xl"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Funds
@@ -468,36 +487,35 @@ const DashboardPage = React.memo(() => {
           </div>
 
           {isInsightsExpanded && (
-            <div className="grid grid-cols-1 gap-2 text-xs text-zinc-300 mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
-              <div className="flex items-center gap-2 bg-zinc-950/30 p-2 rounded-xl border border-zinc-900/40">
+            <div className="grid grid-cols-1 gap-2 text-xs text-foreground mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center gap-2 bg-card/30 p-2 rounded-xl border border-border/40">
                 <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
                 <span className="truncate">
                   {PointsData?.pntsData?.isIncrease
                     ? `Points increased by ${stats.find((s) => s.title === "Total Points")?.change} this past 3 months`
-                    : stats.find((s) => s.title === "Total Points")?.change ===
-                        0
-                      ? "You haven't gotten any points for the past 3months, let's start now"
-                      : `Points decreased by ${stats.find((s) => s.title === "Total Points")?.change || "12%"} this past 3 months`}
+                    : stats.find((s) => s.title === "Total Points")?.change === "0%"
+                      ? "You haven't gotten any points for the past 3 months, let's start now"
+                      : `Points decreased by ${stats.find((s) => s.title === "Total Points")?.change || "0%"} this past 3 months`}
                 </span>
               </div>
-              <div className="flex items-center gap-2 bg-zinc-950/30 p-2 rounded-xl border border-zinc-900/40">
+              <div className="flex items-center gap-2 bg-card/30 p-2 rounded-xl border border-border/40">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
                 <span className="truncate">
                   {inflowData?.isIncrease
-                    ? `Inflow increased by +${inflowData?.percentageChange || "18"}% this past 3 months`
+                    ? `Inflow increased by +${inflowData?.percentageChange || 0}% this past 3 months`
                     : inflowData?.percentageChange === 0
                       ? "You haven't had any inflow for the past 3 months"
                       : `Inflow decreased by -${inflowData?.percentageChange}% this past 3 months`}
                 </span>
               </div>
-              <div className="flex items-center gap-2 bg-zinc-950/30 p-2 rounded-xl border border-zinc-900/40">
+              <div className="flex items-center gap-2 bg-card/30 p-2 rounded-xl border border-border/40">
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
                 <span className="truncate">
                   {refData?.isIncrease
-                    ? `Referrals increased by +${stats.find((s) => s.title === "Referrals")?.change} this past 3 months`
-                    : stats.find((s) => s.title === "Referrals")?.change === 0
-                      ? "You haven't referred for the past 3 months, it,s never to late to earn"
-                      : `You are down by -${stats.find((s) => s.title === "Referrals")?.change} compared to the past 3 months`}
+                    ? `Referrals increased by +${stats.find((s) => s.title === "Total Referrals")?.change} this past 3 months`
+                    : stats.find((s) => s.title === "Total Referrals")?.change === "0%"
+                      ? "You haven't referred for the past 3 months, it's never too late to earn"
+                      : `You are down by -${stats.find((s) => s.title === "Total Referrals")?.change} compared to the past 3 months`}
                 </span>
               </div>
             </div>
@@ -511,12 +529,11 @@ const DashboardPage = React.memo(() => {
             <CardContent className="p-3.5 sm:p-5">
               <div className="flex items-start justify-between gap-1.5 sm:gap-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] sm:text-xs font-semibold text-zinc-500 truncate">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground truncate">
                     Total Points
                   </p>
                   <p className="text-base sm:text-xl font-bold text-foreground mt-0.5 sm:mt-1 truncate">
-                    {stats.find((s) => s.title === "Total Points")?.value ??
-                      "—"}{" "}
+                    {stats.find((s) => s.title === "Total Points")?.value ?? 0}{" "}
                     pts
                   </p>
                   <Tooltip
@@ -528,7 +545,7 @@ const DashboardPage = React.memo(() => {
                   >
                     <p
                       className={`text-[9px] sm:text-[10px] flex items-center gap-0.5 mt-1 truncate cursor-default
-                ${PointsData?.pntsData?.isIncrease ? "text-green-400" : "text-red-400"}`}
+                ${PointsData?.pntsData?.isIncrease ? "text-primary dark:text-green-400" : "text-red-400"}`}
                     >
                       {PointsData?.pntsData?.isIncrease ? (
                         <TrendingUp className="h-3 w-3 shrink-0" />
@@ -553,13 +570,12 @@ const DashboardPage = React.memo(() => {
             <CardContent className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-zinc-500 truncate">
+                  <p className="text-xs font-semibold text-muted-foreground truncate">
                     Wallet Balance
                   </p>
                   <div className="flex items-center gap-2">
                     <p className={`text-xl font-black ${hide ? "blur-md" : ""} text-foreground mt-1 truncate`}>
-                      {stats.find((s) => s.title === "Wallet Balance")?.value ??
-                        "—"}
+                      {stats.find((s) => s.title === "Wallet Balance")?.value ?? "₦ 0.00"}
                     </p>
                     <div>
                       {" "}
@@ -573,13 +589,13 @@ const DashboardPage = React.memo(() => {
                       )}
                     </div>
                   </div>
-                  <p className="text-[10px] text-green-400 flex items-center gap-0.5 mt-1 truncate">
+                  <p className="text-[10px] text-primary dark:text-green-400 flex items-center gap-0.5 mt-1 truncate">
                     <TrendingUp className="h-3 w-3 shrink-0" />
                     <span>Instant withdrawals active</span>
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-green-500/10 border border-green-500/25 flex items-center justify-center shrink-0">
-                  <Wallet className="h-5 w-5 text-green-400" />
+                  <Wallet className="h-5 w-5 text-primary dark:text-green-400" />
                 </div>
               </div>
             </CardContent>
@@ -590,15 +606,15 @@ const DashboardPage = React.memo(() => {
             <CardContent className="p-3.5 sm:p-5">
               <div className="flex items-start justify-between gap-1.5 sm:gap-3">
                 <div className="min-w-0 flex flex-col">
-                  <p className="text-[10px] sm:text-xs font-semibold text-zinc-500 truncate">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground truncate">
                     Monthly Inflow
                   </p>
 
                   <Tooltip
-                    content={`₦${inflowData?.currentAmount} received this month`}
+                    content={`₦${Number(inflowData?.currentAmount || 0).toLocaleString()} received this month`}
                   >
                     <p className={`text-base sm:text-xl font-bold text-foreground ${hide ? "blur-md" : ""} mt-0.5 sm:mt-1 truncate cursor-default w-fit`}>
-                      ₦{inflowData?.currentAmount ?? "—"}
+                      ₦{Number(inflowData?.currentAmount || 0).toLocaleString()}
                     </p>
                   </Tooltip>
 
@@ -611,7 +627,7 @@ const DashboardPage = React.memo(() => {
                   >
                     <p
                       className={`text-[9px] sm:text-[10px] flex items-center gap-0.5 mt-1 w-fit cursor-default
-              ${inflowData?.isIncrease ? "text-green-400" : "text-red-400"}`}
+              ${inflowData?.isIncrease ? "text-primary dark:text-green-400" : "text-red-400"}`}
                     >
                       {inflowData?.isIncrease ? (
                         <TrendingUp className="h-3 w-3 shrink-0" />
@@ -620,7 +636,7 @@ const DashboardPage = React.memo(() => {
                       )}
                       <span>
                         {inflowData?.isIncrease
-                          ? `+${inflowData?.percentageChange}%`
+                          ? `+${inflowData?.percentageChange || 0}%`
                           : `${inflowData?.percentageChange === 0 ? 0 : -inflowData?.percentageChange}%`}
                       </span>
                     </p>
@@ -629,11 +645,10 @@ const DashboardPage = React.memo(() => {
 
                 <div
                   className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl border flex items-center justify-center shrink-0
-          ${
-            inflowData?.isIncrease
-              ? "bg-blue-500/10 border-blue-500/25"
-              : "bg-rose-500/10 border-rose-500/25"
-          }`}
+          ${inflowData?.isIncrease
+                      ? "bg-blue-500/10 border-blue-500/25"
+                      : "bg-rose-500/10 border-rose-500/25"
+                    }`}
                 >
                   {inflowData?.isIncrease ? (
                     <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-blue-400" />
@@ -650,11 +665,11 @@ const DashboardPage = React.memo(() => {
             <CardContent className="p-3.5 sm:p-5">
               <div className="flex items-start justify-between gap-1.5 sm:gap-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] sm:text-xs font-semibold text-zinc-500 truncate">
+                  <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground truncate">
                     Total Referrals
                   </p>
                   <p className="text-base sm:text-xl font-bold text-foreground mt-0.5 sm:mt-1 truncate">
-                    {refData?.currentAmount ?? "—"} members
+                    {user?.refferalsCount ?? user?.referralsCount ?? refData?.currentAmount ?? 0} members
                   </p>
                   <Tooltip
                     content={
@@ -673,7 +688,7 @@ const DashboardPage = React.memo(() => {
                         <TrendingDown className="h-3 w-3 shrink-0" />
                       )}
                       <span>
-                        +{stats.find((s) => s.title === "Referrals")?.change}{" "}
+                        +{stats.find((s) => s.title === "Total Referrals")?.change}{" "}
                         this month
                       </span>
                     </p>
@@ -690,29 +705,29 @@ const DashboardPage = React.memo(() => {
         {/* Quick Actions Panel — Displayed and highly responsive */}
         <div>
           <div className="flex items-center justify-between mb-3.5">
-            <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+            <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
               Quick Actions
             </h2>
-            <span className="text-xs text-zinc-500 font-medium">
+            <span className="text-xs text-muted-foreground font-medium">
               Tap to launch service
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:grid-cols-4 sm:gap-4">
             {quickActions.map((action, index) => (
               <Link key={index} to={action.href}>
-                <Card className="bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden">
+                <Card className="bg-card/40 border-border hover:border-border hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer relative overflow-hidden">
                   <CardContent className="p-3 sm:p-4">
                     <div className="flex items-center gap-2.5 sm:gap-3">
                       <div
-                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl ${action.color} flex items-center justify-center text-white shrink-0 shadow-lg`}
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl ${action.color} flex items-center justify-center text-foreground shrink-0 shadow-lg`}
                       >
                         <action.icon className="h-4 w-4 sm:h-5 sm:w-5 group-hover:scale-110 transition-transform duration-300" />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="font-bold text-white text-[11px] sm:text-sm truncate leading-snug">
+                        <h3 className="font-bold text-foreground text-[11px] sm:text-sm truncate leading-snug">
                           {action.title}
                         </h3>
-                        <p className="text-[9px] sm:text-[10px] text-zinc-400 truncate mt-0.5">
+                        <p className="text-[9px] sm:text-[10px] text-muted-foreground truncate mt-0.5">
                           {action.description}
                         </p>
                       </div>
@@ -735,7 +750,7 @@ const DashboardPage = React.memo(() => {
                     </CardContent>
                   </Card> */}
           {/* end */}
-          <Card className="lg:col-span-2 bg-zinc-950/45 border-zinc-900 shadow-xl overflow-hidden">
+          <Card className="lg:col-span-2 bg-card/45 border-border shadow-xl overflow-hidden">
             <CardContent className="p-0 h-full">
               <div className="h-full">
                 <TransactionChart />
@@ -744,13 +759,13 @@ const DashboardPage = React.memo(() => {
           </Card>
 
           {/* Achievements Checklist widget */}
-          <Card className="bg-zinc-950/45 border-zinc-900 shadow-xl">
+          <Card className="bg-card/45 border-border shadow-xl">
             <CardHeader className="p-5 pb-3">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
                 <Award className="h-4.5 w-4.5 text-yellow-500" />
                 <span>Achievements Progress</span>
               </CardTitle>
-              <CardDescription className="text-xs text-zinc-500">
+              <CardDescription className="text-xs text-muted-foreground">
                 Track and unlock cash points
               </CardDescription>
             </CardHeader>
@@ -758,7 +773,7 @@ const DashboardPage = React.memo(() => {
               {achievements.map((achievement, index) => (
                 <div
                   key={index}
-                  className="space-y-1.5 p-2 rounded-xl hover:bg-zinc-900/20 transition-colors"
+                  className="space-y-1.5 p-2 rounded-xl hover:bg-muted/20 transition-colors"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
@@ -766,15 +781,15 @@ const DashboardPage = React.memo(() => {
                         {achievement.icon}
                       </span>
                       <div className="min-w-0">
-                        <p className="font-bold text-white text-xs truncate">
+                        <p className="font-bold text-foreground text-xs truncate">
                           {achievement.title}
                         </p>
-                        <p className="text-[10px] text-zinc-400 truncate">
+                        <p className="text-[10px] text-muted-foreground truncate">
                           {achievement.description}
                         </p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold text-zinc-400">
+                    <span className="text-[10px] font-bold text-muted-foreground">
                       {achievement.progress}%
                     </span>
                   </div>
@@ -809,14 +824,22 @@ const DashboardPage = React.memo(() => {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
-                onClick={loadMore}
-                disabled={trxn?.length == 0}
+                onClick={() => {
+                  if (!trxn || trxn.length === 0) return;
+                  if (visibleTxCount < trxn.length) {
+                    setVisibleTxCount((prev) => prev + 5);
+                  } else {
+                    loadMore();
+                    setVisibleTxCount((prev) => prev + 5);
+                  }
+                }}
+                disabled={!trxn || trxn.length === 0}
               >
                 More
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="overflow-y-auto h-[30vh]">
+          <CardContent className="overflow-y-auto max-h-[40vh]">
             {/* <div className="space-y-4">
                 {recentTransactions.map((transaction) => (
                   <div
@@ -870,78 +893,139 @@ const DashboardPage = React.memo(() => {
               </div> */}
 
             <div className="space-y-4 overflow-y-auto">
-              {trxn &&
-                trxn.map((transaction, index) => (
-                  <div
-                    key={transaction.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
-                          transaction.narration === "credit"
-                            ? "bg-green-100 dark:bg-green-900"
-                            : "bg-red-100 dark:bg-red-900"
-                        }`}
-                      >
-                        {transaction.narration === "credit" ? (
-                          <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 dark:text-green-400" />
+              {trxn && trxn.length > 0 ? (
+                trxn.slice(0, visibleTxCount).map((transaction) => {
+                  const narrationLower = String(transaction.narration || "").toLowerCase();
+                  const statusLower = String(transaction.status || "").toLowerCase();
+                  const typeLower = String(transaction.type || "").toLowerCase();
+                  const categoryLower = String(transaction.category || "").toLowerCase();
+
+                  const isRefund =
+                    narrationLower.includes("refund") ||
+                    statusLower === "refunded" ||
+                    transaction.refunded === true;
+
+                  const isCredit =
+                    isRefund ||
+                    typeLower === "credit" ||
+                    typeLower === "inflow" ||
+                    typeLower === "income" ||
+                    narrationLower === "credit" ||
+                    categoryLower === "deposit" ||
+                    categoryLower === "cashback" ||
+                    categoryLower === "earning" ||
+                    categoryLower === "referral";
+
+                  let txDate = null;
+                  if (transaction?.createdAt?.toDate) txDate = transaction.createdAt.toDate();
+                  else if (transaction?.createdAt?.seconds) txDate = new Date(transaction.createdAt.seconds * 1000);
+                  else if (transaction?.created_at) txDate = new Date(transaction.created_at);
+                  else if (transaction?.timestamp?.toDate) txDate = transaction.timestamp.toDate();
+                  else if (transaction?.timestamp) txDate = new Date(transaction.timestamp);
+                  else if (transaction?.date) txDate = new Date(transaction.date);
+                  else txDate = new Date();
+
+                  const formattedDate = isNaN(txDate.getTime())
+                    ? "Recently"
+                    : txDate.toLocaleString("en-NG", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    });
+
+                  return (
+                    <div
+                      key={transaction.id}
+                      onClick={() => {
+                        setSelectedTx(transaction);
+                        setIsTxModalOpen(true);
+                      }}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/70 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${isRefund
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            : isCredit
+                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+                              : "bg-red-500/15 text-red-400 border border-red-500/20"
+                            }`}
+                        >
+                          {isRefund ? (
+                            <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                          ) : isCredit ? (
+                            <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                          ) : (
+                            <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground text-sm sm:text-base">
+                            {transaction.narration || "Transaction"}
+                          </p>
+                          <p className="text-xs sm:text-sm text-muted-foreground">
+                            {formattedDate}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className={`font-semibold text-sm sm:text-base ${isCredit
+                            ? "text-emerald-400"
+                            : "text-red-400"
+                            }`}
+                        >
+                          {isCredit ? "+" : "-"}₦
+                          {Number(transaction.amount || 0).toLocaleString()}
+                        </p>
+                        {isRefund ? (
+                          <Badge
+                            className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs"
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            Refunded
+                          </Badge>
+                        ) : statusLower === "failed" ? (
+                          <Badge
+                            variant="destructive"
+                            className="text-xs"
+                          >
+                            Failed
+                          </Badge>
                         ) : (
-                          <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
+                          <Badge
+                            variant="secondary"
+                            className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
+                          >
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Done
+                          </Badge>
                         )}
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground text-sm sm:text-base">
-                          {transaction.narration}
-                        </p>
-                        <p className="text-xs sm:text-sm text-muted-foreground">
-                          {new Date(
-                            transaction?.createdAt?.toDate(),
-                          ).toLocaleString("en-NG", {
-                            dateStyle: "medium", // "Sep 3, 2025"
-                            timeStyle: "short", // "1:47 PM"
-                          })}
-                        </p>
-                      </div>
                     </div>
-                    <div className="text-right">
-                      <p
-                        className={`font-semibold text-sm sm:text-base ${
-                          transaction.narration === "credit"
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-red-600 dark:text-red-400"
-                        }`}
-                      >
-                        {transaction.narration === "credit" ? "+" : "-"}₦
-                        {transaction.amount?.toLocaleString()}
-                      </p>
-                      <Badge
-                        variant="secondary"
-                        className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
-                      >
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Done
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })
+              ) : (
+                <p className="text-xs text-muted-foreground py-4 text-center">
+                  No recent transactions yet.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
 
         {/* Today's Tasks & Reward Opportunities */}
-        <Card className="bg-zinc-950/45 border-zinc-900 shadow-xl">
+        <Card className="bg-card/45 border-border shadow-xl">
           <CardHeader className="p-5 pb-3">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-bold">
                   Active Reward Tasks
                 </CardTitle>
-                <CardDescription className="text-xs text-zinc-500">
+                <CardDescription className="text-xs text-muted-foreground">
                   Participate to scale up points
                 </CardDescription>
               </div>
-              <Badge className="bg-green-500/15 text-green-400 border border-green-500/20 py-1 px-2.5 text-[10px]">
+              <Badge className="bg-green-500/15 text-primary dark:text-green-400 border border-green-500/20 py-1 px-2.5 text-[10px]">
                 <Calendar className="h-3.5 w-3.5 mr-1" />
                 <span>
                   {
@@ -961,14 +1045,14 @@ const DashboardPage = React.memo(() => {
                 return (
                   <div
                     key={action.id}
-                    className="p-4 rounded-2xl border border-zinc-900 bg-zinc-900/10 relative overflow-hidden flex flex-col justify-between h-36"
+                    className="p-4 rounded-2xl border border-border bg-muted/10 relative overflow-hidden flex flex-col justify-between h-36"
                   >
                     {isComingSoon && (
                       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col justify-center items-center text-center p-3 z-10">
-                        <span className="text-xs font-bold text-zinc-300">
+                        <span className="text-xs font-bold text-foreground">
                           {action.title}
                         </span>
-                        <span className="text-[9px] font-semibold text-zinc-500 mt-1">
+                        <span className="text-[9px] font-semibold text-muted-foreground mt-1">
                           Coming Soon
                         </span>
                       </div>
@@ -980,10 +1064,10 @@ const DashboardPage = React.memo(() => {
                         <Icon className={`h-4.5 w-4.5 ${action.iconColor}`} />
                       </div>
                       <div className="min-w-0">
-                        <h4 className="font-bold text-white text-xs truncate">
+                        <h4 className="font-bold text-foreground text-xs truncate">
                           {action.title}
                         </h4>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
                           {action.subtitle}
                         </p>
                       </div>
@@ -1009,15 +1093,25 @@ const DashboardPage = React.memo(() => {
         onClose={() => setIsModalOpen(false)}
       />
 
-      {/* Direct Dashboard Deposit Modal */}
-      {accountPopup && (
-        <AccountDetailsCard
-          accountNumber={account || "0000000000"}
-          bankName={bankName || "Your Bank"}
-          open={accountPopup}
-          isClose={() => setAccountPopup(false)}
+      {/* Transaction Details & Receipt Modal */}
+      {selectedTx && (
+        <TransactionsModal
+          transaction={selectedTx}
+          isOpen={isTxModalOpen}
+          onClose={() => {
+            setIsTxModalOpen(false);
+            setSelectedTx(null);
+          }}
         />
       )}
+
+      {/* First-Login Transaction PIN Setup Modal */}
+      <TransactionPinSetupModal
+        isOpen={isPinSetupOpen}
+        onClose={() => setIsPinSetupOpen(false)}
+        onSuccess={() => setIsPinSetupOpen(false)}
+        isDismissible={true}
+      />
     </DashboardLayout>
   );
 });

@@ -22,6 +22,7 @@ import {
   X,
   CreditCard,
   LogOut,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,8 +42,11 @@ import { useSpinner } from "@/components/SpinnerProvider";
 import useSessionTimeout from "@/components/hooks/useSessionTimeout";
 import NotificationDropdown from "./NotificationDropdown";
 import AccountDetailsCard from "./AccountDetailsCard";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { toast } from "sonner";
 import { useFCM } from "./hooks/useFCM";
+
+import useCloudfunc from "./useCloudfunc";
 
 const SessionGuard = ({ children, timeout }) => {
   useSessionTimeout(timeout);
@@ -54,6 +58,9 @@ export default function DashboardLayout({ children }) {
   const [showAddFundsModal, setShowAddFundsModal] = useState(false);
   const [accountPopup, setAccountPopup] = useState(false);
   const [fundsAmount, setFundsAmount] = useState("");
+  const [isRetryingWallet, setIsRetryingWallet] = useState(false);
+  const { retryWalletCreation } = useCloudfunc();
+
   const user = useSelector((state) => state.user.user);
   const {
     userPhoto,
@@ -66,6 +73,33 @@ export default function DashboardLayout({ children }) {
     accountReference,
     accountNumber: account,
   } = user;
+
+  const hasWallet = Boolean(
+    account ||
+    user?.account_number ||
+    accountReference ||
+    user?.account_reference
+  );
+
+  const handleRetryWallet = async () => {
+    if (isRetryingWallet) return;
+    setIsRetryingWallet(true);
+    try {
+      const res = await retryWalletCreation();
+      if (res?.status === "success" || res?.status === "already_exists") {
+        toast.success(res.message || "Virtual wallet account provisioned successfully!");
+        refreshWalletBalance(false);
+      } else if (res?.status === "max_retries_exceeded") {
+        toast.error(res.message || "Maximum wallet creation attempts (3) reached. Technical support team notified.", { duration: 9000 });
+      } else {
+        toast.error(res?.message || "Unable to create wallet account. Please try again.");
+      }
+    } catch (err) {
+      toast.error("Error creating wallet account: " + err.message);
+    } finally {
+      setIsRetryingWallet(false);
+    }
+  };
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { theme, setTheme } = useTheme();
@@ -79,20 +113,100 @@ export default function DashboardLayout({ children }) {
     });
   };
 
-  //dispatch new user doc data from the DB into Redux user state
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+
+  const refreshWalletBalance = async (showToast = true) => {
+    if (!uid) return;
+    setIsRefreshingBalance(true);
+    try {
+      const userRef = doc(db, "users", uid);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        dispatch(
+          addUserCred({
+            ...data,
+            uid,
+            accountNumber:
+              data.accountNumber ||
+              data.account_number ||
+              data.static_account ||
+              null,
+            bankName: data.bankName || data.bank_name || null,
+            bankCode: data.bankCode || data.bank_code || null,
+            accountReference:
+              data.accountReference ||
+              data.account_reference ||
+              data.flw_ref ||
+              null,
+            walletBalance:
+              data.walletBalance !== undefined
+                ? Number(data.walletBalance)
+                : null,
+            lastLogin: data?.lastLogin?.toDate?.()?.toISOString() ?? null,
+            lastBalanceCheck: new Date().toISOString(),
+          }),
+        );
+        if (showToast) toast.success("Wallet balance refreshed successfully!");
+      }
+    } catch (err) {
+      console.error("Error refreshing wallet balance:", err);
+      if (showToast) toast.error("Failed to refresh wallet balance");
+    } finally {
+      setIsRefreshingBalance(false);
+    }
+  };
+
+  // Dispatch new user doc data from the DB into Redux user state with real-time onSnapshot listener
   useEffect(() => {
+    if (!uid) return;
     const userDBRecords = doc(db, "users", uid);
-    const unSubscribe = onSnapshot(userDBRecords, (snapshot) => {
-      const data = snapshot.data();
-      dispatch(
-        addUserCred({
-          ...data,
-          lastLogin: data?.lastLogin?.toDate?.()?.toISOString() ?? null,
-          lastBalanceCheck:
-            data?.lastBalanceCheck?.toDate?.()?.toISOString() ?? null,
-        }),
-      );
-    });
+    const unSubscribe = onSnapshot(
+      userDBRecords,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          dispatch(
+            addUserCred({
+              ...data,
+              uid,
+              accountNumber:
+                data.accountNumber ||
+                data.account_number ||
+                data.static_account ||
+                null,
+              bankName: data.bankName || data.bank_name || null,
+              bankCode: data.bankCode || data.bank_code || null,
+              accountReference:
+                data.accountReference ||
+                data.account_reference ||
+                data.flw_ref ||
+                null,
+              walletBalance:
+                data.walletBalance !== undefined
+                  ? Number(data.walletBalance)
+                  : null,
+              lastLogin: data?.lastLogin?.toDate?.()?.toISOString() ?? null,
+              lastBalanceCheck:
+                data?.lastBalanceCheck?.toDate?.()?.toISOString() ?? null,
+            }),
+          );
+        } else {
+          // Auto-retry fetch if empty on initial snapshot
+          setTimeout(() => refreshWalletBalance(false), 1500);
+        }
+      },
+      (error) => {
+        console.error("DashboardLayout Firestore onSnapshot error:", error);
+      }
+    );
+
+    // Initial wallet balance check / retry trigger
+    if (walletBalance === null || walletBalance === undefined) {
+      refreshWalletBalance(false);
+    }
+
+    return () => unSubscribe();
   }, [uid]);
 
   const sidebarItems = [
@@ -163,15 +277,15 @@ export default function DashboardLayout({ children }) {
   // Register for FCM token and handle foreground/background messages
   useFCM(uid);
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-[#060d1a] text-zinc-100 font-sans">
+    <div className="h-screen flex flex-col overflow-hidden bg-background text-foreground font-sans">
       {/* Top Navigation — fixed height, never scrolls */}
-      <nav className="border-b border-zinc-800/80 px-4 py-3.5 sticky top-0 z-40 backdrop-blur-xl bg-[#060d1a]/80 flex-shrink-0">
+      <nav className="border-b border-border px-4 py-3.5 sticky top-0 z-40 backdrop-blur-xl bg-background/80 flex-shrink-0">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
-              className="lg:hidden text-zinc-300 hover:bg-zinc-800/60 p-2 rounded-xl"
+              className="lg:hidden text-muted-foreground hover:bg-muted p-2 rounded-xl"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             >
               <Menu className="h-5.5 w-5.5" />
@@ -184,9 +298,9 @@ export default function DashboardLayout({ children }) {
                 height={120}
                 className="w-28"
               />
-              <span className="text-xl font-bold tracking-tight text-white hidden sm:inline-block">
+              <span className="text-xl font-bold tracking-tight text-foreground hidden sm:inline-block">
                 Pay
-                <span className="bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent">waka
+                <span className="bg-gradient-to-r from-green-500 to-emerald-500 dark:from-green-400 dark:to-emerald-500 bg-clip-text text-transparent">waka
                 </span>
               </span>
             </Link>
@@ -194,11 +308,11 @@ export default function DashboardLayout({ children }) {
 
           <div className="flex items-center gap-3">
             <div className="relative hidden md:block">
-              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-zinc-400 h-4 w-4" />
+              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <input
                 type="text"
                 placeholder="Search resources, services..."
-                className="pl-11 pr-4 py-2 border border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/40 focus:border-green-500/50 w-64 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500 text-sm transition-all"
+                className="pl-11 pr-4 py-2 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 w-64 bg-card text-foreground placeholder:text-muted-foreground text-sm transition-all"
               />
             </div>
 
@@ -208,7 +322,7 @@ export default function DashboardLayout({ children }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-zinc-300 hover:bg-zinc-800/60 p-2 rounded-xl"
+                  className="text-muted-foreground hover:bg-muted p-2 rounded-xl"
                 >
                   <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                   <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100 text-emerald-400" />
@@ -217,18 +331,18 @@ export default function DashboardLayout({ children }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="bg-zinc-950 border-zinc-800"
+                className="bg-popover border-border"
               >
                 <DropdownMenuItem
                   onClick={() => setTheme("light")}
-                  className="text-zinc-300 hover:bg-zinc-800/50"
+                  className="text-popover-foreground hover:bg-muted"
                 >
                   <Sun className="mr-2.5 h-4 w-4 text-yellow-500" />
                   <span>Light</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setTheme("dark")}
-                  className="text-zinc-300 hover:bg-zinc-800/50"
+                  className="text-popover-foreground hover:bg-muted"
                 >
                   <Moon className="mr-2.5 h-4 w-4 text-indigo-400" />
                   <span>Dark</span>
@@ -240,7 +354,7 @@ export default function DashboardLayout({ children }) {
                     ).matches;
                     setTheme(media ? "dark" : "light");
                   }}
-                  className="text-zinc-300 hover:bg-zinc-800/50"
+                  className="text-popover-foreground hover:bg-muted"
                 >
                   <Monitor className="mr-2.5 h-4 w-4 text-teal-400" />
                   <span>System</span>
@@ -254,8 +368,8 @@ export default function DashboardLayout({ children }) {
             {/* Consistent Top User Avatar/Image placeholder with consistent look */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 p-1.5 rounded-full hover:bg-zinc-900 border border-zinc-800 transition-all">
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-green-500/30 bg-zinc-800 shrink-0">
+                <button className="flex items-center gap-2 p-1.5 rounded-full hover:bg-muted border border-border transition-all">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-green-500/30 bg-muted shrink-0">
                     {userPhoto ? (
                       <img
                         src={userPhoto}
@@ -264,32 +378,32 @@ export default function DashboardLayout({ children }) {
                         alt={userName}
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-green-400 bg-green-500/10">
+                      <div className="w-full h-full flex items-center justify-center text-xs font-bold text-primary dark:text-green-400 bg-primary/10">
                         {userName ? userName.slice(0, 2).toUpperCase() : "US"}
                       </div>
                     )}
                   </div>
-                  <span className="text-sm font-semibold text-zinc-300 pr-2 hidden md:inline-block">
+                  <span className="text-sm font-semibold text-foreground pr-2 hidden md:inline-block">
                     {userName}
                   </span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="bg-zinc-950 border-zinc-800"
+                className="bg-popover border-border"
               >
                 <DropdownMenuItem
-                  className="text-zinc-300 hover:bg-zinc-800/50"
+                  className="text-popover-foreground hover:bg-muted"
                   onClick={() => navigate("/settings")}
                 >
-                  <User className="mr-2.5 h-4 w-4 text-green-400" />
+                  <User className="mr-2.5 h-4 w-4 text-primary dark:text-green-400" />
                   <span>Profile</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  className="text-zinc-300 hover:bg-zinc-800/50"
+                  className="text-popover-foreground hover:bg-muted"
                   onClick={() => navigate("/settings")}
                 >
-                  <Settings className="mr-2.5 h-4 w-4 text-zinc-400" />
+                  <Settings className="mr-2.5 h-4 w-4 text-muted-foreground" />
                   <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -311,14 +425,14 @@ export default function DashboardLayout({ children }) {
         <aside
           className={`${
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-64 bg-zinc-950/95 lg:bg-zinc-950/45 border-r border-zinc-900 transition-all duration-300 ease-in-out flex flex-col flex-shrink-0`}
+          } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-64 bg-card/95 lg:bg-card/45 border-r border-border transition-all duration-300 ease-in-out flex flex-col flex-shrink-0`}
         >
           {/* Sidebar header (only in mobile drawers) */}
-          <div className="p-4 border-b border-zinc-900 flex lg:hidden items-center justify-between">
-            <span className="font-bold text-white text-lg">Menu</span>
+          <div className="p-4 border-b border-border flex lg:hidden items-center justify-between">
+            <span className="font-bold text-foreground text-lg">Menu</span>
             <button
               onClick={() => setIsSidebarOpen(false)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
             >
               <X className="h-5 w-5" />
             </button>
@@ -335,8 +449,8 @@ export default function DashboardLayout({ children }) {
                   to={item.href}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
                     active
-                      ? "bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/20 text-green-400 font-semibold shadow-inner"
-                      : "text-zinc-400 hover:bg-zinc-900/40 hover:text-white"
+                      ? "bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/20 text-primary dark:text-green-400 font-semibold shadow-inner"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                   onClick={() => setIsSidebarOpen(false)}
                 >
@@ -344,11 +458,11 @@ export default function DashboardLayout({ children }) {
                     <img
                       src={item.icon}
                       alt={item.label}
-                      className={`h-10 w-14 ${active ? "text-green-400" : "text-zinc-400"}`}
+                      className={`h-10 w-14 ${active ? "text-primary dark:text-green-400" : "text-muted-foreground"}`}
                     />
                   ) : (
                     <Icon
-                      className={`h-5 w-5 ${active ? "text-green-400" : "text-zinc-400"}`}
+                      className={`h-5 w-5 ${active ? "text-primary dark:text-green-400" : "text-muted-foreground"}`}
                     />
                   )}
                   <span className="text-sm">{item.label}</span>
@@ -358,38 +472,99 @@ export default function DashboardLayout({ children }) {
           </div>
 
           {/* Sidebar footer — always pinned to bottom, never scrolls away */}
-          <div className="p-4 border-t border-zinc-900 bg-zinc-950 flex-shrink-0 space-y-4">
+          <div className="p-4 border-t border-border bg-card flex-shrink-0 space-y-3.5">
+            {hasWallet && (
+              <div className="bg-gradient-to-r from-green-500/10 via-emerald-500/5 to-transparent border border-green-500/20 rounded-2xl p-2.5 flex items-center justify-between">
+                <div className="min-w-0 pr-2">
+                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block truncate">
+                    {bankName || "Virtual Bank"}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-primary dark:text-green-400 tracking-wider">
+                    {account || user?.account_number || "•••• ••••"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAccountPopup(true)}
+                  className="text-[10px] text-primary dark:text-green-400 hover:text-foreground font-bold bg-primary/15 hover:bg-primary/30 px-2 py-1 rounded-lg border border-primary/30 transition-all shrink-0 active:scale-95"
+                  title="View full account details"
+                >
+                  Details
+                </button>
+              </div>
+            )}
+
             <div className="space-y-2.5">
               <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="text-zinc-500">Total Points</span>
+                <span className="text-muted-foreground">Total Points</span>
                 <span className="text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">
-                  {points} pts
+                  {points ?? 0} pts
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="text-zinc-500">Wallet Balance</span>
-                <span className="text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">Wallet Balance</span>
+                  <button
+                    onClick={() => refreshWalletBalance(true)}
+                    disabled={isRefreshingBalance}
+                    className="p-1 text-muted-foreground hover:text-primary transition-colors rounded-full hover:bg-muted"
+                    title="Click to refresh wallet balance"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isRefreshingBalance ? "animate-spin text-green-400" : ""}`} />
+                  </button>
+                </div>
+                <span className="text-primary dark:text-green-400 bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 font-mono">
                   ₦{" "}
-                  {walletBalance.toLocaleString(undefined, {
+                  {(walletBalance || 0).toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
                 </span>
               </div>
             </div>
-            <Button
-              onClick={() => setAccountPopup(true)}
-              size="sm"
-              className="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 font-bold"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Funds
-            </Button>
+            {!hasWallet ? (
+              <Button
+                onClick={handleRetryWallet}
+                disabled={isRetryingWallet}
+                size="sm"
+                className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold animate-pulse"
+                title="Click to generate your virtual account number"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isRetryingWallet ? "animate-spin" : ""}`} />
+                {isRetryingWallet ? "Generating Account..." : "Generate Wallet Account"}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => setAccountPopup(true)}
+                size="sm"
+                className="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 font-bold shadow-lg shadow-green-900/20"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Funds
+              </Button>
+            )}
           </div>
         </aside>
 
+        {/* Full-Screen UI Blocking Overlay during Wallet Provisioning */}
+        {isRetryingWallet && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-4">
+            <div className="bg-card border border-amber-500/30 rounded-3xl p-8 max-w-sm w-full text-center space-y-4 shadow-2xl animate-in zoom-in-95">
+              <div className="w-16 h-16 mx-auto rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin flex items-center justify-center">
+                <Wallet className="h-8 w-8 text-amber-400 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Provisioning Your Virtual Wallet</h3>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                  Please wait while we connect to central banking services to assign your unique virtual account number...
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main content — only this area scrolls */}
-        <main className="flex-1 overflow-y-auto bg-[#060d1a]">
+        <main className="flex-1 overflow-y-auto bg-background">
           <div className="max-w-7xl mx-auto py-[1rem] px-[.5rem] sm:p-6 lg:p-8">
             {sessionTimeout ? (
               <SessionGuard timeout={sessionTimeout}>{children}</SessionGuard>
@@ -401,7 +576,7 @@ export default function DashboardLayout({ children }) {
       </div>
 
       {/* Mobile Sleek Bottom Navigation Bar ($3B feel) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/80 backdrop-blur-lg border-t border-zinc-900 z-40 flex items-center justify-around px-[0.05rem] gap-8">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-card/80 backdrop-blur-lg border-t border-border z-40 flex items-center justify-around px-[0.05rem] gap-8">
         {bottomNavItems.map((item) => {
           const Icon = item.label == "Home" ? null : item.icon;
           const active = isActive(item.href);
@@ -410,7 +585,7 @@ export default function DashboardLayout({ children }) {
               key={item.id}
               to={item.href}
               className={`flex flex-col items-center justify-center gap-1 w-16 h-full transition-colors relative ${
-                active ? "text-green-400" : "text-zinc-500 hover:text-zinc-300"
+                active ? "text-primary dark:text-green-400" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {item.label == "Home" ? (

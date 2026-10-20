@@ -48,7 +48,7 @@ export default function PaymentSuccesful({ onClose }) {
 
   //emulators
   useEffect(() => {
-    connectFunctionsEmulator(functions, "localhost", 5001);
+    // connectFunctionsEmulator disabled for live backend
   }, []);
   const verifyTransactionStatus = httpsCallable(
     functions,
@@ -267,7 +267,7 @@ console.log("verify: ", res)
 
             <DialogFooter className="mt-6 flex flex-col gap-2">
               <Button
-                className="w-full bg-green-600 hover:bg-green-700 text-white text-lg font-semibold py-3"
+                className="w-full bg-green-600 hover:bg-green-700 text-foreground text-lg font-semibold py-3"
                 onClick={onClose}
               >
                 <Link to="/dashboard">Done</Link>

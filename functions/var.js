@@ -1,4 +1,5 @@
 // config/EnvVar.js
+process.env.NO_GCE_CHECK = "true";
 class EnvVar {
   constructor(key, options = {}) {
     this.key = key;

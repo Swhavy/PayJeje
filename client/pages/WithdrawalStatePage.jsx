@@ -134,7 +134,7 @@ function ReceiptCard({
     <div
       ref={cardRef}
       id={id}
-      className="bg-[#060d1a] border border-[#0d223a] text-white p-6 sm:p-7 rounded-3xl relative overflow-hidden shadow-2xl max-w-md w-full mx-auto"
+      className="bg-background border border-[#0d223a] text-foreground p-6 sm:p-7 rounded-3xl relative overflow-hidden shadow-2xl max-w-md w-full mx-auto"
       style={{
         backgroundColor: "#060d1a",
         borderColor: "#0d223a",
@@ -172,7 +172,7 @@ function ReceiptCard({
             <span className="text-emerald-400 font-black text-lg tracking-wider leading-none">
               PAYWAKA
             </span>
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
               NIBSS INSTANT DIRECT CREDIT
             </span>
           </div>
@@ -197,7 +197,7 @@ function ReceiptCard({
         className="my-4 p-4 sm:p-5 bg-[#030813] border border-[#0e1f33] rounded-2xl text-center relative z-10"
         style={{ backgroundColor: "#030813", borderColor: "#0e1f33" }}
       >
-        <span className="text-[10px] sm:text-[11px] font-extrabold text-zinc-400 uppercase tracking-widest block">
+        <span className="text-[10px] sm:text-[11px] font-extrabold text-muted-foreground uppercase tracking-widest block">
           AMOUNT TRANSFERRED
         </span>
         <div
@@ -206,7 +206,7 @@ function ReceiptCard({
         >
           ₦{formatAmount(amount)}
         </div>
-        <span className="text-[10px] sm:text-[11px] text-zinc-400 block mt-1">
+        <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-1">
           Zero Transaction Charges Applied
         </span>
       </div>
@@ -216,48 +216,48 @@ function ReceiptCard({
       {/* ------------------------------------------------------------- */}
       <div className="space-y-2.5 relative z-10 text-xs sm:text-sm">
         <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-zinc-400 font-medium">Beneficiary Name:</span>
-          <span className="font-bold text-white text-right">
+          <span className="text-muted-foreground font-medium">Beneficiary Name:</span>
+          <span className="font-bold text-foreground text-right">
             {accountHolder}
           </span>
         </div>
 
         <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-zinc-400 font-medium">Destination Bank:</span>
-          <span className="font-bold text-white text-right">{bankName}</span>
+          <span className="text-muted-foreground font-medium">Destination Bank:</span>
+          <span className="font-bold text-foreground text-right">{bankName}</span>
         </div>
 
         <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-zinc-400 font-medium">Account Number:</span>
-          <span className="font-mono font-bold text-white text-right">
+          <span className="text-muted-foreground font-medium">Account Number:</span>
+          <span className="font-mono font-bold text-foreground text-right">
             {accountNumber}
           </span>
         </div>
 
         <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-zinc-400 font-medium">Reference Number:</span>
-          <span className="font-mono font-bold text-zinc-200 text-right">
+          <span className="text-muted-foreground font-medium">Reference Number:</span>
+          <span className="font-mono font-bold text-foreground text-right">
             {initialRef}
           </span>
         </div>
 
         <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-zinc-400 font-medium">Source Account:</span>
-          <span className="font-semibold text-zinc-200 text-right">
+          <span className="text-muted-foreground font-medium">Source Account:</span>
+          <span className="font-semibold text-foreground text-right">
             PayWaka Settlement Vault
           </span>
         </div>
 
         <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-zinc-400 font-medium">Narration:</span>
-          <span className="text-zinc-300 text-right text-xs max-w-[200px] truncate">
+          <span className="text-muted-foreground font-medium">Narration:</span>
+          <span className="text-foreground text-right text-xs max-w-[200px] truncate">
             {narration}
           </span>
         </div>
 
         <div className="flex justify-between items-center py-1.5">
-          <span className="text-zinc-400 font-medium">Timestamp:</span>
-          <span className="font-mono text-zinc-300 text-right text-xs">
+          <span className="text-muted-foreground font-medium">Timestamp:</span>
+          <span className="font-mono text-foreground text-right text-xs">
             {txnDate}
           </span>
         </div>
@@ -271,7 +271,7 @@ function ReceiptCard({
           <ShieldCheck className="h-4 w-4" />
           <span>NIBSS Verified</span>
         </div>
-        <span className="text-zinc-500 text-[11px]">
+        <span className="text-muted-foreground text-[11px]">
           Automated System Receipt
         </span>
       </div>
@@ -609,7 +609,7 @@ export default function WithdrawalStatePage() {
         <div className="flex items-center justify-between">
           <Link
             to="/wallet"
-            className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors bg-zinc-950/40 border border-zinc-900 px-3.5 py-2 rounded-xl"
+            className="flex items-center gap-2 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors bg-card/40 border border-border px-3.5 py-2 rounded-xl"
           >
             <ChevronLeft className="h-4 w-4" />
             <span>Back to Wallet</span>
@@ -622,7 +622,7 @@ export default function WithdrawalStatePage() {
         </div>
 
         {/* Main Card Wrapper */}
-        <Card className="bg-zinc-950/60 border-zinc-900 shadow-2xl rounded-3xl overflow-hidden relative border">
+        <Card className="bg-card/60 border-border shadow-2xl rounded-3xl overflow-hidden relative border">
           {/* Subtle Ambient Glowing Background elements */}
           <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -646,7 +646,7 @@ export default function WithdrawalStatePage() {
                     {/* Animated Pulsing Rings */}
                     <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping opacity-30" />
                     <div className="absolute -inset-3 rounded-full border border-amber-500/30 animate-pulse" />
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500/10 via-zinc-900 to-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-2xl relative">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500/10 via-muted to-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-2xl relative">
                       <Clock
                         className="h-10 w-10 text-amber-400 animate-spin"
                         style={{ animationDuration: "6s" }}
@@ -660,13 +660,13 @@ export default function WithdrawalStatePage() {
                       <Clock className="h-3.5 w-3.5 mr-1 animate-spin" />
                       Transaction Processing
                     </Badge>
-                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
                       Processing Withdrawal
                     </h2>
-                    <p className="text-zinc-400 text-xs sm:text-sm mt-1 max-w-md mx-auto">
+                    <p className="text-muted-foreground text-xs sm:text-sm mt-1 max-w-md mx-auto">
                       Connecting to NIBSS Direct Credit engine. Transferring
                       funds to{" "}
-                      <span className="text-white font-semibold">
+                      <span className="text-foreground font-semibold">
                         {bankName}
                       </span>
                       .
@@ -674,8 +674,8 @@ export default function WithdrawalStatePage() {
                   </div>
 
                   {/* Highlighted Pending Amount */}
-                  <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-2xl w-full max-w-md">
-                    <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
+                  <div className="bg-muted/60 border border-border p-4 rounded-2xl w-full max-w-md">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                       Transfer Amount
                     </span>
                     <div className="text-3xl font-black text-amber-400 font-display mt-0.5">
@@ -685,13 +685,13 @@ export default function WithdrawalStatePage() {
 
                   {/* Smooth Animated Progress Bar */}
                   <div className="w-full max-w-md space-y-2">
-                    <div className="flex justify-between items-center text-xs text-zinc-400 font-medium">
+                    <div className="flex justify-between items-center text-xs text-muted-foreground font-medium">
                       <span>Settlement Progress</span>
                       <span className="font-mono font-bold text-amber-400">
                         {progress}%
                       </span>
                     </div>
-                    <div className="w-full h-2.5 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                    <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden border border-border">
                       <motion.div
                         className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full"
                         initial={{ width: "10%" }}
@@ -702,7 +702,7 @@ export default function WithdrawalStatePage() {
                   </div>
 
                   {/* Real-Time Processing Checklist */}
-                  <div className="w-full max-w-md bg-zinc-900/30 border border-zinc-900 rounded-2xl p-4 text-left space-y-3">
+                  <div className="w-full max-w-md bg-muted/30 border border-border rounded-2xl p-4 text-left space-y-3">
                     {steps.map((step, idx) => {
                       const isDone = idx < activeStep;
                       const isCurrent = idx === activeStep;
@@ -717,7 +717,7 @@ export default function WithdrawalStatePage() {
                                 ? "bg-emerald-500 text-black font-bold"
                                 : isCurrent
                                   ? "bg-amber-500/20 text-amber-400 border border-amber-500/50"
-                                  : "bg-zinc-900 text-zinc-600 border border-zinc-800"
+                                  : "bg-muted text-muted-foreground border border-border"
                             }`}
                           >
                             {isDone ? (
@@ -732,15 +732,15 @@ export default function WithdrawalStatePage() {
                             <p
                               className={`font-semibold ${
                                 isDone
-                                  ? "text-zinc-300 line-through text-zinc-400"
+                                  ? "text-foreground line-through text-muted-foreground"
                                   : isCurrent
-                                    ? "text-white font-bold"
-                                    : "text-zinc-500"
+                                    ? "text-foreground font-bold"
+                                    : "text-muted-foreground"
                               }`}
                             >
                               {step.title}
                             </p>
-                            <p className="text-[10px] text-zinc-500 truncate">
+                            <p className="text-[10px] text-muted-foreground truncate">
                               {step.desc}
                             </p>
                           </div>
@@ -750,7 +750,7 @@ export default function WithdrawalStatePage() {
                   </div>
 
                   {/* Action Helper */}
-                  <p className="text-[11px] text-zinc-500 animate-pulse">
+                  <p className="text-[11px] text-muted-foreground animate-pulse">
                     Please hold on while we complete instant bank
                     verification...
                   </p>
@@ -781,7 +781,7 @@ export default function WithdrawalStatePage() {
                       }}
                       className="w-20 h-20 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-2xl shadow-emerald-500/20 flex items-center justify-center"
                     >
-                      <div className="w-full h-full rounded-full bg-[#060d1a] flex items-center justify-center">
+                      <div className="w-full h-full rounded-full bg-background flex items-center justify-center">
                         <CheckCircle2 className="h-11 w-11 text-emerald-400" />
                       </div>
                     </motion.div>
@@ -796,41 +796,41 @@ export default function WithdrawalStatePage() {
                       <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                       Transfer Successful
                     </Badge>
-                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
                       Withdrawal Complete!
                     </h2>
-                    <p className="text-zinc-400 text-xs sm:text-sm mt-1">
+                    <p className="text-muted-foreground text-xs sm:text-sm mt-1">
                       Funds have been credited directly to destination account.
                     </p>
                   </div>
 
                   {/* Main Hero Amount Badge */}
-                  <div className="bg-gradient-to-br from-emerald-950/60 via-zinc-900/80 to-zinc-950 border border-emerald-500/30 p-5 rounded-3xl w-full max-w-md relative overflow-hidden shadow-xl">
+                  <div className="bg-gradient-to-br from-emerald-950/60 via-muted/80 to-card border border-emerald-500/30 p-5 rounded-3xl w-full max-w-md relative overflow-hidden shadow-xl">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/80">
                       Settled Amount
                     </span>
-                    <div className="text-3xl sm:text-4xl font-black text-white font-display mt-1 tracking-tight">
+                    <div className="text-3xl sm:text-4xl font-black text-foreground font-display mt-1 tracking-tight">
                       ₦{formatAmount(amount)}
                     </div>
-                    <div className="flex items-center justify-center gap-2 mt-2 text-[11px] text-zinc-400">
+                    <div className="flex items-center justify-center gap-2 mt-2 text-[11px] text-muted-foreground">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       <span>Zero Charge Instant Settlement</span>
                     </div>
                   </div>
 
                   {/* Detailed Transaction Breakdown Card */}
-                  <div className="w-full max-w-md bg-zinc-950/80 border border-zinc-900 rounded-2xl p-4 sm:p-5 text-left space-y-3.5">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
-                      <span className="text-xs text-zinc-400 font-medium">
+                  <div className="w-full max-w-md bg-card/80 border border-border rounded-2xl p-4 sm:p-5 text-left space-y-3.5">
+                    <div className="flex items-center justify-between pb-3 border-b border-border">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Transaction Reference
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-white">
+                        <span className="text-xs font-mono font-bold text-foreground">
                           {initialRef}
                         </span>
                         <button
                           onClick={handleCopyRef}
-                          className="p-1 text-zinc-400 hover:text-white transition-colors"
+                          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
                           title="Copy reference"
                         >
                           {copiedRef ? (
@@ -843,45 +843,45 @@ export default function WithdrawalStatePage() {
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-zinc-400 font-medium">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Recipient Bank
                       </span>
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
                         <Building2 className="h-3.5 w-3.5 text-blue-400" />
                         {bankName}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-zinc-400 font-medium">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Account Number
                       </span>
-                      <span className="text-xs font-mono font-bold text-zinc-200">
+                      <span className="text-xs font-mono font-bold text-foreground">
                         {accountNumber}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-zinc-400 font-medium">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Account Name
                       </span>
-                      <span className="text-xs font-bold text-white">
+                      <span className="text-xs font-bold text-foreground">
                         {accountHolder}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-zinc-400 font-medium">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Source
                       </span>
-                      <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1">
                         <Wallet className="h-3.5 w-3.5 text-emerald-400" />
                         PayWaka Subaccount Vault
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-zinc-400 font-medium">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Fee
                       </span>
                       <span className="text-xs font-bold text-emerald-400">
@@ -889,11 +889,11 @@ export default function WithdrawalStatePage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-zinc-900">
-                      <span className="text-xs text-zinc-400 font-medium">
+                    <div className="flex items-center justify-between pt-2 border-t border-border">
+                      <span className="text-xs text-muted-foreground font-medium">
                         Timestamp
                       </span>
-                      <span className="text-[11px] font-mono text-zinc-400">
+                      <span className="text-[11px] font-mono text-muted-foreground">
                         {txnDate}
                       </span>
                     </div>
@@ -919,7 +919,7 @@ export default function WithdrawalStatePage() {
                       <Button
                         onClick={downloadAsPDF}
                         disabled={downloadingType !== null}
-                        className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs h-11 rounded-xl shadow-lg shadow-blue-500/10 transition-transform active:scale-95"
+                        className="bg-blue-600 hover:bg-blue-500 text-foreground font-extrabold text-xs h-11 rounded-xl shadow-lg shadow-blue-500/10 transition-transform active:scale-95"
                       >
                         {downloadingType === "pdf" ? (
                           <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
@@ -934,7 +934,7 @@ export default function WithdrawalStatePage() {
                       <Button
                         onClick={handleOpenReceiptModal}
                         variant="outline"
-                        className="border-zinc-800 text-zinc-200 hover:text-white bg-zinc-900/60 text-xs h-10 rounded-xl"
+                        className="border-border text-foreground hover:text-foreground bg-muted/60 text-xs h-10 rounded-xl"
                       >
                         <FileText className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
                         Preview Digital Slip
@@ -943,7 +943,7 @@ export default function WithdrawalStatePage() {
                       <Button
                         onClick={handleShare}
                         variant="outline"
-                        className="border-zinc-800 text-zinc-200 hover:text-white bg-zinc-900/50 text-xs h-10 rounded-xl"
+                        className="border-border text-foreground hover:text-foreground bg-muted/50 text-xs h-10 rounded-xl"
                       >
                         <Share2 className="h-3.5 w-3.5 mr-1.5 text-blue-400" />
                         Share Details
@@ -954,7 +954,7 @@ export default function WithdrawalStatePage() {
                       <Link to="/wallet" className="flex-1">
                         <Button
                           variant="ghost"
-                          className="w-full text-zinc-400 hover:text-white hover:bg-zinc-900 text-xs h-10 rounded-xl"
+                          className="w-full text-muted-foreground hover:text-foreground hover:bg-muted text-xs h-10 rounded-xl"
                         >
                           Return to Wallet Overview
                         </Button>
@@ -964,7 +964,7 @@ export default function WithdrawalStatePage() {
                         onClick={handleReplay}
                         variant="ghost"
                         size="icon"
-                        className="text-zinc-500 hover:text-amber-400 hover:bg-zinc-900 h-10 w-10 rounded-xl shrink-0"
+                        className="text-muted-foreground hover:text-amber-400 hover:bg-muted h-10 w-10 rounded-xl shrink-0"
                         title="Replay Pending to Success Transition"
                       >
                         <RefreshCw className="h-4 w-4" />
@@ -992,18 +992,18 @@ export default function WithdrawalStatePage() {
                     <Badge className="bg-red-500/10 border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wider px-3 py-1 mb-3">
                       Transfer Failed
                     </Badge>
-                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
                       Withdrawal Failed
                     </h2>
-                    <p className="text-zinc-400 text-xs sm:text-sm mt-1 max-w-md mx-auto">
+                    <p className="text-muted-foreground text-xs sm:text-sm mt-1 max-w-md mx-auto">
                       {failureReason}
                     </p>
-                    <p className="text-zinc-500 text-[11px] mt-2">
+                    <p className="text-muted-foreground text-[11px] mt-2">
                       Your balance has been refunded.
                     </p>
                   </div>
                   <Link to="/wallet">
-                    <Button className="bg-zinc-900 hover:bg-zinc-800 text-white text-xs h-10 rounded-xl px-6">
+                    <Button className="bg-muted hover:bg-muted text-foreground text-xs h-10 rounded-xl px-6">
                       Return to Wallet
                     </Button>
                   </Link>
@@ -1023,26 +1023,26 @@ export default function WithdrawalStatePage() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-[#091222] border border-zinc-800 w-full max-w-md rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl relative my-auto"
+            className="bg-[#091222] border border-border w-full max-w-md rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl relative my-auto"
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
                   ₦
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">
+                  <h3 className="font-bold text-foreground text-base">
                     PayWaka Official Receipt
                   </h3>
-                  <p className="text-[10px] text-zinc-400">
+                  <p className="text-[10px] text-muted-foreground">
                     Electronic Transfer Acknowledgment
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowReceiptModal(false)}
-                className="text-zinc-500 hover:text-white text-sm font-bold p-1 rounded-lg hover:bg-zinc-800 transition-colors"
+                className="text-muted-foreground hover:text-foreground text-sm font-bold p-1 rounded-lg hover:bg-muted transition-colors"
               >
                 ✕
               </button>
@@ -1061,7 +1061,7 @@ export default function WithdrawalStatePage() {
 
             {/* Modal Download Action Options */}
             <div className="space-y-2.5 pt-1">
-              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block text-center">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block text-center">
                 Choose Export Format
               </span>
               <div className="grid grid-cols-2 gap-3">
@@ -1081,7 +1081,7 @@ export default function WithdrawalStatePage() {
                 <Button
                   onClick={downloadAsPDF}
                   disabled={downloadingType !== null}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold h-11 text-xs rounded-xl transition-all"
+                  className="bg-blue-600 hover:bg-blue-500 text-foreground font-extrabold h-11 text-xs rounded-xl transition-all"
                 >
                   {downloadingType === "pdf" ? (
                     <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
@@ -1095,7 +1095,7 @@ export default function WithdrawalStatePage() {
               <Button
                 onClick={() => setShowReceiptModal(false)}
                 variant="outline"
-                className="w-full border-zinc-800 text-zinc-400 hover:text-white h-10 text-xs rounded-xl mt-1"
+                className="w-full border-border text-muted-foreground hover:text-foreground h-10 text-xs rounded-xl mt-1"
               >
                 Close Preview
               </Button>

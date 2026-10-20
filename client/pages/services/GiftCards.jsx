@@ -152,7 +152,7 @@ export default function GiftCardsPage() {
         </div>
 
         {/* Points Balance */}
-        <Card className="bg-gradient-to-r from-purple-600 to-pink-600 text-white border-0">
+        <Card className="bg-gradient-to-r from-purple-600 to-pink-600 text-foreground border-0">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -204,7 +204,7 @@ export default function GiftCardsPage() {
                       onClick={() => setSelectedCategory(category)}
                       className={
                         selectedCategory === category
-                          ? "bg-purple-600 hover:bg-purple-700 text-white"
+                          ? "bg-purple-600 hover:bg-purple-700 text-foreground"
                           : "border-border text-foreground hover:bg-muted"
                       }
                     >
@@ -299,7 +299,7 @@ export default function GiftCardsPage() {
                           onClick={() => setSelectedAmount(amount.toString())}
                           className={
                             selectedAmount === amount.toString()
-                              ? "bg-purple-600 hover:bg-purple-700 text-white"
+                              ? "bg-purple-600 hover:bg-purple-700 text-foreground"
                               : "border-border text-foreground hover:bg-muted"
                           }
                         >
@@ -354,7 +354,7 @@ export default function GiftCardsPage() {
                         (selectedCardData?.pointsRate || 1) >
                         2450
                     }
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-foreground"
                   >
                     {isLoading ? "Processing..." : "Purchase Gift Card"}
                   </Button>

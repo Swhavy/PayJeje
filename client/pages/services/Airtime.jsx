@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import PaymentConfirmation from "@/pages/PaymentConfirmation";
+import PaymentSuccessfulModal from "@/components/PaymentSuccessfulModal";
 import { Smartphone, Clock } from "lucide-react";
 import useCloudfunc from "@/components/useCloudfunc";
 import { useDispatch, useSelector } from "react-redux";
@@ -22,6 +23,7 @@ import { functions } from "@/firebaseConfig";
 import { toast } from "sonner";
 import { useBillsStat } from "../../components/useTransactionFetch";
 import { interval } from "../../components/functionalities";
+import PaymentFailedModal from "@/components/PaymentFailedModal";
 
 export default function AirtimePage() {
   //use This to update Recent Transactions in the sidebar with real data from Firestore
@@ -40,19 +42,17 @@ export default function AirtimePage() {
   const [airtimePlans, setAirtimePlans] = useState(null);
   const [mount, setMount] = useState(false);
   const [click, setClick] = useState(false);
-  const { biller } = useCloudfunc();
+  const { biller, purchaseAirtime } = useCloudfunc();
   const navigate = useNavigate();
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const [successData, setSuccessData] = useState({});
+  const [isFailedOpen, setIsFailedOpen] = useState(false);
+  const [failedData, setFailedData] = useState({});
   const { timeAgo, now } = interval();
-
-  //initialize emulator once
-  useEffect(() => {
-    //cloud function to fetch bills
-    connectFunctionsEmulator(functions, "localHost", 5001);
-  }, []);
 
   //used to mask phone number in recent transactions
   function maskPhone(phone) {
@@ -60,7 +60,6 @@ export default function AirtimePage() {
     return str.slice(0, 3) + "****" + str.slice(-4);
   }
 
-  const validateCustomer = httpsCallable(functions, "validateCustomer");
   const networks = [
     { id: "mtn", name: "MTN", logo: "🟡", discount: "2%" },
     { id: "glo", name: "GLO", logo: "🟢", discount: "3%" },
@@ -97,34 +96,21 @@ export default function AirtimePage() {
     },
   ];
 
-  //old
-  // const handlePurchase = async () => {
-  //   if (!selectedNetwork || !phoneNumber || !amount) return;
-
-  //   setCurrentPaymentDetails({
-  //     network: selectedNetwork,
-  //     product: "Airtime",
-  //     amount: amount,
-  //     mobileNumber: phoneNumber,
-  //     bonusToEarn: "100 NGN",
-  //     cashbackAmount: "50 NGN",
-  //     //initialUseCashback: false,
-  //   });
-
-  //   setIsLoading(true);
-  //   // Simulate purchase
-  //   setTimeout(() => {
-  //     setIsLoading(false);
-  //     // Show confirmation message
-  //     // Reset form
-  //   }, 2000);
-  //   setIsConfirmationOpen(true);
-  // };
-
   const handleBuyNow = (price) => {
     if (!selectedNetwork || !phoneNumber || !price) {
-      return toast.warning("Please select a network and enter a phone number.");
+      return toast.warning("Please select a network, enter a phone number, and enter amount.");
     }
+    const netName = selectedNetwork?.id ? selectedNetwork.id.toUpperCase() : String(selectedNetwork).toUpperCase();
+    dispatch(
+      selectedPrice({
+        productName: "Airtime",
+        network: netName,
+        billType: "airtime",
+        price: price,
+        customerID: phoneNumber,
+        bonusToEarn: "10 NGN",
+      })
+    );
     setClick(true);
     setIsConfirmationOpen(true);
   };
@@ -182,14 +168,79 @@ export default function AirtimePage() {
   //     setMount(true);
   //   }, [transactions.billsInfo]);
 
+  const handleConfirmAirtimePayment = async (pin) => {
+    try {
+      const netName = selectedNetwork?.id ? selectedNetwork.id.toUpperCase() : String(selectedNetwork || "MTN").toUpperCase();
+      const numAmount = Number(amount);
+      if (!numAmount || numAmount <= 0) {
+        toast.error("Please enter a valid amount.");
+        return false;
+      }
+      if (!phoneNumber || phoneNumber.length < 11) {
+        toast.error("Please enter a valid 11-digit phone number.");
+        return false;
+      }
+
+      const res = await purchaseAirtime({
+        network: netName,
+        phone: phoneNumber,
+        amount: numAmount,
+        pin,
+      });
+
+      if (res?.status === "success") {
+        toast.success(`₦${numAmount.toLocaleString()} Airtime purchased successfully for ${phoneNumber}!`);
+        setSuccessData({
+          category: "Airtime",
+          productName: `${netName} Airtime`,
+          network: netName,
+          amount: numAmount,
+          customerId: phoneNumber,
+          tx_ref: res.tx_ref || res.data?.requestid || `PWK_${Date.now()}`,
+          bonusToEarn: "10 NGN",
+        });
+        setPhoneNumber("");
+        setAmount("");
+        setIsConfirmationOpen(false);
+        setIsSuccessOpen(true);
+        return true;
+      } else if (res?.status === "provider_error") {
+        toast.error(res.message || "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged. Please try again shortly!", { duration: 7000 });
+        setIsConfirmationOpen(false);
+        return false;
+      } else {
+        toast.error(res?.message || "Airtime purchase failed. Please check your balance.");
+        setIsConfirmationOpen(false);
+        return false;
+      }
+    } catch (err) {
+      const errMsg = err?.message || "";
+      if (/pin|lockout|attempt/i.test(errMsg)) {
+        throw err;
+      }
+      toast.error(err.message || "Error completing airtime purchase");
+      setIsConfirmationOpen(false);
+      return false;
+    }
+  };
+
   return (
     <DashboardLayout>
       {/* Payment Confirmation Dialog */}
       <PaymentConfirmation
         isOpen={isConfirmationOpen}
-        onClose={() => setIsConfirmationOpen(false)}
-        //onConfirm={onPaymentConfirmation}
-        paymentDetails={{...transactions, price: amount, customerID: phoneNumber, billType: "airtime"}}
+        onClose={() => {
+          setClick(false);
+          setIsConfirmationOpen(false)
+        }}
+        onConfirm={handleConfirmAirtimePayment}
+        paymentDetails={{ ...transactions, price: amount, customerID: phoneNumber, billType: "airtime" }}
+      />
+
+      <PaymentSuccessfulModal
+        isOpen={isSuccessOpen}
+        onClose={() => setIsSuccessOpen(false)}
+        data={successData}
       />
       <div className="space-y-6">
         {/* Header */}
@@ -229,11 +280,10 @@ export default function AirtimePage() {
                             "Airtime",
                           );
                         }}
-                        className={`p-4 rounded-lg border-2 transition-all ${
-                          selectedNetwork === network.id
-                            ? "border-green-500 bg-green-50 dark:bg-green-900/20"
-                            : "border-border bg-card hover:bg-muted"
-                        }`}
+                        className={`p-4 rounded-lg border-2 transition-all ${selectedNetwork === network.id
+                          ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                          : "border-border bg-card hover:bg-muted"
+                          }`}
                       >
                         <div className="text-2xl mb-2">{network.logo}</div>
                         <div className="font-medium text-foreground">
@@ -278,7 +328,7 @@ export default function AirtimePage() {
                         onClick={() => setAmount(quickAmount.toString())}
                         className={
                           amount === quickAmount.toString()
-                            ? "bg-green-600 hover:bg-green-700 text-white"
+                            ? "bg-green-600 hover:bg-green-700 text-foreground"
                             : "border-border text-foreground hover:bg-muted"
                         }
                       >
@@ -338,7 +388,7 @@ export default function AirtimePage() {
                     isLoading ||
                     click
                   }
-                  className="w-full bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                  className="w-full bg-green-600 hover:bg-green-700 text-foreground disabled:opacity-50"
                 >
                   {isLoading ? "Processing..." : "Buy Airtime"}
                 </Button>
@@ -429,6 +479,32 @@ export default function AirtimePage() {
           </div>
         </div>
       </div>
+
+      <PaymentConfirmation
+        isOpen={isConfirmationOpen}
+        onClose={() => {
+          setClick(false);
+          setIsConfirmationOpen(false);
+        }}
+        onConfirm={handleConfirmAirtimePayment}
+        paymentDetails={{ ...transactions, price: amount, customerID: phoneNumber, billType: "airtime" }}
+      />
+
+      <PaymentSuccessfulModal
+        isOpen={isSuccessOpen}
+        onClose={() => setIsSuccessOpen(false)}
+        data={successData}
+      />
+
+      <PaymentFailedModal
+        isOpen={isFailedOpen}
+        onClose={() => setIsFailedOpen(false)}
+        onRetry={() => {
+          setIsFailedOpen(false);
+          setIsConfirmationOpen(true);
+        }}
+        data={failedData}
+      />
     </DashboardLayout>
   );
 }

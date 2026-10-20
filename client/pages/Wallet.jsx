@@ -21,6 +21,7 @@ import {
   DollarSign,
   Building2,
   Check,
+  Copy,
   Eye,
   EyeOff,
   ChevronsUpDown,
@@ -281,24 +282,24 @@ const Wallet = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
               My Wallet
             </h1>
-            <p className="text-xs sm:text-sm text-zinc-400 mt-1">
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
               Manage your earnings and transactions
             </p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button
               onClick={() => setAccountPopup(true)}
-              className="flex-1 sm:flex-none bg-paywaka-500 hover:bg-paywaka-600 text-white font-bold"
+              className="flex-1 sm:flex-none bg-paywaka-500 hover:bg-paywaka-600 text-foreground font-bold"
             >
               <Plus className="h-4 w-4 mr-2 shrink-0" />
               Add Funds
             </Button>
             <Button
               variant="outline"
-              className="flex-1 sm:flex-none border-zinc-800 text-zinc-300 hover:text-white"
+              className="flex-1 sm:flex-none border-border text-foreground hover:text-foreground"
             >
               <Download className="h-4 w-4 mr-2 shrink-0" />
               Export
@@ -307,7 +308,7 @@ const Wallet = () => {
         </div>
 
         {/* Balance Card */}
-        <Card className="bg-gradient-to-br from-[#0c2217] via-[#05110b] to-[#010604] border border-green-500/25 text-white shadow-2xl relative overflow-hidden rounded-3xl">
+        <Card className="bg-gradient-to-br from-[#0c2217] via-[#05110b] to-[#010604] border border-green-500/25 text-foreground shadow-2xl relative overflow-hidden rounded-3xl">
           {/* Subtle elegant backdrop ambient glows */}
           <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl -ml-16 -mb-16 pointer-events-none" />
@@ -316,11 +317,11 @@ const Wallet = () => {
             {/* Main row: Total Balance + Available */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 mb-6 pb-6 border-b border-green-500/10">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-500/10 rounded-2xl shrink-0 border border-green-500/20 text-green-400">
+                <div className="p-3 bg-green-500/10 rounded-2xl shrink-0 border border-green-500/20 text-primary dark:text-green-400">
                   <WalletIcon className="h-6 w-6" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-zinc-400 text-[11px] sm:text-xs font-semibold uppercase tracking-wider">
+                  <p className="text-muted-foreground text-[11px] sm:text-xs font-semibold uppercase tracking-wider">
                     Total Balance
                   </p>
                   <div className="flex flex-row-reverse items-center gap-4">
@@ -334,7 +335,7 @@ const Wallet = () => {
                       />
                     )}
                     <h2
-                      className={`text-3xl sm:text-4xl font-black font-display ${hide ? "blur-md" : ""} tracking-tight mt-1 text-white`}
+                      className={`text-3xl sm:text-4xl font-black font-display ${hide ? "blur-md" : ""} tracking-tight mt-1 text-foreground`}
                       onClick={visibility}
                     >
                       ₦{formatAmount(totalBalance)}
@@ -343,12 +344,12 @@ const Wallet = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between sm:flex-col sm:items-end bg-zinc-900/40 sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-zinc-800/60 sm:border-0">
-                <p className="text-zinc-400 text-[11px] sm:text-xs font-semibold uppercase tracking-wider px-2 sm:px-0">
+              <div className="flex items-center justify-between sm:flex-col sm:items-end bg-muted/40 sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-border/60 sm:border-0">
+                <p className="text-muted-foreground text-[11px] sm:text-xs font-semibold uppercase tracking-wider px-2 sm:px-0">
                   Available Balance
                 </p>
                 <p
-                  className={`text-xl sm:text-2xl font-bold font-display ${hide ? "blur-md" : ""} text-green-400 tracking-tight mt-1 px-2 sm:px-0`}
+                  className={`text-xl sm:text-2xl font-bold font-display ${hide ? "blur-md" : ""} text-primary dark:text-green-400 tracking-tight mt-1 px-2 sm:px-0`}
                   onClick={visibility}
                 >
                   ₦{formatAmount(availableBal)}
@@ -359,16 +360,16 @@ const Wallet = () => {
             {/* Sub stats: Total Earned, Total Spent, Pending */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 md:gap-5">
               {/* Total Earned */}
-              <div className="flex items-center gap-3.5 bg-zinc-950/45 border border-zinc-900/80 p-3.5 rounded-2xl min-w-0 hover:bg-zinc-900/20 transition-colors duration-200">
-                <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 shrink-0">
+              <div className="flex items-center gap-3.5 bg-card/45 border border-border/80 p-3.5 rounded-2xl min-w-0 hover:bg-muted/20 transition-colors duration-200">
+                <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-primary dark:text-green-400 shrink-0">
                   <TrendingUp className="h-4.5 w-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-zinc-400 text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
+                  <span className="text-muted-foreground text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
                     Total Earned
                   </span>
                   <p
-                    className={`font-bold text-base sm:text-lg font-display text-white tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
+                    className={`font-bold text-base sm:text-lg font-display text-foreground tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
                   >
                     ₦{formatAmount(totalEarned)}
                   </p>
@@ -376,16 +377,16 @@ const Wallet = () => {
               </div>
 
               {/* Total Spent */}
-              <div className="flex items-center gap-3.5 bg-zinc-950/45 border border-zinc-900/80 p-3.5 rounded-2xl min-w-0 hover:bg-zinc-900/20 transition-colors duration-200">
+              <div className="flex items-center gap-3.5 bg-card/45 border border-border/80 p-3.5 rounded-2xl min-w-0 hover:bg-muted/20 transition-colors duration-200">
                 <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 shrink-0">
                   <TrendingDown className="h-4.5 w-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-zinc-400 text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
+                  <span className="text-muted-foreground text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
                     Total Spent
                   </span>
                   <p
-                    className={`font-bold text-base sm:text-lg font-display text-white tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
+                    className={`font-bold text-base sm:text-lg font-display text-foreground tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
                   >
                     ₦{formatAmount(totalSpent)}
                   </p>
@@ -393,16 +394,16 @@ const Wallet = () => {
               </div>
 
               {/* Pending */}
-              <div className="flex items-center gap-3.5 bg-zinc-950/45 border border-zinc-900/80 p-3.5 rounded-2xl min-w-0 hover:bg-zinc-900/20 transition-colors duration-200">
+              <div className="flex items-center gap-3.5 bg-card/45 border border-border/80 p-3.5 rounded-2xl min-w-0 hover:bg-muted/20 transition-colors duration-200">
                 <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 shrink-0">
                   <Clock className="h-4.5 w-4.5" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-zinc-400 text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
+                  <span className="text-muted-foreground text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
                     Pending
                   </span>
                   <p
-                    className={`font-bold text-base sm:text-lg font-display text-white tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
+                    className={`font-bold text-base sm:text-lg font-display text-foreground tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
                   >
                     ₦{formatAmount(pending)}
                   </p>
@@ -418,29 +419,85 @@ const Wallet = () => {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-3 bg-zinc-950/40 p-1 border border-zinc-900 rounded-2xl">
+          <TabsList className="grid w-full grid-cols-3 bg-card/40 p-1 border border-border rounded-2xl">
             <TabsTrigger
               value="overview"
-              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400"
+              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400"
             >
               Overview
             </TabsTrigger>
             <TabsTrigger
               value="withdraw"
-              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400"
+              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400"
               onClick={() => handleFetchBanks()}
             >
               Withdraw
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400"
+              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400"
             >
               History
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            {/* Dedicated Virtual Bank Account Card */}
+            <div className="rounded-3xl bg-gradient-to-tr from-[#0b1c2e] via-card to-[#0c2217] border border-green-500/20 p-5 sm:p-6 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-green-400 animate-ping" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-primary dark:text-green-400">
+                      Dedicated Virtual Account
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-foreground tracking-tight flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary dark:text-green-400" />
+                    <span>{bankName || "PayWaka Virtual Bank"}</span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Use this dedicated account number to fund your wallet instantly from any bank app or USSD
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:items-end gap-2 bg-muted/60 sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-border sm:border-0">
+                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
+                    Account Number
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl sm:text-2xl font-mono font-black text-foreground tracking-wider">
+                      {account || "•••• ••••"}
+                    </span>
+                    {account && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(account);
+                            toast.success("Account number copied to clipboard!");
+                          } catch {
+                            toast.error("Failed to copy account number");
+                          }
+                        }}
+                        className="p-2 bg-green-500/15 hover:bg-green-500/30 text-primary dark:text-green-400 rounded-xl border border-green-500/30 transition-all active:scale-95"
+                        title="Copy Account Number"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  {accountReference && (
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      Ref: {accountReference}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Quick Actions */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Card
@@ -452,10 +509,10 @@ const Wallet = () => {
                     <CreditCard className="h-6 w-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-sm sm:text-base">
+                    <h3 className="font-bold text-foreground text-sm sm:text-base">
                       Add Money
                     </h3>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Top up your wallet
                     </p>
                   </div>
@@ -463,18 +520,18 @@ const Wallet = () => {
               </Card>
 
               <Card className="p-5 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300">
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex items-center justify-center text-xs font-bold text-white tracking-wider uppercase">
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex items-center justify-center text-xs font-bold text-foreground tracking-wider uppercase">
                   Coming Soon
                 </div>
                 <div className="flex items-center gap-4 opacity-40">
-                  <div className="p-3 bg-green-500/10 border border-green-500/25 rounded-2xl text-green-400 shrink-0">
+                  <div className="p-3 bg-green-500/10 border border-green-500/25 rounded-2xl text-primary dark:text-green-400 shrink-0">
                     <ArrowUpRight className="h-6 w-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-sm sm:text-base">
+                    <h3 className="font-bold text-foreground text-sm sm:text-base">
                       Send Money
                     </h3>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Transfer to friends
                     </p>
                   </div>
@@ -493,10 +550,10 @@ const Wallet = () => {
                     <DollarSign className="h-6 w-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-sm sm:text-base">
+                    <h3 className="font-bold text-foreground text-sm sm:text-base">
                       Withdraw
                     </h3>
-                    <p className="text-xs text-zinc-400 mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Cash out to bank
                     </p>
                   </div>
@@ -506,16 +563,16 @@ const Wallet = () => {
           </TabsContent>
 
           <TabsContent value="withdraw" className="space-y-6">
-            <Card className="border-zinc-800 bg-zinc-950/20">
+            <Card className="border-border bg-card/20">
               <CardContent className="p-5 sm:p-6">
-                <h3 className="text-lg font-bold text-white tracking-tight mb-4">
+                <h3 className="text-lg font-bold text-foreground tracking-tight mb-4">
                   Withdraw Funds
                 </h3>
                 <div className="space-y-5">
                   <div>
                     <Label htmlFor="amount">Amount</Label>
                     <div className="relative mt-1.5">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm font-semibold">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">
                         ₦
                       </span>
                       <Input
@@ -534,9 +591,9 @@ const Wallet = () => {
                         className="pl-8"
                       />
                     </div>
-                    <p className="text-xs text-zinc-400 mt-1.5">
+                    <p className="text-xs text-muted-foreground mt-1.5">
                       Available:{" "}
-                      <span className="text-green-400 font-semibold">
+                      <span className="text-primary dark:text-green-400 font-semibold">
                         ₦{formatAmount(availableBal)}
                       </span>
                     </p>
@@ -568,30 +625,30 @@ const Wallet = () => {
                               variant="outline"
                               role="combobox"
                               aria-expanded={open}
-                              className="w-full h-12 justify-between text-sm sm:text-base border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:text-white"
+                              className="w-full h-12 justify-between text-sm sm:text-base border-border bg-muted/60 text-foreground hover:text-foreground"
                             >
                               <div className="flex items-center gap-2 min-w-0">
-                                <Building2 className="h-4 w-4 text-zinc-500 shrink-0" />
+                                <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                                 <span
                                   className={cn(
                                     "truncate",
-                                    !selectedValue && "text-zinc-500",
+                                    !selectedValue && "text-muted-foreground",
                                   )}
                                 >
                                   {selectedValue || "Select your bank"}
                                 </span>
                               </div>
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 text-zinc-500" />
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 text-muted-foreground" />
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent
-                            className="w-full p-0 bg-zinc-950 border-zinc-800"
+                            className="w-full p-0 bg-card border-border"
                             align="start"
                           >
                             <Command>
                               <CommandInput
                                 placeholder="Search bank..."
-                                className="h-12 text-sm sm:text-base border-b border-zinc-800"
+                                className="h-12 text-sm sm:text-base border-b border-border"
                               />
                               <CommandEmpty>No bank found.</CommandEmpty>
                               <CommandGroup className="max-h-[220px] overflow-auto">
@@ -602,15 +659,15 @@ const Wallet = () => {
                                       value={bank.name}
                                       onSelect={() => handleSelect(bank)}
                                       className={cn(
-                                        "text-zinc-300 hover:text-white hover:bg-zinc-900/60 cursor-pointer text-xs sm:text-sm p-3 rounded-lg flex items-center justify-between",
+                                        "text-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer text-xs sm:text-sm p-3 rounded-lg flex items-center justify-between",
                                         selectedValue === bank.name &&
-                                          "bg-zinc-900 text-white font-bold",
+                                          "bg-muted text-foreground font-bold",
                                       )}
                                     >
                                       <div className="flex items-center gap-2 min-w-0">
                                         <Check
                                           className={cn(
-                                            "h-4 w-4 text-green-400 shrink-0",
+                                            "h-4 w-4 text-primary dark:text-green-400 shrink-0",
                                             selectedValue === bank.name
                                               ? "opacity-100"
                                               : "opacity-0",
@@ -620,13 +677,13 @@ const Wallet = () => {
                                           {bank.name}
                                         </span>
                                       </div>
-                                      <span className="text-[10px] font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800 shrink-0">
+                                      <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border shrink-0">
                                         {bank.code}
                                       </span>
                                     </CommandItem>
                                   ))
                                 ) : (
-                                  <div className="p-3 text-center text-xs text-zinc-500">
+                                  <div className="p-3 text-center text-xs text-muted-foreground">
                                     No banks available. Tap "Withdraw" tab to
                                     reload.
                                   </div>
@@ -640,21 +697,21 @@ const Wallet = () => {
 
                     {selectedBank && (
                       <div
-                        className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/60 mt-4 space-y-1 animate-in fade-in duration-200"
+                        className="p-4 rounded-xl bg-muted/40 border border-border/60 mt-4 space-y-1 animate-in fade-in duration-200"
                         onClick={() => setIsChecked(!isChecked)}
                       >
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                           Selected Bank Details:
                         </p>
-                        <p className="text-sm font-semibold text-white">
+                        <p className="text-sm font-semibold text-foreground">
                           Name:{" "}
-                          <span className="text-zinc-300 font-normal">
+                          <span className="text-foreground font-normal">
                             {selectedBank.name}
                           </span>
                         </p>
-                        <p className="text-sm font-semibold text-white">
+                        <p className="text-sm font-semibold text-foreground">
                           Code:{" "}
-                          <span className="text-zinc-400 font-mono font-normal">
+                          <span className="text-muted-foreground font-mono font-normal">
                             {selectedBank.code}
                           </span>
                         </p>
@@ -684,14 +741,14 @@ const Wallet = () => {
                             transition={{ duration: 0.25, ease: "easeOut" }}
                             className="w-full h-28 bg-green-400/50 rounded-lg flex flex-col justify-center items-center"
                           >
-                            <span className="text-sm text-zinc-200 font-medium p-3 block">
+                            <span className="text-sm text-foreground font-medium p-3 block">
                               Note: Withdrawals are processed within 24 hours.
                               Ensure your account details are correct to avoid
                               delays.
                             </span>
-                            <div className="flex items-center justify-center gap-1 bg-green-500/20 border text-white border-green-500/90 rounded-full p-1 mr-2">
+                            <div className="flex items-center justify-center gap-1 bg-green-500/20 border text-foreground border-green-500/90 rounded-full p-1 mr-2">
                               <Check className="h-5 w-5 text-green-500" />
-                              <span className="font-extralight text-zinc-200">
+                              <span className="font-extralight text-foreground">
                                 {" "}
                                 Account Name:{" "}
                               </span>{" "}
@@ -712,7 +769,7 @@ const Wallet = () => {
                       !isChecked ||
                       !selectedValue
                     }
-                    className={`w-full ${walletBalance > accountDetails.amount ? "bg-paywaka-800 hover:bg-paywaka-600" : "bg-red-700 hover:bg-red-500 cursor-not-allowed"} disabled:cursor-not-allowed text-white font-bold h-12`}
+                    className={`w-full ${walletBalance > accountDetails.amount ? "bg-paywaka-800 hover:bg-paywaka-600" : "bg-red-700 hover:bg-red-500 cursor-not-allowed"} disabled:cursor-not-allowed text-foreground font-bold h-12`}
                   >
                     {walletBalance > accountDetails.amount
                       ? "Withdraw Funds"
@@ -724,24 +781,24 @@ const Wallet = () => {
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
-            <Card className="border-zinc-800 bg-zinc-950/20">
+            <Card className="border-border bg-card/20">
               <CardContent className="p-5 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
                     Transaction History
                   </h3>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <div className="relative flex-1 sm:flex-none">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         placeholder="Search transactions..."
-                        className="pl-9 h-10 text-xs w-full sm:w-64 border-zinc-800"
+                        className="pl-9 h-10 text-xs w-full sm:w-64 border-border"
                       />
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-10 text-xs border-zinc-800 text-zinc-300"
+                      className="h-10 text-xs border-border text-foreground"
                     >
                       Filter
                     </Button>
@@ -752,14 +809,14 @@ const Wallet = () => {
                   {transactions.map((transaction) => (
                     <div
                       key={transaction.id}
-                      className="flex items-center justify-between p-4 rounded-2xl border border-zinc-900 bg-zinc-950/30 hover:bg-zinc-950/60 transition-colors"
+                      className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card/30 hover:bg-card/60 transition-colors"
                     >
                       <div className="flex items-center space-x-3.5 min-w-0">
                         <div
                           className={cn(
                             "p-2.5 rounded-xl shrink-0 border",
                             transaction.type === "credit"
-                              ? "bg-green-500/10 border-green-500/20 text-green-400"
+                              ? "bg-green-500/10 border-green-500/20 text-primary dark:text-green-400"
                               : "bg-red-500/10 border-red-500/20 text-red-400",
                           )}
                         >
@@ -770,10 +827,10 @@ const Wallet = () => {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-xs sm:text-sm text-white truncate">
+                          <p className="font-bold text-xs sm:text-sm text-foreground truncate">
                             {transaction.description}
                           </p>
-                          <p className="text-[10px] text-zinc-500 mt-0.5">
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
                             {transaction.date} • {transaction.time}
                           </p>
                         </div>
@@ -783,7 +840,7 @@ const Wallet = () => {
                           className={cn(
                             "font-bold text-xs sm:text-sm",
                             transaction.type === "credit"
-                              ? "text-green-400"
+                              ? "text-primary dark:text-green-400"
                               : "text-red-400",
                           )}
                         >

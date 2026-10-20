@@ -35,3 +35,5 @@ firestore.rules
 functions/serviceAccountKey.json
 client/firebaseConfig.js
 vite.config.server.ts
+playwright-report/
+test-results/

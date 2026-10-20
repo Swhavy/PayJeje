@@ -19,6 +19,7 @@ import {
   Eye,
   Calendar,
   CheckCircle,
+  RotateCcw,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
@@ -71,63 +72,121 @@ const Transactions = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4 h-[60vh] overflow-y-auto">
-            {trxn &&
-              trxn.map((transaction, index) => (
-                <div
-                  key={transaction.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                  onClick={() => handleTransactionClick(transaction)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
-                        transaction.narration === "credit"
-                          ? "bg-green-100 dark:bg-green-900"
-                          : "bg-red-100 dark:bg-red-900"
-                      }`}
-                    >
-                      {transaction.narration === "credit" ? (
-                        <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 dark:text-green-400" />
+            {trxn && trxn.length > 0 ? (
+              trxn.map((transaction, index) => {
+                const narrationLower = String(transaction.narration || "").toLowerCase();
+                const statusLower = String(transaction.status || "").toLowerCase();
+                const typeLower = String(transaction.type || "").toLowerCase();
+                const categoryLower = String(transaction.category || "").toLowerCase();
+
+                const isRefund =
+                  narrationLower.includes("refund") ||
+                  statusLower === "refunded" ||
+                  transaction.refunded === true;
+
+                const isCredit =
+                  isRefund ||
+                  typeLower === "credit" ||
+                  typeLower === "inflow" ||
+                  typeLower === "income" ||
+                  narrationLower === "credit" ||
+                  categoryLower === "deposit" ||
+                  categoryLower === "cashback" ||
+                  categoryLower === "earning" ||
+                  categoryLower === "referral";
+
+                let txDate = null;
+                if (transaction?.createdAt?.toDate) txDate = transaction.createdAt.toDate();
+                else if (transaction?.createdAt?.seconds) txDate = new Date(transaction.createdAt.seconds * 1000);
+                else if (transaction?.created_at) txDate = new Date(transaction.created_at);
+                else if (transaction?.timestamp?.toDate) txDate = transaction.timestamp.toDate();
+                else if (transaction?.timestamp) txDate = new Date(transaction.timestamp);
+                else if (transaction?.date) txDate = new Date(transaction.date);
+                else txDate = new Date();
+
+                const formattedDate = isNaN(txDate.getTime())
+                  ? "Recently"
+                  : txDate.toLocaleString("en-NG", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    });
+
+                return (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/70 cursor-pointer transition-colors"
+                    onClick={() => handleTransactionClick(transaction)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
+                          isRefund
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            : isCredit
+                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+                              : "bg-red-500/15 text-red-400 border border-red-500/20"
+                        }`}
+                      >
+                        {isRefund ? (
+                          <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                        ) : isCredit ? (
+                          <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                        ) : (
+                          <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground text-sm sm:text-base">
+                          {transaction.narration || "Transaction"}
+                        </p>
+                        <p className="text-xs sm:text-sm text-muted-foreground">
+                          {formattedDate}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p
+                        className={`font-semibold text-sm sm:text-base ${
+                          isCredit
+                            ? "text-emerald-400"
+                            : "text-red-400"
+                        }`}
+                      >
+                        {isCredit ? "+" : "-"}₦
+                        {Number(transaction.amount || 0).toLocaleString()}
+                      </p>
+                      {isRefund ? (
+                        <Badge
+                          className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs"
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Refunded
+                        </Badge>
+                      ) : statusLower === "failed" ? (
+                        <Badge
+                          variant="destructive"
+                          className="text-xs"
+                        >
+                          Failed
+                        </Badge>
                       ) : (
-                        <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
+                        <Badge
+                          variant="secondary"
+                          className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Done
+                        </Badge>
                       )}
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground text-sm sm:text-base">
-                        {transaction.narration}
-                      </p>
-                      <p className="text-xs sm:text-sm text-muted-foreground">
-                        {new Date(transaction.createdAt).toLocaleString(
-                          "en-NG",
-                          {
-                            dateStyle: "medium", // "Sep 3, 2025"
-                            timeStyle: "short", // "1:47 PM"
-                          },
-                        )}
-                      </p>
-                    </div>
                   </div>
-                  <div className="text-right">
-                    <p
-                      className={`font-semibold text-sm sm:text-base ${
-                        transaction.narration === "credit"
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}
-                    >
-                      {transaction.narration === "credit" ? "+" : "-"}₦
-                      {transaction.amount.toLocaleString()}
-                    </p>
-                    <Badge
-                      variant="secondary"
-                      className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
-                    >
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Done
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                );
+              })
+            ) : (
+              <p className="text-xs text-muted-foreground py-6 text-center">
+                No transactions found.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

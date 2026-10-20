@@ -48,6 +48,7 @@ import {
   Camera,
   MapPin,
   Calendar,
+  KeyRound,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSetting } from "@/components/customHook";
@@ -57,11 +58,17 @@ import PasswordResetModal from "@/components/confirmPasswordModal";
 import { setDoc, doc, collection, getDoc, updateDoc } from "firebase/firestore";
 import TwoFactorSetupModal from "@/components/twoFactorSetup";
 import Disable2FA from "@/components/disable2FA";
+import ChangeTransactionPinModal from "@/components/ChangeTransactionPinModal";
+import TransactionPinSetupModal from "@/components/TransactionPinSetupModal";
+import ResetTransactionPinModal from "@/components/ResetTransactionPinModal";
 import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [is2FAModalOpen, setIs2FAModalOpen] = useState(false);
+  const [isChangePinOpen, setIsChangePinOpen] = useState(false);
+  const [isSetupPinOpen, setIsSetupPinOpen] = useState(false);
+  const [isResetPinOpen, setIsResetPinOpen] = useState(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
   const [two2FA, setTwo2FA] = useState(false);
@@ -407,16 +414,16 @@ export default function SettingsPage() {
     <DashboardLayout>
       <div className="space-y-6 max-w-4xl mx-auto px-1 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-zinc-950/40 p-5 rounded-3xl border border-zinc-900/60">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-card/40 p-5 rounded-3xl border border-border/60">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white font-display tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-foreground font-display tracking-tight">
               Account Settings
             </h1>
-            <p className="text-zinc-400 text-xs sm:text-sm mt-1">
+            <p className="text-muted-foreground text-xs sm:text-sm mt-1">
               Manage your account preferences and security
             </p>
           </div>
-          <Badge className="bg-green-500/10 border border-green-500/25 text-green-400 w-fit rounded-xl px-3.5 py-1.5 flex items-center font-bold text-[11px] sm:text-xs uppercase tracking-wider">
+          <Badge className="bg-green-500/10 border border-green-500/25 text-primary dark:text-green-400 w-fit rounded-xl px-3.5 py-1.5 flex items-center font-bold text-[11px] sm:text-xs uppercase tracking-wider">
             <Shield className="h-4 w-4 mr-2" />
             Verified Account
           </Badge>
@@ -424,28 +431,28 @@ export default function SettingsPage() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="profile" className="space-y-5">
-          <TabsList className="flex w-full overflow-x-auto overflow-y-hidden justify-start sm:grid sm:grid-cols-4 bg-zinc-950/60 p-[.05rem] rounded-2xl border border-zinc-900 gap-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x">
+          <TabsList className="flex w-full overflow-x-auto overflow-y-hidden justify-start sm:grid sm:grid-cols-4 bg-card/60 p-[.05rem] rounded-2xl border border-border gap-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x">
             <TabsTrigger
               value="profile"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-zinc-400 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
             >
               Profile
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-zinc-400 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
             >
               Notifications
             </TabsTrigger>
             <TabsTrigger
               value="security"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-zinc-400 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
             >
               Security
             </TabsTrigger>
             <TabsTrigger
               value="preferences"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-zinc-400 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
             >
               Preferences
             </TabsTrigger>
@@ -456,21 +463,21 @@ export default function SettingsPage() {
             value="profile"
             className="space-y-5 animate-in fade-in-50 duration-200"
           >
-            <Card className="bg-zinc-950/45 border-zinc-900/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-zinc-900/60">
-                <CardTitle className="text-white text-lg sm:text-xl font-black font-display tracking-tight">
+            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
+                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
                   Profile Information
                 </CardTitle>
-                <CardDescription className="text-zinc-400 text-xs mt-1">
+                <CardDescription className="text-muted-foreground text-xs mt-1">
                   Update your personal information and profile details
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-5 sm:p-6 space-y-6">
                 {/* Profile Picture Profile Widget */}
-                <div className="flex flex-col sm:flex-row items-center gap-5 sm:gap-6 bg-zinc-950/50 p-4 sm:p-5 rounded-2xl border border-zinc-900/70">
+                <div className="flex flex-col sm:flex-row items-center gap-5 sm:gap-6 bg-card/50 p-4 sm:p-5 rounded-2xl border border-border/70">
                   <div className="relative w-20 h-20 bg-green-500/5 rounded-full flex items-center justify-center border border-green-500/15 shadow-inner shrink-0">
                     {uploading && (
-                      <div className="absolute inset-0 z-50 m-auto w-6 h-6 rounded-full animate-spin border-4 border-t-zinc-400 border-r-transparent border-b-zinc-400 border-l-transparent"></div>
+                      <div className="absolute inset-0 z-50 m-auto w-6 h-6 rounded-full animate-spin border-4 border-t-muted-foreground border-r-transparent border-b-zinc-400 border-l-transparent"></div>
                     )}
                     {userPhoto ? (
                       <img
@@ -479,13 +486,13 @@ export default function SettingsPage() {
                         alt="Profile DP"
                       />
                     ) : (
-                      <User className="h-10 w-10 text-green-400" />
+                      <User className="h-10 w-10 text-primary dark:text-green-400" />
                     )}
                   </div>
                   <div className="flex flex-col items-center sm:items-start gap-2.5 w-full">
                     <Button
                       variant="outline"
-                      className="border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-900 bg-transparent rounded-xl h-10 w-full sm:w-auto text-xs font-bold"
+                      className="border-border text-foreground hover:text-foreground hover:bg-muted bg-transparent rounded-xl h-10 w-full sm:w-auto text-xs font-bold"
                       onClick={handleButtonClick}
                     >
                       <input
@@ -495,10 +502,10 @@ export default function SettingsPage() {
                         accept="image/*"
                         className="hidden"
                       />
-                      <Camera className="h-4 w-4 mr-2 text-green-400" />
+                      <Camera className="h-4 w-4 mr-2 text-primary dark:text-green-400" />
                       Change Photo
                     </Button>
-                    <p className="text-[11px] text-zinc-500 text-center sm:text-left">
+                    <p className="text-[11px] text-muted-foreground text-center sm:text-left">
                       JPG, PNG or GIF. Max size 2MB.
                     </p>
                   </div>
@@ -509,7 +516,7 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="firstName"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       First Name
                     </Label>
@@ -520,14 +527,14 @@ export default function SettingsPage() {
                         setProfile({ ...profile, firstName: e.target.value })
                       }
                       readOnly
-                      className="bg-zinc-900/30 border-zinc-850 text-zinc-400 rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-zinc-800"
+                      className="bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="lastName"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Last Name
                     </Label>
@@ -538,19 +545,19 @@ export default function SettingsPage() {
                         setProfile({ ...profile, lastName: e.target.value })
                       }
                       readOnly
-                      className="bg-zinc-900/30 border-zinc-850 text-zinc-400 rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-zinc-800"
+                      className="bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="email"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Email Address
                     </Label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                      <Mail className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
                         id="email"
                         type="email"
@@ -559,7 +566,7 @@ export default function SettingsPage() {
                           setProfile({ ...profile, email: e.target.value })
                         }
                         readOnly
-                        className="pl-10 bg-zinc-900/30 border-zinc-850 text-zinc-400 rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-zinc-800"
+                        className="pl-10 bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
                       />
                     </div>
                   </div>
@@ -567,12 +574,12 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="phone"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Phone Number
                     </Label>
                     <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                      <Phone className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
                         id="phone"
                         value={profile.phone}
@@ -580,7 +587,7 @@ export default function SettingsPage() {
                           setProfile({ ...profile, phone: e.target.value })
                         }
                         readOnly
-                        className="pl-10 bg-zinc-900/30 border-zinc-850 text-zinc-400 rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-zinc-800"
+                        className="pl-10 bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
                       />
                     </div>
                   </div>
@@ -588,12 +595,12 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="dateOfBirth"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Date of Birth
                     </Label>
                     <div className="relative">
-                      <Calendar className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                      <Calendar className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
                         id="dateOfBirth"
                         type="date"
@@ -604,7 +611,7 @@ export default function SettingsPage() {
                             dateOfBirth: e.target.value,
                           })
                         }
-                        className="pl-10 bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
+                        className="pl-10 bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
                       />
                     </div>
                   </div>
@@ -612,12 +619,12 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="location"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Location
                     </Label>
                     <div className="relative">
-                      <MapPin className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                      <MapPin className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
                         id="location"
                         value={profile.location}
@@ -625,7 +632,7 @@ export default function SettingsPage() {
                           setProfile({ ...profile, location: e.target.value })
                         }
                         readOnly
-                        className="pl-10 bg-zinc-900/30 border-zinc-850 text-zinc-400 rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-zinc-800"
+                        className="pl-10 bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
                       />
                     </div>
                   </div>
@@ -634,7 +641,7 @@ export default function SettingsPage() {
                 <div className="flex justify-end pt-2">
                   <Button
                     onClick={handleSaveProfile}
-                    className="bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/20 cursor-not-allowed h-11 px-6 rounded-xl w-full sm:w-auto font-bold text-xs uppercase tracking-wider"
+                    className="bg-green-500/20 hover:bg-green-500/30 text-primary dark:text-green-400 border border-green-500/20 cursor-not-allowed h-11 px-6 rounded-xl w-full sm:w-auto font-bold text-xs uppercase tracking-wider"
                     disabled={true}
                   >
                     <Save className="h-4 w-4 mr-2" />
@@ -646,12 +653,12 @@ export default function SettingsPage() {
 
             {/* Change Password */}
             {updatePasswordVisibilty && (
-              <Card className="bg-zinc-950/45 border-zinc-900/80 rounded-3xl overflow-hidden shadow-2xl">
-                <CardHeader className="p-5 sm:p-6 border-b border-zinc-900/60">
-                  <CardTitle className="text-white text-lg sm:text-xl font-black font-display tracking-tight">
+              <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
+                <CardHeader className="p-5 sm:p-6 border-b border-border/60">
+                  <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
                     Change Password
                   </CardTitle>
-                  <CardDescription className="text-zinc-400 text-xs mt-1">
+                  <CardDescription className="text-muted-foreground text-xs mt-1">
                     Update your password to keep your account secure
                   </CardDescription>
                 </CardHeader>
@@ -659,7 +666,7 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="currentPassword"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Current Password
                     </Label>
@@ -670,13 +677,13 @@ export default function SettingsPage() {
                         value={credentialSet.currentPassword}
                         onChange={controlledInput}
                         type={showCurrentPassword ? "text" : "password"}
-                        className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
+                        className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-0 top-0 h-full px-3 text-zinc-500 hover:text-zinc-300"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                         onClick={() =>
                           setShowCurrentPassword(!showCurrentPassword)
                         }
@@ -693,7 +700,7 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="newPassword"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       New Password
                     </Label>
@@ -704,13 +711,13 @@ export default function SettingsPage() {
                         value={credentialSet.newPassword}
                         type={showNewPassword ? "text" : "password"}
                         onChange={controlledInput}
-                        className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
+                        className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-0 top-0 h-full px-3 text-zinc-500 hover:text-zinc-300"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                         onClick={() => setShowNewPassword(!showNewPassword)}
                       >
                         {showNewPassword ? (
@@ -725,7 +732,7 @@ export default function SettingsPage() {
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="confirmPassword"
-                      className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
+                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
                     >
                       Confirm New Password
                     </Label>
@@ -736,13 +743,13 @@ export default function SettingsPage() {
                         value={credentialSet.confirmPassword}
                         type={showConfirmPassword ? "text" : "password"}
                         onChange={controlledInput}
-                        className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
+                        className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-0 top-0 h-full px-3 text-zinc-500 hover:text-zinc-300"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                         onClick={() =>
                           setShowConfirmPassword(!showConfirmPassword)
                         }
@@ -784,27 +791,27 @@ export default function SettingsPage() {
             value="notifications"
             className="space-y-5 animate-in fade-in-50 duration-200"
           >
-            <Card className="bg-zinc-950/45 border-zinc-900/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-zinc-900/60">
-                <CardTitle className="text-white text-lg sm:text-xl font-black font-display tracking-tight">
+            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
+                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
                   Notification Preferences
                 </CardTitle>
-                <CardDescription className="text-zinc-400 text-xs mt-1">
+                <CardDescription className="text-muted-foreground text-xs mt-1">
                   Choose how you want to receive notifications
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-5 sm:p-6 space-y-6">
                 <div className="space-y-3.5">
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-950/40 border border-zinc-900/60 hover:bg-zinc-900/10 transition-colors">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400 shrink-0">
                         <Mail className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Email Notifications
                         </Label>
-                        <p className="text-xs text-zinc-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           Receive notifications via email
                         </p>
                       </div>
@@ -820,16 +827,16 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-950/40 border border-zinc-900/60 hover:bg-zinc-900/10 transition-colors">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 shrink-0">
+                      <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-primary dark:text-green-400 shrink-0">
                         <Smartphone className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Push Notifications
                         </Label>
-                        <p className="text-xs text-zinc-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           Receive push notifications on your device
                         </p>
                       </div>
@@ -845,16 +852,16 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-950/40 border border-zinc-900/60 hover:bg-zinc-900/10 transition-colors">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400 shrink-0">
                         <Phone className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           SMS Notifications
                         </Label>
-                        <p className="text-xs text-zinc-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           Receive important updates via SMS
                         </p>
                       </div>
@@ -871,17 +878,17 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-zinc-900/60 pt-6">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-400 mb-4">
+                <div className="border-t border-border/60 pt-6">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-4">
                     Notification Types
                   </h4>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 pr-4">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Marketing & Promotions
                         </Label>
-                        <p className="text-xs text-zinc-400 leading-relaxed">
+                        <p className="text-xs text-muted-foreground leading-relaxed">
                           Special offers and promotional content
                         </p>
                       </div>
@@ -898,10 +905,10 @@ export default function SettingsPage() {
 
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 pr-4">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Survey Invitations
                         </Label>
-                        <p className="text-xs text-zinc-400 leading-relaxed">
+                        <p className="text-xs text-muted-foreground leading-relaxed">
                           New survey opportunities
                         </p>
                       </div>
@@ -918,10 +925,10 @@ export default function SettingsPage() {
 
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 pr-4">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Rewards & Points
                         </Label>
-                        <p className="text-xs text-zinc-400 leading-relaxed">
+                        <p className="text-xs text-muted-foreground leading-relaxed">
                           Point earnings and reward updates
                         </p>
                       </div>
@@ -962,27 +969,27 @@ export default function SettingsPage() {
             value="security"
             className="space-y-5 animate-in fade-in-50 duration-200"
           >
-            <Card className="bg-zinc-950/45 border-zinc-900/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-zinc-900/60">
-                <CardTitle className="text-white text-lg sm:text-xl font-black font-display tracking-tight">
+            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
+                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
                   Security Settings
                 </CardTitle>
-                <CardDescription className="text-zinc-400 text-xs mt-1">
+                <CardDescription className="text-muted-foreground text-xs mt-1">
                   Manage your account security and privacy
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-5 sm:p-6 space-y-6">
                 <div className="space-y-3.5">
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-950/40 border border-zinc-900/60 hover:bg-zinc-900/10 transition-colors">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 shrink-0">
+                      <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-primary dark:text-green-400 shrink-0">
                         <Shield className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Two-Factor Authentication
                         </Label>
-                        <p className="text-xs text-zinc-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           Add an extra layer of security to your account
                         </p>
                       </div>
@@ -1002,16 +1009,16 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-950/40 border border-zinc-900/60 hover:bg-zinc-900/10 transition-colors">
+                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400 shrink-0">
                         <Bell className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <Label className="text-sm font-bold text-white block">
+                        <Label className="text-sm font-bold text-foreground block">
                           Login Alerts
                         </Label>
-                        <p className="text-xs text-zinc-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           Get notified of new login attempts
                         </p>
                       </div>
@@ -1026,10 +1033,71 @@ export default function SettingsPage() {
                       }
                     />
                   </div>
+
+                  {/* Transaction PIN Management Card */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors gap-3.5">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-500 shrink-0">
+                        <KeyRound className="h-4.5 w-4.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-sm font-bold text-foreground block">
+                            Transaction PIN
+                          </Label>
+                          {userData?.hasTransactionPin ? (
+                            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold px-2 py-0.5">
+                              Active
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] font-bold px-2 py-0.5">
+                              Not Set
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          4-digit secret PIN required to authorize every purchase
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 sm:self-center self-end">
+                      {userData?.hasTransactionPin ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsChangePinOpen(true)}
+                            className="h-9 px-3.5 rounded-xl text-xs font-bold border-border/80 hover:bg-muted/50"
+                          >
+                            Change PIN
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsResetPinOpen(true)}
+                            className="h-9 px-3 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                          >
+                            Reset PIN
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => setIsSetupPinOpen(true)}
+                          className="h-9 px-3.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-bold shadow-sm"
+                        >
+                          Create PIN
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2 border-t border-zinc-900/60 pt-6">
-                  <Label className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider block mb-1">
+                <div className="space-y-2 border-t border-border/60 pt-6">
+                  <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block mb-1">
                     Session Timeout
                   </Label>
                   <Select
@@ -1039,43 +1107,43 @@ export default function SettingsPage() {
                       console.log("session timeout change", value);
                     }}
                   >
-                    <SelectTrigger className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 focus:border-green-500">
+                    <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
                       <SelectValue placeholder="Select Timeout" />
                     </SelectTrigger>
-                    <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                    <SelectContent className="bg-card border-border text-foreground">
                       <SelectItem
                         value="15min"
-                        className="text-white hover:bg-zinc-900 focus:bg-zinc-900"
+                        className="text-foreground hover:bg-muted focus:bg-muted"
                       >
                         15 minutes
                       </SelectItem>
                       <SelectItem
                         value="30min"
-                        className="text-white hover:bg-zinc-900 focus:bg-zinc-900"
+                        className="text-foreground hover:bg-muted focus:bg-muted"
                       >
                         30 minutes
                       </SelectItem>
                       <SelectItem
                         value="0.5min"
-                        className="text-white hover:bg-zinc-900 focus:bg-zinc-900"
+                        className="text-foreground hover:bg-muted focus:bg-muted"
                       >
                         0.5 minutes
                       </SelectItem>
                       <SelectItem
                         value="1hour"
-                        className="text-white hover:bg-zinc-900 focus:bg-zinc-900"
+                        className="text-foreground hover:bg-muted focus:bg-muted"
                       >
                         1 hour
                       </SelectItem>
                       <SelectItem
                         value="never"
-                        className="text-white hover:bg-zinc-900 focus:bg-zinc-900"
+                        className="text-foreground hover:bg-muted focus:bg-muted"
                       >
                         Never
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-zinc-500 mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     Automatically log out after this period of inactivity
                   </p>
                 </div>
@@ -1104,19 +1172,19 @@ export default function SettingsPage() {
             value="preferences"
             className="space-y-5 animate-in fade-in-50 duration-200"
           >
-            <Card className="bg-zinc-950/45 border-zinc-900/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-zinc-900/60">
-                <CardTitle className="text-white text-lg sm:text-xl font-black font-display tracking-tight">
+            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
+              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
+                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
                   App Preferences
                 </CardTitle>
-                <CardDescription className="text-zinc-400 text-xs mt-1">
+                <CardDescription className="text-muted-foreground text-xs mt-1">
                   Customize your app experience
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-5 sm:p-6 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-1.5">
-                    <Label className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
+                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
                       Language
                     </Label>
                     <Select
@@ -1125,31 +1193,31 @@ export default function SettingsPage() {
                         setPreferences({ ...preferences, language: value })
                       }
                     >
-                      <SelectTrigger className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                      <SelectContent className="bg-card border-border text-foreground">
                         <SelectItem
                           value="en"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           English
                         </SelectItem>
                         <SelectItem
                           value="yo"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Yoruba
                         </SelectItem>
                         <SelectItem
                           value="ig"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Igbo
                         </SelectItem>
                         <SelectItem
                           value="ha"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Hausa
                         </SelectItem>
@@ -1158,7 +1226,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
+                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
                       Currency
                     </Label>
                     <Select
@@ -1167,31 +1235,31 @@ export default function SettingsPage() {
                         setPreferences({ ...preferences, currency: value })
                       }
                     >
-                      <SelectTrigger className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                      <SelectContent className="bg-card border-border text-foreground">
                         <SelectItem
                           value="NGN"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Nigerian Naira (₦)
                         </SelectItem>
                         <SelectItem
                           value="USD"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           US Dollar ($)
                         </SelectItem>
                         <SelectItem
                           value="EUR"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Euro (€)
                         </SelectItem>
                         <SelectItem
                           value="GBP"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           British Pound (£)
                         </SelectItem>
@@ -1200,7 +1268,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
+                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
                       Timezone
                     </Label>
                     <Select
@@ -1209,25 +1277,25 @@ export default function SettingsPage() {
                         setPreferences({ ...preferences, timezone: value })
                       }
                     >
-                      <SelectTrigger className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                      <SelectContent className="bg-card border-border text-foreground">
                         <SelectItem
                           value="Africa/Lagos"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Lagos (WAT)
                         </SelectItem>
                         <SelectItem
                           value="Africa/Abuja"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Abuja (WAT)
                         </SelectItem>
                         <SelectItem
                           value="UTC"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           UTC
                         </SelectItem>
@@ -1236,7 +1304,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-zinc-400 text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
+                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
                       Theme
                     </Label>
                     <Select
@@ -1254,25 +1322,25 @@ export default function SettingsPage() {
                         return setPreferences({ ...preferences, theme: value });
                       }}
                     >
-                      <SelectTrigger className="bg-zinc-950/60 border-zinc-800/80 text-white rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                      <SelectContent className="bg-card border-border text-foreground">
                         <SelectItem
                           value="light"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Light
                         </SelectItem>
                         <SelectItem
                           value="dark"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           Dark
                         </SelectItem>
                         <SelectItem
                           value="system"
-                          className="text-white hover:bg-zinc-900"
+                          className="text-foreground hover:bg-muted"
                         >
                           System
                         </SelectItem>
@@ -1360,6 +1428,26 @@ export default function SettingsPage() {
             }
           />
         )}
+
+        {/* Change Transaction PIN Modal */}
+        <ChangeTransactionPinModal
+          isOpen={isChangePinOpen}
+          onClose={() => setIsChangePinOpen(false)}
+        />
+
+        {/* Reset Transaction PIN Modal */}
+        <ResetTransactionPinModal
+          isOpen={isResetPinOpen}
+          onClose={() => setIsResetPinOpen(false)}
+          onSuccess={() => setIsResetPinOpen(false)}
+        />
+
+        {/* Create Transaction PIN Modal */}
+        <TransactionPinSetupModal
+          isOpen={isSetupPinOpen}
+          onClose={() => setIsSetupPinOpen(false)}
+          onSuccess={() => setIsSetupPinOpen(false)}
+        />
       </div>
     </DashboardLayout>
   );

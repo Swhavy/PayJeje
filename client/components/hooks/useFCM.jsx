@@ -8,7 +8,7 @@ const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
 export const useFCM = (uid) => {
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !messaging) return;
 
     const registerToken = async () => {
       try {

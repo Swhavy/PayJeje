@@ -239,12 +239,9 @@ export default function RegisterPage() {
       if (field.password !== field.cpassword) {
         toast.error("Passwords do not match");
         setIsLoading(false);
-        throw new Error("Passwords do not match");
-      } //else if (field.gender !== "male" || field.gender !== "female") {
-      //   toast.error("Please specify your gender");
-      //   setIsLoading(false);
-      //   return;
-      // }
+        setAppContext({ ...appContext, spinner: false });
+        return;
+      }
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         field.email,
@@ -616,7 +613,7 @@ export default function RegisterPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                className="w-full bg-green-600 hover:bg-green-700 text-foreground"
                 disabled={isLoading || oauthLoading !== null}
               >
                 {isLoading ? "Creating account..." : "Create Account"}

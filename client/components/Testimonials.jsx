@@ -51,7 +51,7 @@ export default function Testimonials() {
   return (
     <section
       id="reviews"
-      className="py-24 bg-[#0a1628] border-b border-[#1d3a6a]/30 relative overflow-hidden"
+      className="py-24 bg-card border-b border-[#1d3a6a]/30 relative overflow-hidden"
     >
       {/* Decorative Blur Backgrounds */}
       <div className="absolute top-1/4 right-0 w-[450px] h-[450px] rounded-full bg-[#00c96e]/2 blur-[120px] pointer-events-none" />
