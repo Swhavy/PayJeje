@@ -29,7 +29,6 @@ dist-ssr
 .env
 firebase.json
 firestore.indexes.json
-firestore.rules
 # functions/package.json
 # functions/package-lock.json
 functions/serviceAccountKey.json

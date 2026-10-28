@@ -1,0 +1,141 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users Collection
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Allow creation if authenticated user owns the document and doesn't inject protected fields
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !('walletBalance' in request.resource.data.keys())
+        && !('account_reference' in request.resource.data.keys())
+        && !('role' in request.resource.data.keys())
+        && !('isAdmin' in request.resource.data.keys())
+        && !('vendorId' in request.resource.data.keys())
+        && !('vendorRole' in request.resource.data.keys())
+        && !('vendorBranch' in request.resource.data.keys())
+        && !('cashierName' in request.resource.data.keys())
+        && !('hasTransactionPin' in request.resource.data.keys())
+        && (!('points' in request.resource.data.keys()) || (request.resource.data.points is int && request.resource.data.points == 0));
+
+      // Allow updates if authenticated user owns document and does not modify protected fields (points, wallet, role, admin, vendor, pin)
+      allow update: if request.auth != null && request.auth.uid == userId
+        && resource != null
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['walletBalance', 'account_reference', 'role', 'isAdmin', 'vendorId', 'vendorRole', 'vendorBranch', 'cashierName', 'hasTransactionPin', 'points']);
+
+      allow delete: if false;
+
+      // Private Security Subcollection (Strictly forbidden for client SDKs)
+      match /private_security/{docId} {
+        allow read, write: if false;
+      }
+
+      // Transactions Subcollection (Read-only for owner, writes strictly forbidden for client SDKs)
+      match /Transactions/{txId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      // Points Ledger Subcollection (Read-only for owner, writes strictly forbidden for client SDKs)
+      match /points/{ledgerId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      // Meal Claims & Lifetime Tracking Subcollection (Read-only for owner, writes strictly forbidden for client SDKs)
+      match /mealClaims/{offerId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      // Allow other user non-sensitive subcollections (KYC, Achievements, notificationSettings, referrals, etc.)
+      match /{collection}/{docId} {
+        allow read: if request.auth != null && request.auth.uid == userId
+          && !(collection in ['private_security']);
+        allow write: if request.auth != null && request.auth.uid == userId
+          && !(collection in ['private_security', 'Transactions', 'transactions', 'points', 'mealClaims']);
+      }
+    }
+
+    // Top-Level Transactions Collection (Read-only for owner, writes strictly forbidden for client SDKs)
+    match /transactions/{txId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    // =========================================================================
+    // MEAL REWARDS & COUPON SYSTEM (PHASE 3 COLLECTIONS)
+    // =========================================================================
+
+    // Meal Vendors Collection (Publicly readable by authenticated users, server-managed)
+    match /meal_vendors/{vendorId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Meal Campaigns Collection (STRICT LOCKDOWN: Server-only ledger; client SDK reads and writes strictly forbidden)
+    match /meal_campaigns/{campaignId} {
+      allow read, write: if false;
+    }
+
+    // Public Meal Offers Projection Collection (Read-only for authenticated customer discovery, server-managed)
+    match /public_meal_offers/{offerId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Quarantined Meal Campaigns Audit Collection (Server-only; direct client reads and writes strictly forbidden)
+    match /quarantined_meal_campaigns/{campaignId} {
+      allow read, write: if false;
+    }
+
+    // Verification Runs Collection (Server-only; direct client reads and writes strictly forbidden)
+    match /verification_runs/{runId} {
+      allow read, write: if false;
+    }
+
+    // Meal Vouchers Collection (Read-only by owning customer only; merchant validation & redemption use protected backend callables)
+    match /meal_vouchers/{voucherId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Meal Redemptions Immutable Audit Collection (Server-only ledger; direct client reads and writes strictly forbidden)
+    match /meal_redemptions/{redemptionId} {
+      allow read, write: if false;
+    }
+
+    // Quarantined Meal Vouchers Audit Collection (Server-only; direct client reads and writes strictly forbidden)
+    match /quarantined_meal_vouchers/{voucherId} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // ADMIN & OPERATIONAL COLLECTIONS (FORBIDDEN FOR CLIENT SDKs)
+    // =========================================================================
+    match /owed_refunds/{docId} {
+      allow read, write: if false;
+    }
+
+    match /manual_review_queue/{docId} {
+      allow read, write: if false;
+    }
+
+    match /reconciliation_alerts/{docId} {
+      allow read, write: if false;
+    }
+
+    match /system_failed_payouts/{docId} {
+      allow read, write: if false;
+    }
+
+    match /admin_audit_logs/{docId} {
+      allow read, write: if false;
+    }
+
+    match /meal_idempotency_records/{docId} {
+      allow read, write: if false;
+    }
+  }
+}
