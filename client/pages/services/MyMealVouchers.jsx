@@ -20,6 +20,7 @@ import {
 import DashboardLayout from "@/components/DashboardLayout";
 import MealFloatingNav from "@/components/meals/MealFloatingNav";
 import { db, auth, collection, query, where, onSnapshot } from "@/firebaseConfig";
+import { resolveBundledMealImage } from "@/lib/mealOfferUtils";
 import { getMealOfferById, getVendorById } from "@/fixtures/mealFixtures";
 
 export default function MyMealVouchersPage() {
@@ -66,9 +67,17 @@ export default function MyMealVouchersPage() {
             const offerMeta = getMealOfferById(data.offerId);
             const vendorMeta = getVendorById(data.vendorId);
 
-            const discountNaira = Number(data.discountNaira || offerMeta?.discountAmount || 500);
-            const minSpendNaira = Number(data.minSpendNaira || offerMeta?.minSpend || 2500);
-            const discountDisplay = `₦${discountNaira.toLocaleString()} OFF`;
+            const discountNaira = Number.isFinite(Number(data.discountNaira))
+              ? Number(data.discountNaira)
+              : Number.isFinite(Number(offerMeta?.discountAmount))
+              ? Number(offerMeta.discountAmount)
+              : 0;
+            const minSpendNaira = Number.isFinite(Number(data.minSpendNaira))
+              ? Number(data.minSpendNaira)
+              : Number.isFinite(Number(offerMeta?.minSpend))
+              ? Number(offerMeta.minSpend)
+              : 0;
+            const discountDisplay = discountNaira > 0 ? `₦${discountNaira.toLocaleString()} OFF` : "Discount";
 
             const expiresMs = data.expiresAt?.toMillis
               ? data.expiresAt.toMillis()
@@ -95,13 +104,24 @@ export default function MyMealVouchersPage() {
               ? data.createdAt.toMillis()
               : 0;
 
+            const voucherImage =
+              offerMeta?.image ||
+              resolveBundledMealImage(
+                data.category || offerMeta?.category,
+                data.title || offerMeta?.title,
+                data.vendorName || vendorMeta?.name
+              );
+
             return {
               id: docSnap.id,
               offerId: data.offerId,
               vendorId: data.vendorId || offerMeta?.vendorId,
               vendorName: data.vendorName || vendorMeta?.name || offerMeta?.vendorName || "PayWaka Partner Food",
               vendorBranch: data.redeemedVendorBranch || vendorMeta?.branch || offerMeta?.branch || "Lagos Branches",
-              title: offerMeta?.title || `₦${discountNaira.toLocaleString()} Meal Discount Voucher`,
+              title:
+                data.title ||
+                offerMeta?.title ||
+                (data.vendorName ? `${data.vendorName} Meal Voucher` : "Meal Discount Voucher"),
               discountAmount: discountNaira,
               discountDisplay,
               minSpend: minSpendNaira,
@@ -109,8 +129,8 @@ export default function MyMealVouchersPage() {
               pin: data.voucherPin || "",
               status: effectiveStatus,
               rawStatus: data.status,
-              category: offerMeta?.category || vendorMeta?.category || "Local Delicacies",
-              image: offerMeta?.image || "/meals/jollof-chicken.png",
+              category: data.category || offerMeta?.category || vendorMeta?.category || "Local Delicacies",
+              image: voucherImage,
               timeText,
               hoursRemaining,
               expiresAt: data.expiresAt,

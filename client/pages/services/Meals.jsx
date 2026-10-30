@@ -22,12 +22,14 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import MealFloatingNav from "@/components/meals/MealFloatingNav";
-import { db, auth, doc, onSnapshot } from "@/firebaseConfig";
+import { db, auth, doc, collection, onSnapshot } from "@/firebaseConfig";
 import {
-  MEAL_CATEGORIES,
-  getMealOffers,
-  getUserVouchers,
-} from "@/fixtures/mealFixtures";
+  resolveOfferAvailability,
+  validatePublicOfferTerms,
+  validateOfferIdentity,
+  resolveBundledMealImage,
+} from "@/lib/mealOfferUtils";
+import { MEAL_CATEGORIES } from "@/fixtures/mealFixtures";
 
 const HERO_PHRASES = [
   { text: "Something Delicious", type: "ember" },
@@ -212,9 +214,107 @@ export default function MealsPage() {
     };
   }, [prefersReducedMotion]);
 
-  const allOffers = getMealOffers();
-  const featuredOffer = allOffers.find((o) => o.isFeatured) || allOffers[0];
-  const regularOffers = allOffers.filter((o) => o.id !== featuredOffer?.id);
+  // Real-time Public Meal Offers & Customer Claims Subscriptions
+  const [offers, setOffers] = useState([]);
+  const [offersLoading, setOffersLoading] = useState(true);
+  const [offersError, setOffersError] = useState(null);
+  const [userClaimsMap, setUserClaimsMap] = useState({});
+
+  useEffect(() => {
+    setOffersLoading(true);
+    setOffersError(null);
+
+    const unsub = onSnapshot(
+      collection(db, "public_meal_offers"),
+      (snapshot) => {
+        const validOffers = [];
+        snapshot.forEach((docSnap) => {
+          const ident = validateOfferIdentity(docSnap);
+          if (!ident.isValid) {
+            console.warn(`[Meals Marketplace] Skipping invalid public offer projection ${docSnap.id}:`, ident.reason);
+            return;
+          }
+          const data = docSnap.data();
+          const terms = validatePublicOfferTerms(data);
+          if (!terms.isValid) {
+            console.warn(`[Meals Marketplace] Skipping offer with invalid commercial terms ${docSnap.id}:`, terms.reason);
+            return;
+          }
+          const avail = resolveOfferAvailability(data);
+          const image = resolveBundledMealImage(data.category, data.title, data.vendorName);
+
+          validOffers.push({
+            id: docSnap.id,
+            campaignId: ident.canonicalCampaignId,
+            offerId: ident.canonicalOfferId,
+            isLegacyIdentity: ident.isLegacyIdentity,
+            title: data.title,
+            vendorId: data.vendorId,
+            vendorName: data.vendorName,
+            branch: data.branch || "Lagos Partner Spot",
+            category: data.category || "Local Delicacies",
+            discountNaira: terms.discountNaira,
+            minSpendNaira: terms.minSpendNaira,
+            pointsCost: terms.pointsCost,
+            discountDisplay: terms.discountDisplay,
+            minSpend: terms.minSpendNaira,
+            image: data.image || image,
+            status: data.status,
+            isAvailable: data.isAvailable,
+            availability: avail,
+            isFeatured: Boolean(data.isFeatured),
+            spotlightBadge: data.spotlightBadge || "Partner Spotlight",
+          });
+        });
+        setOffers(validOffers);
+        setOffersLoading(false);
+      },
+      (err) => {
+        console.error("[Meals Marketplace] Error listening to public_meal_offers:", err);
+        setOffersError("Unable to load meal offers at this time. Please check your connection.");
+        setOffersLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUid) {
+      setUserClaimsMap({});
+      return;
+    }
+    const unsubClaims = onSnapshot(
+      collection(db, "users", currentUid, "mealClaims"),
+      (snapshot) => {
+        const claims = {};
+        const nowMs = Date.now();
+        snapshot.forEach((claimDoc) => {
+          const cData = claimDoc.data();
+          const activeExpiresAtMs = cData.activeVoucherExpiresAt?.toMillis
+            ? cData.activeVoucherExpiresAt.toMillis()
+            : cData.activeVoucherExpiresAt?.toDate
+            ? cData.activeVoucherExpiresAt.toDate().getTime()
+            : new Date(cData.activeVoucherExpiresAt || 0).getTime();
+          const hasActive = Boolean(cData.activeVoucherId && nowMs < activeExpiresAtMs);
+          claims[claimDoc.id] = {
+            ...cData,
+            hasActiveVoucher: hasActive,
+            activeVoucherId: hasActive ? cData.activeVoucherId : null,
+            lifetimeClaimCount: Number(cData.lifetimeClaimCount || 0),
+          };
+        });
+        setUserClaimsMap(claims);
+      },
+      (err) => {
+        console.warn("[Meals Marketplace] Claims subscription error:", err);
+      }
+    );
+    return () => unsubClaims();
+  }, [currentUid]);
+
+  const featuredOffer = offers.find((o) => o.isFeatured) || offers[0] || null;
+  const regularOffers = featuredOffer ? offers.filter((o) => o.id !== featuredOffer.id) : offers;
 
   const filteredOffers = regularOffers.filter((offer) => {
     if (selectedCategory === "all") return true;
@@ -225,7 +325,12 @@ export default function MealsPage() {
     return true;
   });
 
-  const activeVouchers = getUserVouchers("active");
+  const getBadgeClass = (style) => {
+    if (style === "emerald") return "bg-[#05140e]/90 text-[#44e092] border-[#44e092]/30";
+    if (style === "rose") return "bg-[#2a0d13]/90 text-[#ff8093] border-[#ff4d6d]/40";
+    if (style === "amber") return "bg-[#2a1a08]/90 text-[#ffb03a] border-[#ffb03a]/40";
+    return "bg-[#1a1c20]/90 text-zinc-400 border-zinc-700";
+  };
 
   return (
     <DashboardLayout>
@@ -500,215 +605,306 @@ export default function MealsPage() {
           </div>
         </section>
 
-        {/* SECTION 2: FEATURED MEAL REWARD SPOTLIGHT (SMOOTH EMERALD GRADIENT) */}
-        {featuredOffer && (
-          <section className="py-4">
-            <div className="flex items-center justify-between mb-3.5">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-[#44e092]" />
-                <h3 className="text-lg font-bold text-white tracking-tight">Featured Partner</h3>
-              </div>
-              <span className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold whitespace-nowrap">
-                Curated Selection
-              </span>
-            </div>
-
-            <div className="relative overflow-hidden rounded-[26px] bg-gradient-to-b from-[#0b1c14] via-[#0f1d17] to-[#14171a] shadow-2xl border border-[#44e092]/35 transition-all hover:border-[#44e092]/65 hover:shadow-[0_16px_40px_rgba(68,224,146,0.15)]">
-              <div className="relative w-full h-56 sm:h-64 lg:h-72 overflow-hidden">
-                <img
-                  src={featuredOffer.image}
-                  alt={featuredOffer.title}
-                  className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0b1c14] via-[#0b1c14]/40 to-transparent" />
-
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                  <span className="px-3.5 py-1.5 rounded-full bg-[#05140e]/90 backdrop-blur-md text-[#44e092] text-xs font-bold shadow-sm flex items-center gap-1.5 border border-[#44e092]/30 whitespace-nowrap">
-                    <Sparkles className="w-3.5 h-3.5 text-[#44e092]" />
-                    {featuredOffer.spotlightBadge || "Partner Spotlight"}
-                  </span>
-
-                  {/* Phase 3 Claim Limit Badge */}
-                  <span className="px-3.5 py-1.5 rounded-full bg-[#05140e]/90 text-xs font-semibold text-zinc-300 border border-white/10 whitespace-nowrap shadow-sm">
-                    {featuredOffer.lifetimeClaimCount}/2 Claims Used
-                  </span>
-                </div>
-
-                <div className="absolute bottom-3 left-4 flex items-baseline gap-2">
-                  <span className="text-3xl sm:text-4xl font-black text-[#ff6b00] tracking-tight leading-none drop-shadow-[0_2px_16px_rgba(255,107,0,0.35)]">
-                    {featuredOffer.discountDisplay}
-                  </span>
-                  <span className="text-xs bg-[#05140e]/85 px-3 py-1 rounded-full text-zinc-300 font-medium border border-white/10 whitespace-nowrap shadow-sm">
-                    Instant Voucher
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-5 sm:p-6 flex flex-col gap-3.5">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h4 className="text-lg font-bold text-white">{featuredOffer.vendorName}</h4>
-                    <div className="flex items-center gap-1 text-zinc-400 text-xs mt-1">
-                      <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>{featuredOffer.branch}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-lg font-black text-white">{featuredOffer.pointsCost} pts</span>
-                    <div className="text-xs text-zinc-400">required</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-zinc-300 text-xs bg-gradient-to-r from-[#07170f] via-[#0b1d14] to-[#101915] px-4 py-3 rounded-xl border border-[#44e092]/25">
-                  <span className="flex items-center gap-1.5">
-                    <Receipt className="w-4 h-4 text-zinc-400" />
-                    Min. purchase: ₦{featuredOffer.minSpend?.toLocaleString()}
-                  </span>
-                  <span className="text-[#44e092] flex items-center gap-1 font-bold whitespace-nowrap">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    {pointsBalance >= featuredOffer.pointsCost ? "Sufficient Balance" : "Need points"}
-                  </span>
-                </div>
-
-                {featuredOffer.hasActiveVoucher ? (
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/services/meals/voucher/${featuredOffer.activeVoucherId || "vch-act-1"}`)}
-                    className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#004729] hover:bg-[#00522f] border border-[#44e092]/40 text-[#44e092] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(68,224,146,0.25)] transition-all whitespace-nowrap"
-                  >
-                    <Ticket className="w-4 h-4 flex-shrink-0" />
-                    <span className="whitespace-nowrap">Active Voucher in Wallet (Show Ticket)</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/services/meals/coupon/${featuredOffer.id}`)}
-                    className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#ff6b00] hover:bg-[#ff7a1a] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(255,107,0,0.35)] active:scale-[0.98] transition-all whitespace-nowrap"
-                  >
-                    <span className="whitespace-nowrap">Redeem Reward</span>
-                    <ChevronRight className="w-4 h-4 flex-shrink-0" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* SECTION 3: CATEGORY FILTER CHIPS */}
-        <section className="py-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold text-white">Categories</span>
-            <span className="text-xs text-zinc-400 font-medium">Lagos Partner Spots</span>
+        {/* REAL-TIME MARKETPLACE CONTENT */}
+        {offersLoading ? (
+          <div className="py-16 flex flex-col items-center justify-center gap-4 text-center">
+            <div className="w-12 h-12 rounded-full border-2 border-[#44e092] border-t-transparent animate-spin" />
+            <span className="text-zinc-400 text-sm font-medium">Discovering live meal rewards from verified partners...</span>
           </div>
+        ) : offersError ? (
+          <div className="my-6 p-6 rounded-2xl bg-[#2a0d13]/60 border border-[#ff4d6d]/40 text-center flex flex-col items-center gap-3">
+            <AlertTriangle className="w-8 h-8 text-[#ff8093]" />
+            <p className="text-sm text-zinc-200">{offersError}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-full bg-[#1a1c20] hover:bg-[#282a2e] text-xs font-bold text-white border border-zinc-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        ) : offers.length === 0 ? (
+          <div className="my-8 p-10 rounded-3xl bg-gradient-to-b from-[#0e1713] to-[#121418] border border-[#282a2e] text-center flex flex-col items-center gap-3 shadow-xl">
+            <div className="w-14 h-14 rounded-full bg-[#1a1c20] text-zinc-400 flex items-center justify-center border border-zinc-700">
+              <Store className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-bold text-white">No Meal Offers Available</h3>
+            <p className="text-xs text-zinc-400 max-w-sm leading-relaxed">
+              Our partner restaurants in Lagos are preparing new promotions. Check back soon for exclusive food rewards!
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* SECTION 2: FEATURED MEAL REWARD SPOTLIGHT */}
+            {featuredOffer && (() => {
+              const featClaim = userClaimsMap[featuredOffer.offerId];
+              const featLifetimeClaims = featClaim?.lifetimeClaimCount || 0;
+              const featHasActive = Boolean(featClaim?.hasActiveVoucher);
+              const featActiveVoucherId = featClaim?.activeVoucherId;
+              const featLimitReached = featLifetimeClaims >= 2;
+              const featHasEnough = pointsBalance >= featuredOffer.pointsCost;
 
-          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none snap-x">
-            {MEAL_CATEGORIES.map((cat) => {
-              const active = selectedCategory === cat.id;
               return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`snap-start flex-shrink-0 px-4 py-2.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
-                    active
-                      ? "bg-[#004729] border border-[#44e092] text-[#44e092] shadow-[0_0_12px_rgba(68,224,146,0.25)]"
-                      : "bg-gradient-to-b from-[#091b13] to-[#121815] hover:bg-[#1a201c] text-zinc-300 border border-[#44e092]/20"
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* SECTION 4: EXPLORE PARTNER VENDORS GRID (SMOOTH EMERALD GRADIENT TOUCH ON CARDS) */}
-        <section className="pt-2 pb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Store className="w-5 h-5 text-[#44e092]" />
-              <h3 className="text-lg font-bold text-white tracking-tight">Available Meal Offers</h3>
-            </div>
-            <span className="text-xs text-zinc-400">
-              {filteredOffers.length} {filteredOffers.length === 1 ? "Offer" : "Offers"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredOffers.map((offer) => {
-              const hasEnough = pointsBalance >= offer.pointsCost;
-              return (
-                <div
-                  key={offer.id}
-                  className="rounded-2xl bg-gradient-to-b from-[#0a1b13] via-[#0e1a15] to-[#141619] border border-[#44e092]/25 hover:border-[#44e092]/50 shadow-lg hover:shadow-[0_10px_28px_rgba(68,224,146,0.14)] transition-all flex flex-col overflow-hidden"
-                >
-                  <div className="relative w-full h-40 overflow-hidden">
-                    <img
-                      src={offer.image}
-                      alt={offer.title}
-                      className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0a1b13] via-[#0a1b13]/30 to-transparent" />
-
-                    <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
-                      <span className="px-2.5 py-1 rounded-full bg-[#05140e]/85 backdrop-blur-md text-zinc-200 text-[11px] font-semibold border border-[#44e092]/30 whitespace-nowrap shadow-sm">
-                        {offer.category}
-                      </span>
-                      <span className="px-2.5 py-1 rounded-full bg-[#05140e]/85 text-[11px] font-semibold text-zinc-300 border border-white/10 whitespace-nowrap shadow-sm">
-                        {offer.lifetimeClaimCount || 0}/2
-                      </span>
+                <section className="py-4">
+                  <div className="flex items-center justify-between mb-3.5">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-[#44e092]" />
+                      <h3 className="text-lg font-bold text-white tracking-tight">Featured Partner</h3>
                     </div>
-
-                    <div className="absolute bottom-2.5 left-3">
-                      <span className="text-2xl font-black text-[#ff6b00] tracking-tight drop-shadow-[0_2px_12px_rgba(255,107,0,0.3)]">
-                        {offer.discountDisplay}
-                      </span>
-                    </div>
+                    <span className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold whitespace-nowrap">
+                      Curated Selection
+                    </span>
                   </div>
 
-                  <div className="p-4 flex-1 flex flex-col justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-bold text-white truncate">{offer.title}</h4>
-                      <div className="flex items-center justify-between text-xs text-zinc-400 mt-1">
-                        <span className="truncate">{offer.vendorName}</span>
-                        <span>₦{offer.minSpend?.toLocaleString()} min</span>
+                  <div className="relative overflow-hidden rounded-[26px] bg-gradient-to-b from-[#0b1c14] via-[#0f1d17] to-[#14171a] shadow-2xl border border-[#44e092]/35 transition-all hover:border-[#44e092]/65 hover:shadow-[0_16px_40px_rgba(68,224,146,0.15)]">
+                    <div className="relative w-full h-56 sm:h-64 lg:h-72 overflow-hidden">
+                      <img
+                        src={featuredOffer.image}
+                        alt={featuredOffer.title}
+                        className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0b1c14] via-[#0b1c14]/40 to-transparent" />
+
+                      <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                        <span className={`px-3.5 py-1.5 rounded-full text-xs font-bold shadow-sm flex items-center gap-1.5 border whitespace-nowrap backdrop-blur-md ${getBadgeClass(featuredOffer.availability.badgeStyle)}`}>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          {featuredOffer.availability.badgeLabel}
+                        </span>
+
+                        <span className="px-3.5 py-1.5 rounded-full bg-[#05140e]/90 text-xs font-semibold text-zinc-300 border border-white/10 whitespace-nowrap shadow-sm">
+                          {featLifetimeClaims}/2 Claims Used
+                        </span>
+                      </div>
+
+                      <div className="absolute bottom-3 left-4 flex items-baseline gap-2">
+                        <span className="text-3xl sm:text-4xl font-black text-[#ff6b00] tracking-tight leading-none drop-shadow-[0_2px_16px_rgba(255,107,0,0.35)]">
+                          {featuredOffer.discountDisplay}
+                        </span>
+                        <span className="text-xs bg-[#05140e]/85 px-3 py-1 rounded-full text-zinc-300 font-medium border border-white/10 whitespace-nowrap shadow-sm">
+                          Instant Voucher
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-[#44e092]/20">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-black text-white">{offer.pointsCost} pts</span>
-                        <span className="text-[10px] text-zinc-400">Reward cost</span>
+                    <div className="p-5 sm:p-6 flex flex-col gap-3.5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="text-lg font-bold text-white">{featuredOffer.vendorName}</h4>
+                          <div className="flex items-center gap-1 text-zinc-400 text-xs mt-1">
+                            <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                            <span>{featuredOffer.branch}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-lg font-black text-white">{featuredOffer.pointsCost} pts</span>
+                          <div className="text-xs text-zinc-400">required</div>
+                        </div>
                       </div>
 
-                      {offer.hasActiveVoucher ? (
+                      <div className="flex items-center justify-between text-zinc-300 text-xs bg-gradient-to-r from-[#07170f] via-[#0b1d14] to-[#101915] px-4 py-3 rounded-xl border border-[#44e092]/25">
+                        <span className="flex items-center gap-1.5">
+                          <Receipt className="w-4 h-4 text-zinc-400" />
+                          Min. purchase: ₦{featuredOffer.minSpend?.toLocaleString()}
+                        </span>
+                        <span className="text-[#44e092] flex items-center gap-1 font-bold whitespace-nowrap">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          {featHasEnough ? "Sufficient Balance" : "Need points"}
+                        </span>
+                      </div>
+
+                      {featHasActive ? (
                         <button
                           type="button"
-                          onClick={() => navigate(`/services/meals/voucher/${offer.activeVoucherId || "vch-act-1"}`)}
-                          className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#004729] text-[#44e092] border border-[#44e092]/40 hover:brightness-110 transition-all whitespace-nowrap shadow-sm"
+                          onClick={() => navigate(`/services/meals/voucher/${featActiveVoucherId}`)}
+                          className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#004729] hover:bg-[#00522f] border border-[#44e092]/40 text-[#44e092] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(68,224,146,0.25)] transition-all whitespace-nowrap"
                         >
-                          View Active
+                          <Ticket className="w-4 h-4 flex-shrink-0" />
+                          <span className="whitespace-nowrap">Active Voucher in Wallet (Show Ticket)</span>
+                        </button>
+                      ) : featLimitReached ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#282a2e] text-zinc-500 border border-[#333539] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed whitespace-nowrap"
+                        >
+                          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                          <span className="whitespace-nowrap">Lifetime Claim Limit Reached (2/2)</span>
+                        </button>
+                      ) : !featuredOffer.availability.isActionable ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="w-full mt-1 py-3.5 px-4 rounded-full bg-[#1f2125] text-zinc-400 border border-zinc-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-not-allowed whitespace-nowrap"
+                        >
+                          <span>{featuredOffer.availability.buttonText}</span>
                         </button>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => navigate(`/services/meals/coupon/${offer.id}`)}
-                          className={`px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
-                            hasEnough
-                              ? "bg-[#ff6b00] text-white shadow-[0_2px_10px_rgba(255,107,0,0.35)] hover:brightness-110 active:scale-95"
+                          onClick={() => navigate(`/services/meals/coupon/${featuredOffer.id}`)}
+                          className={`w-full mt-1 py-3.5 px-4 rounded-full font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
+                            featHasEnough
+                              ? "bg-[#ff6b00] hover:bg-[#ff7a1a] text-white shadow-[0_4px_20px_rgba(255,107,0,0.35)] active:scale-[0.98]"
                               : "bg-[#1e2024] text-zinc-400 hover:bg-[#282a2e]"
                           }`}
                         >
-                          Unlock
+                          <span className="whitespace-nowrap">
+                            {featHasEnough ? "Redeem Reward" : `Need ${featuredOffer.pointsCost - pointsBalance} More Points`}
+                          </span>
+                          <ChevronRight className="w-4 h-4 flex-shrink-0" />
                         </button>
                       )}
                     </div>
                   </div>
-                </div>
+                </section>
               );
-            })}
-          </div>
-        </section>
+            })()}
+
+            {/* SECTION 3: CATEGORY FILTER CHIPS */}
+            <section className="py-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-bold text-white">Categories</span>
+                <span className="text-xs text-zinc-400 font-medium">Lagos Partner Spots</span>
+              </div>
+
+              <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none snap-x">
+                {MEAL_CATEGORIES.map((cat) => {
+                  const active = selectedCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`snap-start flex-shrink-0 px-4 py-2.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                        active
+                          ? "bg-[#004729] border border-[#44e092] text-[#44e092] shadow-[0_0_12px_rgba(68,224,146,0.25)]"
+                          : "bg-gradient-to-b from-[#091b13] to-[#121815] hover:bg-[#1a201c] text-zinc-300 border border-[#44e092]/20"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* SECTION 4: EXPLORE PARTNER VENDORS GRID */}
+            <section className="pt-2 pb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Store className="w-5 h-5 text-[#44e092]" />
+                  <h3 className="text-lg font-bold text-white tracking-tight">Available Meal Offers</h3>
+                </div>
+                <span className="text-xs text-zinc-400">
+                  {filteredOffers.length} {filteredOffers.length === 1 ? "Offer" : "Offers"}
+                </span>
+              </div>
+
+              {filteredOffers.length === 0 ? (
+                <div className="py-8 text-center text-zinc-400 text-xs">
+                  No offers found in this category.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredOffers.map((offer) => {
+                    const claim = userClaimsMap[offer.offerId];
+                    const lifetimeClaims = claim?.lifetimeClaimCount || 0;
+                    const hasActive = Boolean(claim?.hasActiveVoucher);
+                    const activeVoucherId = claim?.activeVoucherId;
+                    const limitReached = lifetimeClaims >= 2;
+                    const hasEnough = pointsBalance >= offer.pointsCost;
+
+                    return (
+                      <div
+                        key={offer.id}
+                        className="rounded-2xl bg-gradient-to-b from-[#0a1b13] via-[#0e1a15] to-[#141619] border border-[#44e092]/25 hover:border-[#44e092]/50 shadow-lg hover:shadow-[0_10px_28px_rgba(68,224,146,0.14)] transition-all flex flex-col overflow-hidden"
+                      >
+                        <div className="relative w-full h-40 overflow-hidden">
+                          <img
+                            src={offer.image}
+                            alt={offer.title}
+                            className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#0a1b13] via-[#0a1b13]/30 to-transparent" />
+
+                          <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between">
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border whitespace-nowrap shadow-sm backdrop-blur-md ${getBadgeClass(offer.availability.badgeStyle)}`}>
+                              {offer.availability.badgeLabel}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-full bg-[#05140e]/85 text-[11px] font-semibold text-zinc-300 border border-white/10 whitespace-nowrap shadow-sm">
+                              {lifetimeClaims}/2
+                            </span>
+                          </div>
+
+                          <div className="absolute bottom-2.5 left-3">
+                            <span className="text-2xl font-black text-[#ff6b00] tracking-tight drop-shadow-[0_2px_12px_rgba(255,107,0,0.3)]">
+                              {offer.discountDisplay}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 flex-1 flex flex-col justify-between gap-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-white truncate">{offer.title}</h4>
+                            <div className="flex items-center justify-between text-xs text-zinc-400 mt-1">
+                              <span className="truncate">{offer.vendorName}</span>
+                              <span>₦{offer.minSpend?.toLocaleString()} min</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-[#44e092]/20">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-black text-white">{offer.pointsCost} pts</span>
+                              <span className="text-[10px] text-zinc-400">Reward cost</span>
+                            </div>
+
+                            {hasActive ? (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/services/meals/voucher/${activeVoucherId}`)}
+                                className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#004729] text-[#44e092] border border-[#44e092]/40 hover:brightness-110 transition-all whitespace-nowrap shadow-sm"
+                              >
+                                View Active
+                              </button>
+                            ) : limitReached ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="px-3 py-1.5 rounded-full text-xs font-bold bg-[#282a2e] text-zinc-500 border border-[#333539] cursor-not-allowed whitespace-nowrap"
+                              >
+                                Limit Reached
+                              </button>
+                            ) : !offer.availability.isActionable ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="px-3 py-1.5 rounded-full text-xs font-bold bg-[#1f2125] text-zinc-400 border border-zinc-700 cursor-not-allowed whitespace-nowrap"
+                              >
+                                {offer.availability.badgeLabel}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/services/meals/coupon/${offer.id}`)}
+                                className={`px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                                  hasEnough
+                                    ? "bg-[#ff6b00] text-white shadow-[0_2px_10px_rgba(255,107,0,0.35)] hover:brightness-110 active:scale-95"
+                                    : "bg-[#1e2024] text-zinc-400 hover:bg-[#282a2e]"
+                                }`}
+                              >
+                                Unlock
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </>
+        )}
 
         {/* SECTION 5: MOTIVATIONAL "ALMOST THERE" REWARD CARD (SMOOTH EMERALD GRADIENT) */}
         <section className="py-3">

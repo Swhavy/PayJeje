@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft,
   Bookmark,
@@ -17,6 +16,7 @@ import {
   Navigation,
   Redo2,
   AlertCircle,
+  AlertTriangle,
   Ticket,
   X,
   Store,
@@ -30,19 +30,29 @@ import DashboardLayout from "@/components/DashboardLayout";
 import useCloudfunc from "@/components/useCloudfunc";
 import { toast } from "sonner";
 import { db, auth, doc, onSnapshot } from "@/firebaseConfig";
-import { getMealOfferById, getMealOffers, getVendorById } from "@/fixtures/mealFixtures";
+import {
+  resolveOfferAvailability,
+  validatePublicOfferTerms,
+  validateOfferIdentity,
+  resolveBundledMealImage,
+} from "@/lib/mealOfferUtils";
+import { getVendorById } from "@/fixtures/mealFixtures";
 
 export default function MealCouponDetailPage() {
   const { couponId } = useParams();
   const navigate = useNavigate();
   const user = useSelector((state) => state.user?.user) || {};
-  const userData = useSelector((state) => state.user?.userData);
   const currentUid = user?.uid || auth.currentUser?.uid;
 
   const { redeemMealCoupon } = useCloudfunc();
 
-  const offer = getMealOfferById(couponId) || getMealOffers()[0];
-  const vendor = getVendorById(offer.vendorId);
+  // Real-time Firestore Offer State & Invariant Checks
+  const [offerDocSnap, setOfferDocSnap] = useState(null);
+  const [offerLoading, setOfferLoading] = useState(true);
+  const [offerError, setOfferError] = useState(null); // null | "OFFER_NOT_FOUND" | "IDENTITY_INVALID" | "TERMS_INVALID" | "FETCH_ERROR"
+  const [identityResult, setIdentityResult] = useState(null);
+  const [termsResult, setTermsResult] = useState(null);
+  const [availabilityResult, setAvailabilityResult] = useState(null);
 
   const [livePoints, setLivePoints] = useState(null);
   const [liveClaim, setLiveClaim] = useState(null);
@@ -60,30 +70,107 @@ export default function MealCouponDetailPage() {
   const pin3Ref = useRef(null);
   const pinInputRefs = [pin0Ref, pin1Ref, pin2Ref, pin3Ref];
 
-  // Subscribe to real-time points & claims in Firestore
+  // 1. Authoritative real-time public offer projection subscription
+  useEffect(() => {
+    if (!couponId) {
+      setOfferLoading(false);
+      setOfferError("OFFER_NOT_FOUND");
+      return;
+    }
+
+    setOfferLoading(true);
+    setOfferError(null);
+
+    const unsub = onSnapshot(
+      doc(db, "public_meal_offers", couponId),
+      (snap) => {
+        setOfferLoading(false);
+        if (!snap.exists()) {
+          setOfferDocSnap(null);
+          setOfferError("OFFER_NOT_FOUND");
+          return;
+        }
+
+        setOfferDocSnap(snap);
+
+        // Strict Identity Validation (snap.id === campaignId, explicit offerId, zero fallback)
+        const ident = validateOfferIdentity(snap, couponId);
+        setIdentityResult(ident);
+        if (!ident.isValid) {
+          console.warn("[MealCouponDetail] Identity invariant violation:", ident.reason, ident.message);
+          setOfferError("IDENTITY_INVALID");
+          return;
+        }
+
+        // Strict Commercial Terms Validation (no default amounts invented)
+        const data = snap.data();
+        const terms = validatePublicOfferTerms(data);
+        setTermsResult(terms);
+        if (!terms.isValid) {
+          console.warn("[MealCouponDetail] Commercial terms validation failed:", terms.reason);
+          setOfferError("TERMS_INVALID");
+          return;
+        }
+
+        // Fail-Closed Availability Resolution
+        const avail = resolveOfferAvailability(data);
+        setAvailabilityResult(avail);
+      },
+      (err) => {
+        console.error("[MealCouponDetail] Error fetching public offer:", err);
+        setOfferLoading(false);
+        setOfferError("FETCH_ERROR");
+      }
+    );
+
+    return () => unsub();
+  }, [couponId]);
+
+  // 2. Authoritative real-time points subscription
   useEffect(() => {
     if (!currentUid) return;
 
-    const unsubUser = onSnapshot(doc(db, "users", currentUid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (typeof data.points === "number") {
-          setLivePoints(data.points);
+    const unsubUser = onSnapshot(
+      doc(db, "users", currentUid),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (typeof data.points === "number") {
+            setLivePoints(data.points);
+          }
         }
+      },
+      (err) => {
+        console.warn("[MealCouponDetail] Points listener error:", err);
       }
-    });
+    );
 
-    const unsubClaim = onSnapshot(doc(db, "users", currentUid, "mealClaims", offer.id), (snap) => {
-      if (snap.exists()) {
-        setLiveClaim(snap.data());
+    return () => unsubUser();
+  }, [currentUid]);
+
+  // 3. Authoritative customer meal claim subscription for this specific canonical offer
+  useEffect(() => {
+    if (!currentUid || !identityResult?.isValid || !identityResult.canonicalOfferId) {
+      setLiveClaim(null);
+      return;
+    }
+
+    const unsubClaim = onSnapshot(
+      doc(db, "users", currentUid, "mealClaims", identityResult.canonicalOfferId),
+      (snap) => {
+        if (snap.exists()) {
+          setLiveClaim(snap.data());
+        } else {
+          setLiveClaim(null);
+        }
+      },
+      (err) => {
+        console.warn("[MealCouponDetail] Claim subscription error:", err);
       }
-    });
+    );
 
-    return () => {
-      unsubUser();
-      unsubClaim();
-    };
-  }, [currentUid, offer.id]);
+    return () => unsubClaim();
+  }, [currentUid, identityResult?.canonicalOfferId]);
 
   const pointsBalance = typeof livePoints === "number"
     ? livePoints
@@ -91,35 +178,30 @@ export default function MealCouponDetailPage() {
     ? user.points
     : 0;
 
-  const pointsCost = offer.pointsCost || 100;
+  const pointsCost = termsResult?.pointsCost || 100;
   const balanceAfter = Math.max(0, pointsBalance - pointsCost);
   const hasEnoughPoints = pointsBalance >= pointsCost;
 
   // Authoritative claim stats
-  const lifetimeClaimCount = liveClaim?.lifetimeClaimCount ?? offer.lifetimeClaimCount ?? 0;
-  const maxLifetimeClaims = offer.maxLifetimeClaims || 2;
-  const isLimitReached = lifetimeClaimCount >= maxLifetimeClaims;
+  const lifetimeClaimCount = Number(liveClaim?.lifetimeClaimCount || 0);
+  const isLimitReached = lifetimeClaimCount >= 2;
 
   let hasActiveVoucher = false;
-  let activeVoucherId = offer.activeVoucherId || null;
+  let activeVoucherId = null;
 
-  if (liveClaim) {
-    if (liveClaim.activeVoucherId) {
-      const activeExpiresAtMs = liveClaim.activeVoucherExpiresAt?.toMillis
-        ? liveClaim.activeVoucherExpiresAt.toMillis()
-        : liveClaim.activeVoucherExpiresAt?.toDate
-        ? liveClaim.activeVoucherExpiresAt.toDate().getTime()
-        : liveClaim.activeVoucherExpiresAt
-        ? new Date(liveClaim.activeVoucherExpiresAt).getTime()
-        : 0;
+  if (liveClaim?.activeVoucherId) {
+    const activeExpiresAtMs = liveClaim.activeVoucherExpiresAt?.toMillis
+      ? liveClaim.activeVoucherExpiresAt.toMillis()
+      : liveClaim.activeVoucherExpiresAt?.toDate
+      ? liveClaim.activeVoucherExpiresAt.toDate().getTime()
+      : liveClaim.activeVoucherExpiresAt
+      ? new Date(liveClaim.activeVoucherExpiresAt).getTime()
+      : 0;
 
-      if (Date.now() < activeExpiresAtMs) {
-        hasActiveVoucher = true;
-        activeVoucherId = liveClaim.activeVoucherId;
-      }
+    if (Date.now() < activeExpiresAtMs) {
+      hasActiveVoucher = true;
+      activeVoucherId = liveClaim.activeVoucherId;
     }
-  } else {
-    hasActiveVoucher = Boolean(offer.hasActiveVoucher);
   }
 
   const pinValuesRef = useRef(["", "", "", ""]);
@@ -169,6 +251,10 @@ export default function MealCouponDetailPage() {
 
   const handleExecuteRedemption = async (overridePin) => {
     if (isRedeemingRef.current) return;
+    if (!identityResult?.isValid || !identityResult.canonicalCampaignId) {
+      setPinError("Invalid offer identity. Cannot claim.");
+      return;
+    }
 
     const rawPin = overridePin || pinValuesRef.current.join("") || pinDigits.join("");
     if (rawPin.length !== 4) {
@@ -182,11 +268,13 @@ export default function MealCouponDetailPage() {
 
     try {
       if (!claimIdempotencyRef.current) {
-        claimIdempotencyRef.current = `claim_${currentUid || "guest"}_${offer.id}_${Date.now()}`;
+        claimIdempotencyRef.current = `claim_${currentUid || "guest"}_${identityResult.canonicalCampaignId}_${Date.now()}`;
       }
       const idempotencyKey = claimIdempotencyRef.current;
+
+      // Always pass canonical campaignId (docSnap.id) to claim callable
       const res = await redeemMealCoupon({
-        couponId: offer.id,
+        couponId: identityResult.canonicalCampaignId,
         pin: rawPin,
         idempotencyKey,
       });
@@ -216,7 +304,8 @@ export default function MealCouponDetailPage() {
   };
 
   const handleOpenPinModal = () => {
-    claimIdempotencyRef.current = `claim_${currentUid || "guest"}_${offer.id}_${Date.now()}`;
+    if (!identityResult?.isValid) return;
+    claimIdempotencyRef.current = `claim_${currentUid || "guest"}_${identityResult.canonicalCampaignId}_${Date.now()}`;
     pinValuesRef.current = ["", "", "", ""];
     setPinDigits(["", "", "", ""]);
     setPinError("");
@@ -224,6 +313,106 @@ export default function MealCouponDetailPage() {
     setShowPinModal(true);
     setTimeout(() => pinInputRefs[0]?.current?.focus(), 200);
   };
+
+  // State: Loading
+  if (offerLoading) {
+    return (
+      <DashboardLayout>
+        <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-32 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-6 lg:p-12 shadow-2xl flex flex-col items-center justify-center min-h-[500px] text-center gap-4">
+          <div className="w-12 h-12 rounded-full border-2 border-[#44e092] border-t-transparent animate-spin" />
+          <span className="text-zinc-400 text-sm font-medium">Verifying offer terms and platform security...</span>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // State: 404 Offer Not Found (Strict: Zero fallback to demo fixtures)
+  if (offerError === "OFFER_NOT_FOUND" || !offerDocSnap) {
+    return (
+      <DashboardLayout>
+        <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-32 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-6 lg:p-12 shadow-2xl flex flex-col items-center justify-center min-h-[500px] text-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-[#1a1c20] text-zinc-400 flex items-center justify-center border border-zinc-700 shadow-lg">
+            <Store className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-extrabold text-white">Offer Not Found</h2>
+          <p className="text-zinc-400 text-xs sm:text-sm max-w-md leading-relaxed">
+            The meal offer you requested could not be located in the PayWaka marketplace. It may have expired, been concluded, or does not exist.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/services/meals")}
+            className="mt-2 px-6 py-3 rounded-full bg-[#ff6b00] hover:bg-[#ff7a1a] text-white font-bold text-xs sm:text-sm shadow-[0_4px_16px_rgba(255,107,0,0.35)] transition-all flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Meal Marketplace</span>
+          </button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // State: Identity or Commercial Terms Configuration Error (Fails closed)
+  if (offerError === "IDENTITY_INVALID" || offerError === "TERMS_INVALID") {
+    return (
+      <DashboardLayout>
+        <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-32 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-6 lg:p-12 shadow-2xl flex flex-col items-center justify-center min-h-[500px] text-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-[#2a0d13] text-[#ff8093] flex items-center justify-center border border-[#ff4d6d]/40 shadow-lg">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-extrabold text-white">Offer Configuration Error</h2>
+          <p className="text-zinc-400 text-xs sm:text-sm max-w-md leading-relaxed">
+            This meal offer has an inconsistent or unverified configuration and cannot be claimed. Platform security checks prevented loading this offer.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/services/meals")}
+            className="mt-2 px-6 py-3 rounded-full bg-[#1a1c20] hover:bg-[#282a2e] text-zinc-300 font-bold text-xs sm:text-sm border border-zinc-700 transition-colors flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Meal Marketplace</span>
+          </button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Construct verified offer object
+  const rawData = offerDocSnap.data();
+  const offerImage = rawData.image || resolveBundledMealImage(rawData.category, rawData.title, rawData.vendorName);
+  const vendor = getVendorById(rawData.vendorId);
+
+  const offer = {
+    id: offerDocSnap.id,
+    campaignId: identityResult.canonicalCampaignId,
+    offerId: identityResult.canonicalOfferId,
+    title: rawData.title,
+    vendorId: rawData.vendorId,
+    vendorName: rawData.vendorName,
+    branch: rawData.branch || "Lagos Partner Spot",
+    category: rawData.category || "Local Delicacies",
+    discountNaira: termsResult.discountNaira,
+    minSpendNaira: termsResult.minSpendNaira,
+    pointsCost: termsResult.pointsCost,
+    discountDisplay: termsResult.discountDisplay,
+    minSpend: termsResult.minSpendNaira,
+    image: offerImage,
+    status: rawData.status,
+    isAvailable: rawData.isAvailable,
+    validityHours: rawData.validityHours || 48,
+    merchantLimit: rawData.merchantLimit || "1 per customer per visit",
+    transparencyText: rawData.transparencyText || `Enjoy ₦${termsResult.discountNaira.toLocaleString()} off when you spend ₦${termsResult.minSpendNaira.toLocaleString()} or more at ${rawData.vendorName}. Pay the balance directly to cashier.`,
+    terms: Array.isArray(rawData.terms) && rawData.terms.length > 0
+      ? rawData.terms
+      : [
+          `Valid for ₦${termsResult.discountNaira.toLocaleString()} instant discount on total meal bill.`,
+          `Minimum spend of ₦${termsResult.minSpendNaira.toLocaleString()} required.`,
+          "Voucher expires 48 hours after issuance from PayWaka Points.",
+          "Must present 4-digit voucher PIN or QR code to cashier before payment.",
+          "Limit of 1 active voucher per customer for this offer at a time.",
+        ],
+  };
+
+  const isEmergencyHalt = rawData.status === "emergency_halt";
 
   return (
     <DashboardLayout>
@@ -283,7 +472,25 @@ export default function MealCouponDetailPage() {
             </div>
           </div>
 
-          {/* HERO VISUAL MODULE (SMOOTH EMERALD GRADIENT ON CARD & MERCHANT PILL) */}
+          {/* EMERGENCY HALT PLATFORM BANNER */}
+          {isEmergencyHalt && (
+            <div className="p-4 rounded-2xl bg-[#2a0d13]/85 border border-[#ff4d6d]/50 flex items-start gap-3.5 text-left shadow-lg">
+              <AlertTriangle className="w-5 h-5 text-[#ff8093] flex-shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-bold text-[#ff8093] uppercase tracking-wider">
+                  Administrative Hold Notice
+                </span>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  This campaign is currently temporarily halted by platform administration.
+                  {hasActiveVoucher
+                    ? " Your existing voucher is safe in your wallet, but in-store cashier redemption is temporarily blocked until the hold is lifted."
+                    : " New voucher claims are temporarily paused."}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* HERO VISUAL MODULE */}
           <div className="relative w-full rounded-2xl overflow-hidden bg-gradient-to-b from-[#0a1c14] via-[#0f1d17] to-[#14171a] shadow-2xl border border-[#44e092]/30">
             <img
               src={offer.image}
@@ -300,14 +507,14 @@ export default function MealCouponDetailPage() {
               </span>
             </div>
 
-            {/* Top Right: Phase 3 Claim Tracker */}
+            {/* Top Right: Lifetime Claims Tracker */}
             <div className="absolute top-3.5 right-3.5 bg-[#05140e]/90 backdrop-blur-md px-3.5 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg">
               <span className="text-xs font-semibold text-zinc-300">
                 {lifetimeClaimCount}/2 Lifetime Claims
               </span>
             </div>
 
-            {/* Merchant Info Pill with Smooth Emerald Gradient */}
+            {/* Merchant Info Pill */}
             <div className="absolute bottom-3.5 left-3.5 right-3.5 flex items-center justify-between bg-gradient-to-r from-[#071b12]/95 via-[#0b2116]/95 to-[#121b16]/95 backdrop-blur-md p-3.5 sm:p-4 rounded-2xl border border-[#44e092]/35 shadow-xl">
               <div className="flex items-center gap-3.5 min-w-0">
                 <div className="w-12 h-12 rounded-xl bg-[#004729]/70 border border-[#44e092]/30 flex items-center justify-center text-2xl flex-shrink-0 shadow-inner">
@@ -323,46 +530,37 @@ export default function MealCouponDetailPage() {
               </div>
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#004729]/60 text-[#44e092] text-xs font-semibold flex-shrink-0 border border-[#44e092]/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#44e092] animate-pulse" />
-                Open
+                {availabilityResult?.badgeLabel || "Available"}
               </span>
             </div>
           </div>
 
           {/* KEY TAGS ROW */}
           <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none py-1">
-            {vendor?.tags?.map((tag, idx) => (
-              <span
-                key={idx}
-                className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-400 text-xs font-medium flex-shrink-0 shadow-sm"
-              >
-                {tag}
-              </span>
-            )) || (
-              <>
-                <span className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-400 text-xs font-medium flex-shrink-0 shadow-sm">
-                  Fast Food & Grills
-                </span>
-                <span className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-400 text-xs font-medium flex-shrink-0 shadow-sm">
-                  Dine-in & Takeout
-                </span>
-                <span className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-400 text-xs font-medium flex-shrink-0 shadow-sm">
-                  Closes 10:00 PM
-                </span>
-              </>
-            )}
+            <span className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-300 text-xs font-medium flex-shrink-0 shadow-sm">
+              {offer.category}
+            </span>
+            <span className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-300 text-xs font-medium flex-shrink-0 shadow-sm">
+              Instant Voucher
+            </span>
+            <span className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#091b13] to-[#121815] border border-[#44e092]/20 text-zinc-300 text-xs font-medium flex-shrink-0 shadow-sm">
+              Closes 10:00 PM
+            </span>
           </div>
 
-          {/* PHASE 3 RULE NOTICES (ACTIVE VOUCHER / LIMIT REACHED) */}
+          {/* ACTIVE VOUCHER NOTICE */}
           {hasActiveVoucher && (
             <div className="p-4 sm:p-5 rounded-2xl bg-[#004729]/30 border border-[#44e092]/40 flex items-start gap-3.5 text-left shadow-md">
               <Ticket className="w-5 h-5 text-[#44e092] flex-shrink-0 mt-0.5" />
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-[#44e092] uppercase tracking-wider">Active Voucher in Wallet</span>
+                <span className="text-xs font-bold text-[#44e092] uppercase tracking-wider">
+                  Active Voucher in Wallet
+                </span>
                 <p className="text-xs sm:text-[13px] text-zinc-300 leading-relaxed">
-                  You already hold an active, unredeemed voucher for this offer. Per Phase 3 rules, users may hold only 1 active voucher per offer at a time.
+                  You already hold an active unredeemed voucher for this offer. Per platform rules, you may hold 1 active voucher per offer at a time.
                 </p>
                 <Link
-                  to={`/services/meals/voucher/${activeVoucherId || "vch-act-1"}`}
+                  to={`/services/meals/voucher/${activeVoucherId}`}
                   className="mt-1.5 text-xs font-bold text-[#44e092] underline hover:text-white inline-flex items-center gap-1"
                 >
                   View Active Ticket in Wallet →
@@ -371,11 +569,14 @@ export default function MealCouponDetailPage() {
             </div>
           )}
 
+          {/* LIFETIME CLAIM LIMIT NOTICE */}
           {isLimitReached && (
             <div className="p-4 sm:p-5 rounded-2xl bg-[#93000a]/20 border border-[#93000a]/40 flex items-start gap-3.5 text-left shadow-md">
               <AlertCircle className="w-5 h-5 text-[#ffb4ab] flex-shrink-0 mt-0.5" />
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-[#ffdad6] uppercase tracking-wider">Lifetime Claim Limit Reached</span>
+                <span className="text-xs font-bold text-[#ffdad6] uppercase tracking-wider">
+                  Lifetime Claim Limit Reached
+                </span>
                 <p className="text-xs sm:text-[13px] text-[#ffb4ab] leading-relaxed">
                   You have claimed this campaign 2 of 2 times. Under PayWaka Fair Usage policies, each user may claim an offer a maximum of 2 times across the lifetime of the campaign.
                 </p>
@@ -383,7 +584,7 @@ export default function MealCouponDetailPage() {
             </div>
           )}
 
-          {/* REWARD ECONOMICS & TRANSPARENCY CARD (SMOOTH EMERALD GRADIENT) */}
+          {/* REWARD ECONOMICS & TRANSPARENCY CARD */}
           <div className="bg-gradient-to-b from-[#091d14] via-[#0d1e17] to-[#13171a] p-5 sm:p-6 rounded-2xl flex flex-col gap-4 shadow-lg border border-[#44e092]/30">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0 text-left">
@@ -394,7 +595,7 @@ export default function MealCouponDetailPage() {
                   {offer.discountDisplay}
                 </div>
                 <p className="text-xs sm:text-[13px] text-zinc-400 mt-1 leading-snug">
-                  {offer.subtitle || "Applies instantly at checkout"}
+                  Applies instantly at merchant checkout
                 </p>
               </div>
 
@@ -419,8 +620,7 @@ export default function MealCouponDetailPage() {
                   How this discount works
                 </span>
                 <p className="text-xs sm:text-[13px] text-zinc-300 leading-relaxed">
-                  {offer.transparencyText ||
-                    `You will receive ${offer.discountDisplay} off your food bill when you spend a minimum of ₦${offer.minSpend?.toLocaleString()} at ${offer.vendorName}. Pay the balance directly to the cashier.`}
+                  {offer.transparencyText}
                 </p>
               </div>
             </div>
@@ -448,7 +648,7 @@ export default function MealCouponDetailPage() {
                   Redemption Window
                 </span>
                 <span className="text-base font-bold text-white tracking-tight">
-                  {offer.validityHours || 48} Hours
+                  {offer.validityHours} Hours
                 </span>
               </div>
               <div className="bg-gradient-to-b from-[#071911] to-[#0f1714] p-4 sm:p-5 rounded-2xl flex flex-col gap-1.5 border border-[#44e092]/20 text-left">
@@ -456,13 +656,13 @@ export default function MealCouponDetailPage() {
                   Merchant Limit
                 </span>
                 <span className="text-base font-bold text-white tracking-tight">
-                  {offer.merchantLimit || "1 per day"}
+                  {offer.merchantLimit}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* POINTS BALANCE & DEDUCTION CALCULATOR CARD (SMOOTH EMERALD GRADIENT) */}
+          {/* POINTS BALANCE & DEDUCTION CALCULATOR CARD */}
           <div className="bg-gradient-to-b from-[#091f15] via-[#0d2118] to-[#13181a] p-5 sm:p-6 rounded-2xl flex flex-col gap-4 shadow-lg border border-[#44e092]/35">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -506,7 +706,7 @@ export default function MealCouponDetailPage() {
             </div>
           </div>
 
-          {/* INTERACTIVE TERMS & REDEMPTION ACCORDION (SMOOTH EMERALD GRADIENT) */}
+          {/* INTERACTIVE TERMS & REDEMPTION ACCORDION */}
           <div className="bg-gradient-to-b from-[#0a1e15] via-[#0e1f18] to-[#14171a] rounded-2xl p-5 sm:p-6 flex flex-col gap-3.5 border border-[#44e092]/30 shadow-lg">
             <button
               type="button"
@@ -533,7 +733,7 @@ export default function MealCouponDetailPage() {
             {isTermsOpen && (
               <div className="pt-3.5 mt-1 border-t border-[#44e092]/20 flex flex-col gap-3">
                 <div className="bg-gradient-to-b from-[#071911] to-[#0e1613] rounded-xl p-4 sm:p-5 border border-[#44e092]/20 flex flex-col gap-3.5">
-                  {offer.terms?.map((term, idx) => (
+                  {offer.terms.map((term, idx) => (
                     <div key={idx} className="flex items-start gap-3 text-xs sm:text-[13px] leading-relaxed text-left">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#44e092] mt-2 flex-shrink-0" />
                       <span className="text-zinc-300">{term}</span>
@@ -544,7 +744,7 @@ export default function MealCouponDetailPage() {
             )}
           </div>
 
-          {/* STORE LOCATION CARD (SMOOTH EMERALD GRADIENT) */}
+          {/* STORE LOCATION CARD */}
           <div className="bg-gradient-to-r from-[#091d14] via-[#0d1e17] to-[#14171a] rounded-2xl p-4 sm:p-5 flex items-center justify-between border border-[#44e092]/30 shadow-lg">
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-11 h-11 rounded-xl bg-[#004729]/50 border border-[#44e092]/30 flex items-center justify-center text-[#44e092] flex-shrink-0">
@@ -567,10 +767,19 @@ export default function MealCouponDetailPage() {
           </div>
         </div>
 
-        {/* FIXED STICKY BOTTOM ACTION DOCK (CENTRALIZED RELATIVE TO DESKTOP CONTENT) */}
+        {/* FIXED STICKY BOTTOM ACTION DOCK */}
         <div className="fixed bottom-16 lg:bottom-0 left-0 lg:left-64 right-0 z-40 bg-[#0c0e12]/95 backdrop-blur-xl px-4 py-3.5 shadow-[0_-4px_24px_rgba(0,0,0,0.7)] border-t border-[#282a2e]">
           <div className="w-full max-w-md mx-auto flex flex-col items-center gap-2">
-            {isLimitReached ? (
+            {hasActiveVoucher ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/services/meals/voucher/${activeVoucherId}`)}
+                className="w-full py-3.5 px-6 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-[#004729] hover:bg-[#00522f] text-[#44e092] border border-[#44e092]/40 shadow-[0_4px_16px_rgba(68,224,146,0.3)] transition-all whitespace-nowrap"
+              >
+                <Ticket className="w-4.5 h-4.5 flex-shrink-0" />
+                <span className="whitespace-nowrap">View Active Voucher Ticket</span>
+              </button>
+            ) : isLimitReached ? (
               <button
                 type="button"
                 disabled
@@ -579,14 +788,13 @@ export default function MealCouponDetailPage() {
                 <AlertCircle className="w-4.5 h-4.5 flex-shrink-0" />
                 <span className="whitespace-nowrap">Lifetime Claim Limit Reached ({lifetimeClaimCount}/2)</span>
               </button>
-            ) : hasActiveVoucher ? (
+            ) : !availabilityResult?.isActionable ? (
               <button
                 type="button"
-                onClick={() => navigate(`/services/meals/voucher/${activeVoucherId || "vch-act-1"}`)}
-                className="w-full py-3.5 px-6 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-[#004729] hover:bg-[#00522f] text-[#44e092] border border-[#44e092]/40 shadow-[0_4px_16px_rgba(68,224,146,0.3)] transition-all whitespace-nowrap"
+                disabled
+                className="w-full py-3.5 px-6 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center gap-2 bg-[#1f2125] text-zinc-400 cursor-not-allowed border border-zinc-700 whitespace-nowrap"
               >
-                <Ticket className="w-4.5 h-4.5 flex-shrink-0" />
-                <span className="whitespace-nowrap">View Active Voucher Ticket</span>
+                <span className="whitespace-nowrap">{availabilityResult?.buttonText}</span>
               </button>
             ) : (
               <button
@@ -596,7 +804,7 @@ export default function MealCouponDetailPage() {
                 className={`w-full py-3.5 px-6 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
                   hasEnoughPoints
                     ? "bg-[#ff6b00] hover:bg-[#ff7a1a] text-white shadow-[0_8px_24px_rgba(255,107,0,0.35)] active:scale-[0.98]"
-                    : "bg-[#282a2e] text-zinc-500 cursor-not-allowed"
+                    : "bg-[#282a2e] text-zinc-500 cursor-not-allowed border border-[#333539]"
                 }`}
               >
                 <Redo2 className="w-4.5 h-4.5 flex-shrink-0" />
@@ -649,78 +857,76 @@ export default function MealCouponDetailPage() {
                   <span className="text-zinc-400">Reward Cost</span>
                   <span className="font-bold text-[#ff6b00]">-{pointsCost} pts</span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-400">Min. Spend</span>
+                  <span className="text-white font-medium">₦{offer.minSpend?.toLocaleString()}</span>
+                </div>
                 <div className="flex justify-between items-center border-t border-[#44e092]/20 pt-2">
-                  <span className="text-zinc-400">Balance After Claim</span>
+                  <span className="text-zinc-300 font-semibold">Remaining Points</span>
                   <span className="font-bold text-[#44e092]">{balanceAfter.toLocaleString()} pts</span>
                 </div>
               </div>
 
-              {/* Error Message */}
+              {/* 4-Digit PIN Input Fields */}
+              <div className="flex justify-center gap-3 my-2" onPaste={handlePaste}>
+                {pinDigits.map((digit, idx) => (
+                  <input
+                    key={idx}
+                    ref={pinInputRefs[idx]}
+                    type={showPin ? "text" : "password"}
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleDigitChange(idx, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(idx, e)}
+                    disabled={isRedeeming}
+                    className="w-12 h-14 text-center text-2xl font-bold bg-[#05140e] border border-[#44e092]/40 rounded-xl text-white focus:outline-none focus:border-[#44e092] focus:ring-2 focus:ring-[#44e092]/30 transition-all disabled:opacity-50"
+                  />
+                ))}
+              </div>
+
+              {/* PIN Visibility Toggle */}
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowPin(!showPin)}
+                  className="text-xs text-zinc-400 hover:text-white flex items-center gap-1.5 transition-colors"
+                >
+                  {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showPin ? "Hide PIN" : "Show PIN"}</span>
+                </button>
+              </div>
+
+              {/* PIN Error Message */}
               {pinError && (
-                <div className="flex items-start gap-2.5 p-3 text-xs rounded-xl bg-destructive/15 border border-destructive/30 text-[#ffb4ab] text-left animate-in fade-in duration-150">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span className="leading-snug">{pinError}</span>
+                <div className="p-2.5 rounded-xl bg-[#2a0d13] border border-[#ff4d6d]/40 text-[#ff8093] text-xs leading-relaxed flex items-center gap-2 text-left">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#ff4d6d]" />
+                  <span>{pinError}</span>
                 </div>
               )}
 
-              {/* 4-digit PIN Inputs */}
-              <div className="space-y-3 py-1">
-                <div className="flex justify-center items-center gap-3">
-                  {[0, 1, 2, 3].map((idx) => (
-                    <input
-                      key={`pin-digit-${idx}`}
-                      ref={pinInputRefs[idx]}
-                      type={showPin ? "text" : "password"}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={1}
-                      disabled={isRedeeming}
-                      value={pinDigits[idx]}
-                      onChange={(e) => handleDigitChange(idx, e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(idx, e)}
-                      onPaste={handlePaste}
-                      className={`w-13 sm:w-14 h-14 sm:h-16 text-center text-2xl font-black rounded-2xl bg-[#06140d] border-2 transition-all duration-150 focus:outline-none ${
-                        pinDigits[idx]
-                          ? "border-[#44e092] bg-[#004729]/30 text-white shadow-[0_0_12px_rgba(68,224,146,0.3)]"
-                          : "border-[#44e092]/30 text-white focus:border-[#44e092] focus:bg-[#004729]/20"
-                      } disabled:opacity-50`}
-                    />
-                  ))}
-                </div>
-
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setShowPin(!showPin)}
-                    className="text-xs text-zinc-400 hover:text-white flex items-center gap-1.5 transition-colors py-1"
-                  >
-                    {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    <span>{showPin ? "Hide PIN" : "Show PIN"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex flex-col gap-2 pt-1">
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2 pt-2">
                 <button
                   type="button"
                   disabled={isRedeeming || pinDigits.join("").length !== 4}
                   onClick={() => handleExecuteRedemption()}
-                  className={`w-full py-3.5 rounded-full font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                    pinDigits.join("").length === 4 && !isRedeeming
-                      ? "bg-[#ff6b00] hover:bg-[#ff7a1a] text-white shadow-[0_4px_20px_rgba(255,107,0,0.4)] active:scale-[0.98]"
+                  className={`w-full py-3.5 px-6 rounded-full font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                    !isRedeeming && pinDigits.join("").length === 4
+                      ? "bg-[#ff6b00] hover:bg-[#ff7a1a] text-white shadow-[0_4px_16px_rgba(255,107,0,0.4)] active:scale-[0.98]"
                       : "bg-[#282a2e] text-zinc-500 cursor-not-allowed"
                   }`}
                 >
                   {isRedeeming ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Authorizing & Deducting Points...</span>
+                      <span>Authorizing & Debiting Points...</span>
                     </>
                   ) : (
-                    <span>Authorize & Redeem Voucher</span>
+                    <span>Confirm & Authorize</span>
                   )}
                 </button>
+
                 <button
                   type="button"
                   disabled={isRedeeming}
@@ -729,7 +935,7 @@ export default function MealCouponDetailPage() {
                     setPinDigits(["", "", "", ""]);
                     setPinError("");
                   }}
-                  className="w-full py-2.5 rounded-full bg-[#1e2024] hover:bg-[#282a2e] text-zinc-300 font-semibold text-xs transition-colors disabled:opacity-50"
+                  className="w-full py-2 text-xs text-zinc-400 hover:text-white transition-colors"
                 >
                   Cancel
                 </button>

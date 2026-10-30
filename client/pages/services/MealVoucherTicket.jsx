@@ -72,22 +72,27 @@ export default function MealVoucherTicketPage() {
     }
   }, [voucherId, isRealVoucher]);
 
+  const [parentCampaignDoc, setParentCampaignDoc] = useState(null);
+
   const voucher = liveVoucherDoc
     ? {
         id: liveVoucherDoc.id || voucherId,
+        campaignId: liveVoucherDoc.campaignId,
         vendorId: liveVoucherDoc.vendorId || "paywaka-demo-foods",
         vendorName: liveVoucherDoc.vendorName || "PayWaka Demo Foods",
         vendorBranch: liveVoucherDoc.redeemedVendorBranch || "Victoria Island • 1.2km",
-        title: `₦${(liveVoucherDoc.discountNaira || 500).toLocaleString()} Meal Discount Voucher`,
-        discountAmount: liveVoucherDoc.discountNaira || 500,
-        discountDisplay: `₦${(liveVoucherDoc.discountNaira || 500).toLocaleString()} OFF`,
-        minSpend: liveVoucherDoc.minSpendNaira || 2500,
+        title:
+          liveVoucherDoc.title ||
+          (liveVoucherDoc.vendorName ? `${liveVoucherDoc.vendorName} Meal Voucher` : "Meal Discount Voucher"),
+        discountAmount: Number(liveVoucherDoc.discountNaira || 0),
+        discountDisplay: `₦${Number(liveVoucherDoc.discountNaira || 0).toLocaleString()} OFF`,
+        minSpend: Number(liveVoucherDoc.minSpendNaira || 0),
         code: liveVoucherDoc.voucherCode,
         pin: liveVoucherDoc.voucherPin,
         status: liveVoucherDoc.status || "active",
         expiresAt: liveVoucherDoc.expiresAt?.toDate ? liveVoucherDoc.expiresAt.toDate().toISOString() : liveVoucherDoc.expiresAt,
         category: "Local Delicacies",
-        transparencyText: `Enjoy ₦${(liveVoucherDoc.discountNaira || 500).toLocaleString()} off meals when spending ₦${(liveVoucherDoc.minSpendNaira || 2500).toLocaleString()} or more.`,
+        transparencyText: `Enjoy ₦${Number(liveVoucherDoc.discountNaira || 0).toLocaleString()} off meals when spending ₦${Number(liveVoucherDoc.minSpendNaira || 0).toLocaleString()} or more.`,
         instructions: [
           "Present this QR code or 4-digit claim PIN to cashier before order placement.",
           "Cashier validates the discount on PayWaka Merchant Terminal.",
@@ -96,6 +101,26 @@ export default function MealVoucherTicketPage() {
         ],
       }
     : fixtureVoucher;
+
+  // Real-time parent campaign status check for emergency halt (fails soft if public projection missing)
+  useEffect(() => {
+    const parentCampId = liveVoucherDoc?.campaignId;
+    if (!parentCampId) return;
+
+    const unsub = onSnapshot(
+      doc(db, "public_meal_offers", parentCampId),
+      (snap) => {
+        if (snap.exists()) {
+          setParentCampaignDoc(snap.data());
+        }
+      },
+      (err) => {
+        console.warn("[MealVoucherTicket] Parent campaign read notice:", err.message);
+      }
+    );
+
+    return () => unsub();
+  }, [liveVoucherDoc?.campaignId]);
 
   const vendor = getVendorById(voucher?.vendorId);
 
@@ -198,6 +223,21 @@ export default function MealVoucherTicketPage() {
               <Info className="w-4 h-4" />
             </button>
           </div>
+
+          {/* PARENT CAMPAIGN EMERGENCY HALT NOTICE */}
+          {parentCampaignDoc?.status === "emergency_halt" && (
+            <div className="p-4 rounded-2xl bg-[#2a0d13]/85 border border-[#ff4d6d]/50 flex items-start gap-3.5 text-left shadow-lg">
+              <AlertTriangle className="w-5 h-5 text-[#ff8093] flex-shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-bold text-[#ff8093] uppercase tracking-wider">
+                  Administrative Hold Notice
+                </span>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  In-store merchant redemption is temporarily suspended by platform administration for this campaign. Your voucher remains active and safe in your wallet, and will be redeemable as soon as the hold is lifted.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* DIGITAL VOUCHER TICKET (GENUINE PERFORATED TWO-PART CONSTRUCTION WITH SMOOTH EMERALD GRADIENT) */}
           <div className="relative w-full flex flex-col drop-shadow-[0_16px_36px_rgba(0,0,0,0.6)]">
