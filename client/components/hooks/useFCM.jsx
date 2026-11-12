@@ -4,11 +4,14 @@ import { doc, setDoc } from "firebase/firestore";
 import { messaging, db } from "@/firebaseConfig";
 import { toast } from "sonner";
 
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+const VAPID_KEY =
+  import.meta.env.VITE_FIREBASE_VAPID_KEY ||
+  import.meta.env.VITE_VAPID_KEY ||
+  "BAsuJAZxyu4GTfsV4aJxOOijVOrYPjlF4r4hq1K3Dk6HzAmx0JUs1sZKCQ0575kLj-Uu2uiHCttTu4njFSwHMpU";
 
 export const useFCM = (uid) => {
   useEffect(() => {
-    if (!uid || !messaging) return;
+    if (!uid || !messaging || typeof window === "undefined" || !("Notification" in window)) return;
 
     const registerToken = async () => {
       try {

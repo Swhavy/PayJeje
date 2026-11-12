@@ -35,9 +35,16 @@ export const AuthProvider = ({ children }) => {
           (snapshot) => {
             if (snapshot.exists()) {
               const data = snapshot.data();
+              // Convert Firestore Timestamps to ISO strings so Redux state remains serializable
+              const serializedData = Object.fromEntries(
+                Object.entries(data).map(([key, val]) => [
+                  key,
+                  val && typeof val.toDate === "function" ? val.toDate().toISOString() : val,
+                ])
+              );
               dispatch(
                 addUserCred({
-                  ...data,
+                  ...serializedData,
                   uid: firebaseUser.uid,
                   userEmail: firebaseUser.email || data.email,
                   accountNumber:

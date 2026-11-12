@@ -28,9 +28,8 @@ export default function FeedbackAlert({ message, isOpen, isClose }) {
           )}
 
           <AlertDialogTitle
-            className={`text-xl font-semibold ${
-              message.status ? "text-green-600" : "text-red-700"
-            }`}
+            className={`text-xl font-semibold ${message.status ? "text-green-600" : "text-red-700"
+              }`}
           >
             {message?.statusMsg || "An error occurred"}
           </AlertDialogTitle>

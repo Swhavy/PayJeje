@@ -562,6 +562,7 @@ export default function BillsPage() {
                       <Input
                         id="amount"
                         type="number"
+                        onWheel={(e) => e.currentTarget.blur()}
                         placeholder="Enter amount (e.g. 1000)"
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}

@@ -36,6 +36,15 @@ const useCloudfunc = () => {
   const setDemoCashierRoleCall = httpsCallable(functions, "setDemoCashierRole", { timeout: 300000 });
   const validateMealVoucherForMerchantCall = httpsCallable(functions, "validateMealVoucherForMerchant", { timeout: 300000 });
   const redeemMealVoucherMerchantCall = httpsCallable(functions, "redeemMealVoucherMerchant", { timeout: 300000 });
+  const getMerchantDashboardDataCall = httpsCallable(functions, "getMerchantDashboardData", { timeout: 300000 });
+  const createVendorCampaignCall = httpsCallable(functions, "createVendorCampaign", { timeout: 300000 });
+  const updateMerchantCampaignStatusCall = httpsCallable(functions, "updateMerchantCampaignStatus", { timeout: 300000 });
+  const updateMerchantCampaignBudgetCall = httpsCallable(functions, "updateMerchantCampaignBudget", { timeout: 300000 });
+  const adminProvisionVendorUserCall = httpsCallable(functions, "adminProvisionVendorUser", { timeout: 300000 });
+  const adminRegisterVendorStoreCall = httpsCallable(functions, "adminRegisterVendorStore", { timeout: 300000 });
+  const updateVendorProfileCall = httpsCallable(functions, "updateVendorProfile", { timeout: 300000 });
+  const updateVendorCampaignImageCall = httpsCallable(functions, "updateVendorCampaignImage", { timeout: 300000 });
+  const adminSetCampaignFeaturedCall = httpsCallable(functions, "adminSetCampaignFeatured", { timeout: 300000 });
 
   const adminGetDashboardData = async () => {
     const res = await adminGetDashboardDataCall();
@@ -353,6 +362,55 @@ const useCloudfunc = () => {
     return res.data;
   };
 
+  const getMerchantDashboardData = async (targetVendorId) => {
+    const res = await getMerchantDashboardDataCall({ targetVendorId });
+    return res.data;
+  };
+
+  const createVendorCampaign = async (payload) => {
+    const normalizedPayload = {
+      ...payload,
+      targetVendorId: payload?.targetVendorId || payload?.vendorId,
+    };
+    const res = await createVendorCampaignCall(normalizedPayload);
+    return res.data;
+  };
+
+  const updateMerchantCampaignStatus = async (campaignId, newStatus) => {
+    const res = await updateMerchantCampaignStatusCall({ campaignId, newStatus });
+    return res.data;
+  };
+
+  const updateMerchantCampaignBudget = async (campaignId, newBudgetNaira) => {
+    const res = await updateMerchantCampaignBudgetCall({ campaignId, newBudgetNaira });
+    return res.data;
+  };
+
+  const adminProvisionVendorUser = async (payload) => {
+    const res = await adminProvisionVendorUserCall(payload);
+    return res.data;
+  };
+
+  const adminRegisterVendorStore = async (payload) => {
+    const res = await adminRegisterVendorStoreCall(payload);
+    return res.data;
+  };
+
+  const updateVendorProfile = async (payload) => {
+    const res = await updateVendorProfileCall(payload);
+    return res.data;
+  };
+
+  const updateVendorCampaignImage = async (payload) => {
+    const res = await updateVendorCampaignImageCall(payload);
+    return res.data;
+  };
+
+  const adminSetCampaignFeatured = async (campaignId, isFeatured) => {
+    const res = await adminSetCampaignFeaturedCall({ campaignId, isFeatured });
+    return res.data;
+  };
+
   return {
     biller,
     cable,
@@ -388,6 +446,15 @@ const useCloudfunc = () => {
     setDemoCashierRole,
     validateMealVoucherForMerchant,
     redeemMealVoucherMerchant,
+    getMerchantDashboardData,
+    createVendorCampaign,
+    updateMerchantCampaignStatus,
+    updateMerchantCampaignBudget,
+    adminProvisionVendorUser,
+    adminRegisterVendorStore,
+    updateVendorProfile,
+    updateVendorCampaignImage,
+    adminSetCampaignFeatured,
   };
 };
 

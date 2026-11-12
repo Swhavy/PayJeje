@@ -86,13 +86,12 @@ export const FICTIONAL_VENDORS = [
 ];
 
 export const MEAL_CATEGORIES = [
-  { id: "all", label: "All", count: 24 },
-  { id: "fast-food", label: "🍔 Fast Food" },
-  { id: "local-delicacies", label: "🍲 Local Delicacies" },
-  { id: "pizza-pasta", label: "🍕 Pizza & Pasta" },
-  { id: "desserts", label: "🍰 Desserts" },
-  { id: "drinks", label: "🥤 Drinks" },
-  { id: "international", label: "🌍 International" },
+  { id: "all", label: "All" },
+  { id: "small-chops", label: "🍢 Small Chops", value: "Small Chops" },
+  { id: "fast-foods", label: "🍔 Fast Foods", value: "Fast Foods" },
+  { id: "local-delicacies", label: "🍲 Local Delicacies", value: "Local Delicacies" },
+  { id: "drinks", label: "🥤 Drinks", value: "Drinks" },
+  { id: "pastries", label: "🥐 Pastries", value: "Pastries" },
 ];
 
 export const MEAL_OFFERS = [

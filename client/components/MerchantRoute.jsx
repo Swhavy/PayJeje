@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { useSelector } from "react-redux";
-import { auth, db, doc, getDoc } from "@/firebaseConfig";
-import { ShieldAlert, ArrowLeft, Loader2, Store } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import { auth, db } from "@/firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
+import { ShieldAlert, ArrowLeft, Store } from "lucide-react";
+import MerchantLayout from "@/components/MerchantLayout";
 
 /**
  * MerchantRoute - Authoritative Route Guard for PayWaka Merchant Terminal.
@@ -15,7 +15,6 @@ import DashboardLayout from "@/components/DashboardLayout";
  * - Displays a secure Access Denied screen with no merchant controls, or redirects.
  */
 export default function MerchantRoute({ children }) {
-  const reduxUser = useSelector((state) => state.user?.user);
   const [authStatus, setAuthStatus] = useState("checking"); // "checking" | "authorized" | "denied"
   const [merchantData, setMerchantData] = useState(null);
 
@@ -45,6 +44,7 @@ export default function MerchantRoute({ children }) {
             setMerchantData({
               role: data.role,
               vendorId: data.vendorId || null,
+              vendorRole: data.vendorRole || "cashier",
               vendorBranch: data.vendorBranch || null,
               cashierName: data.cashierName || data.userName || "Cashier",
             });
@@ -60,6 +60,7 @@ export default function MerchantRoute({ children }) {
           setMerchantData({
             role: claims.role || "vendor",
             vendorId: claims.vendorId || null,
+            vendorRole: claims.vendorRole || "cashier",
           });
           setAuthStatus("authorized");
           return;
@@ -88,25 +89,20 @@ export default function MerchantRoute({ children }) {
 
   if (authStatus === "checking") {
     return (
-      <DashboardLayout>
-        <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 text-center p-6">
-          <Loader2 className="w-8 h-8 text-[#00FF41] animate-spin" />
-          <p className="text-sm text-zinc-400">Verifying merchant authorization...</p>
-        </div>
-      </DashboardLayout>
+      <MerchantLayout isLoading />
     );
   }
 
   if (authStatus === "unauthenticated") {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/merchant/login" replace />;
   }
 
   if (authStatus === "denied") {
     return (
-      <DashboardLayout>
+      <MerchantLayout activeTab={null}>
         <div
           data-testid="merchant-access-denied"
-          className="w-full max-w-2xl mx-auto my-8 p-6 sm:p-8 bg-[#111317] border border-red-500/30 rounded-3xl text-center shadow-2xl animate-fadeIn"
+          className="w-full max-w-2xl mx-auto my-8 p-6 sm:p-8 bg-[#0e111a] border border-red-500/30 rounded-3xl text-center shadow-2xl animate-fadeIn"
         >
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 shadow-lg">
             <ShieldAlert className="w-9 h-9" />
@@ -117,27 +113,27 @@ export default function MerchantRoute({ children }) {
           </h1>
 
           <p className="text-sm text-zinc-400 max-w-md mx-auto leading-relaxed mb-6">
-            The PayWaka Merchant Terminal is strictly restricted to authorized restaurant cashiers and administrators. Regular customer accounts cannot access terminal operations or cashier provisioning.
+            The PayWaka Merchant Terminal is strictly restricted to authorized restaurant cashiers, managers, and administrators. Regular customer accounts cannot access terminal operations or cashier provisioning.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              to="/services/meals"
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#ff6b00] hover:bg-[#ff7a1a] text-white font-bold text-sm transition-all shadow-md active:scale-95 w-full sm:w-auto"
+              to="/merchant/login"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-all shadow-md active:scale-95 w-full sm:w-auto"
             >
               <Store className="w-4 h-4" />
-              <span>Return to Meal Rewards</span>
+              <span>Merchant Sign-In</span>
             </Link>
             <Link
-              to="/dashboard"
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#1e2229] hover:bg-[#282c35] text-zinc-300 hover:text-white font-bold text-sm transition-all border border-[#2e3440] w-full sm:w-auto"
+              to="/services/meals"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-[#161a26] hover:bg-[#1e2333] text-zinc-300 hover:text-white font-bold text-sm transition-all border border-[#252c3f] w-full sm:w-auto"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Customer Dashboard</span>
+              <span>Customer Meal Rewards</span>
             </Link>
           </div>
         </div>
-      </DashboardLayout>
+      </MerchantLayout>
     );
   }
 

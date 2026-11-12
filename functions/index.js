@@ -6135,6 +6135,12 @@ export async function redeemMealCouponCore({ uid, couponId, pin, idempotencyKey,
     const vendorId = campaignData.vendorId || "paywaka-demo-foods";
     const vendorName = campaignData.vendorName || "PayWaka Partner Food";
 
+    // Read vendor profile inside transaction (all reads before writes) to resolve authoritative logo
+    const vendorProfileSnap = await t.get(db.collection("meal_vendors").doc(vendorId));
+    const vendorProfileData = vendorProfileSnap.exists ? vendorProfileSnap.data() || {} : {};
+    const resolvedVendorLogoUrl = campaignData.vendorLogoUrl || vendorProfileData.logoUrl || null;
+    const resolvedVendorLogoEmoji = campaignData.vendorLogoEmoji || vendorProfileData.logoEmoji || "🍗";
+
     // Commercial Terms Invariant: minSpendNaira >= discountNaira
     if (minSpendNaira < discountNaira) {
       throw new HttpsError(
@@ -6211,10 +6217,10 @@ export async function redeemMealCouponCore({ uid, couponId, pin, idempotencyKey,
       const activeExpiresAtMs = claimData.activeVoucherExpiresAt?.toMillis
         ? claimData.activeVoucherExpiresAt.toMillis()
         : claimData.activeVoucherExpiresAt?.toDate
-        ? claimData.activeVoucherExpiresAt.toDate().getTime()
-        : claimData.activeVoucherExpiresAt
-        ? new Date(claimData.activeVoucherExpiresAt).getTime()
-        : 0;
+          ? claimData.activeVoucherExpiresAt.toDate().getTime()
+          : claimData.activeVoucherExpiresAt
+            ? new Date(claimData.activeVoucherExpiresAt).getTime()
+            : 0;
 
       if (nowMs < activeExpiresAtMs) {
         const activeVoucherDoc = await t.get(db.collection("meal_vouchers").doc(claimData.activeVoucherId));
@@ -6292,6 +6298,11 @@ export async function redeemMealCouponCore({ uid, couponId, pin, idempotencyKey,
       offerId: offerId,
       vendorId: vendorId,
       vendorName: vendorName,
+      vendorLogoUrl: resolvedVendorLogoUrl,
+      vendorLogoEmoji: resolvedVendorLogoEmoji,
+      title: campaignData.title || `${vendorName} ₦${discountNaira} Meal Discount`,
+      category: campaignData.category || "Local Delicacies",
+      image: campaignData.image || null,
       discountNaira: discountNaira,
       minSpendNaira: minSpendNaira,
       pointsDeducted: pointsCost,
@@ -6530,7 +6541,7 @@ export async function setDemoCashierRoleCore({
       try {
         const userRecord = await admin.auth().getUser(targetUid);
         existingClaims = userRecord.customClaims || {};
-      } catch (e) {}
+      } catch (e) { }
 
       const updatedClaims = {
         ...existingClaims,
@@ -6604,7 +6615,7 @@ export async function setDemoCashierRoleCore({
     try {
       const userRecord = await admin.auth().getUser(targetUid);
       existingClaims = userRecord.customClaims || {};
-    } catch (e) {}
+    } catch (e) { }
 
     const updatedClaims = {
       ...existingClaims,
@@ -6741,16 +6752,17 @@ export function evaluateVoucherRedemptionEligibilityCore({
   isAuthorizedAdmin,
   billAmount,
   voucherPin,
+  requirePin = false,
   overrideNow,
 }) {
   const nowMs = overrideNow ? overrideNow.getTime() : Date.now();
   const expiresAtMs = voucherData?.expiresAt?.toMillis
     ? voucherData.expiresAt.toMillis()
     : voucherData?.expiresAt?.toDate
-    ? voucherData.expiresAt.toDate().getTime()
-    : voucherData?.expiresAt
-    ? new Date(voucherData.expiresAt).getTime()
-    : 0;
+      ? voucherData.expiresAt.toDate().getTime()
+      : voucherData?.expiresAt
+        ? new Date(voucherData.expiresAt).getTime()
+        : 0;
 
   const isExpired = nowMs >= expiresAtMs;
 
@@ -6782,8 +6794,19 @@ export function evaluateVoucherRedemptionEligibilityCore({
     };
   }
 
-  // 3. Voucher PIN Verification (if provided)
-  if (voucherPin !== undefined && voucherPin !== null && String(voucherPin).trim() !== "") {
+  // 3. Voucher PIN Verification (mandatory when requirePin is true or when voucherPin is provided)
+  if (requirePin && voucherData.voucherPin) {
+    if (voucherPin === undefined || voucherPin === null || !/^\d{4}$/.test(String(voucherPin).trim())) {
+      return {
+        eligible: false,
+        reason: "invalid-pin",
+        message: "Valid 4-digit customer voucher claim PIN is required to confirm customer presence.",
+      };
+    }
+    if (String(voucherPin).trim() !== String(voucherData.voucherPin).trim()) {
+      return { eligible: false, reason: "invalid-pin", message: "Incorrect 4-digit voucher claim PIN." };
+    }
+  } else if (voucherPin !== undefined && voucherPin !== null && String(voucherPin).trim() !== "") {
     if (String(voucherPin).trim() !== String(voucherData.voucherPin || "").trim()) {
       return { eligible: false, reason: "invalid-pin", message: "Incorrect 4-digit voucher claim PIN." };
     }
@@ -6969,8 +6992,8 @@ export async function validateMealVoucherForMerchantCore({
   const expiresAtMs = voucherData.expiresAt?.toMillis
     ? voucherData.expiresAt.toMillis()
     : voucherData.expiresAt?.toDate
-    ? voucherData.expiresAt.toDate().getTime()
-    : new Date(voucherData.expiresAt).getTime();
+      ? voucherData.expiresAt.toDate().getTime()
+      : new Date(voucherData.expiresAt).getTime();
 
   // 3. Fetch Campaign
   const campaignSnap = await db.collection("meal_campaigns").doc(voucherData.campaignId).get();
@@ -7042,6 +7065,7 @@ export async function redeemMealVoucherMerchantCore({
   vendorBranch,
   billAmountNaira,
   voucherPin,
+  requirePin = false,
   idempotencyKey,
   overrideNow,
 }) {
@@ -7176,7 +7200,11 @@ export async function redeemMealVoucherMerchantCore({
       }
 
       // Verify voucher PIN if voucher requires it
-      if (voucherData.voucherPin && voucherPin !== undefined && voucherPin !== null && String(voucherPin).trim() !== "") {
+      if (requirePin && voucherData.voucherPin) {
+        if (voucherPin === undefined || voucherPin === null || String(voucherPin).trim() !== String(voucherData.voucherPin).trim()) {
+          throw new HttpsError("permission-denied", "Incorrect 4-digit voucher claim PIN.");
+        }
+      } else if (voucherData.voucherPin && voucherPin !== undefined && voucherPin !== null && String(voucherPin).trim() !== "") {
         if (String(voucherPin).trim() !== String(voucherData.voucherPin).trim()) {
           throw new HttpsError("permission-denied", "Incorrect 4-digit voucher claim PIN.");
         }
@@ -7192,6 +7220,7 @@ export async function redeemMealVoucherMerchantCore({
         voucherCode: voucherData.voucherCode,
         billAmountNaira: prior.billAmountNaira,
         discountNaira: prior.discountNaira,
+        discountAppliedNaira: prior.discountNaira,
         finalPayableNaira: prior.finalPayableNaira,
         vendorId: prior.vendorId,
         vendorName: prior.vendorName,
@@ -7201,13 +7230,16 @@ export async function redeemMealVoucherMerchantCore({
       };
     }
 
-    // 4. Fetch Campaign inside transaction
+    // 4. Fetch Campaign & Public Offer inside transaction
     const campaignRef = db.collection("meal_campaigns").doc(voucherData.campaignId);
     const campaignDoc = await t.get(campaignRef);
     if (!campaignDoc.exists) {
       throw new HttpsError("not-found", "Associated meal campaign not found.");
     }
     const campaignData = campaignDoc.data();
+
+    const pmoRef = db.collection("public_meal_offers").doc(voucherData.campaignId);
+    const pmoSnap = await t.get(pmoRef);
 
     // 5. Shared Server-Authoritative Eligibility Check
     const evalResult = evaluateVoucherRedemptionEligibilityCore({
@@ -7217,6 +7249,7 @@ export async function redeemMealVoucherMerchantCore({
       isAuthorizedAdmin,
       billAmount: normalizedBillAmount,
       voucherPin,
+      requirePin,
       overrideNow,
     });
 
@@ -7284,6 +7317,35 @@ export async function redeemMealVoucherMerchantCore({
     }
     t.update(campaignRef, campaignUpdates);
 
+    // 8b. Clear activeVoucherId on users/{userId}/mealClaims/{offerId} so customer can purchase their 2nd voucher if under lifetime limit
+    const claimOfferKey = voucherData.offerId || voucherData.campaignId;
+    if (voucherData.userId && claimOfferKey) {
+      const userClaimRef = db
+        .collection("users")
+        .doc(voucherData.userId)
+        .collection("mealClaims")
+        .doc(claimOfferKey);
+      t.set(
+        userClaimRef,
+        {
+          activeVoucherId: null,
+          activeVoucherExpiresAt: null,
+          lastRedeemedVoucherId: voucherDoc.id,
+          lastRedeemedAt: admin.firestore.Timestamp.fromDate(nowDate),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    // 8c. Touch public_meal_offers/{campaignId} so real-time listeners sync immediately
+    if (pmoSnap.exists) {
+      t.update(pmoRef, {
+        lastRedemptionAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
     // 9. Atomic Write: Create Immutable Redemption Audit Document in meal_redemptions
     const redemptionDocRef = db.collection("meal_redemptions").doc(redemptionId);
     t.set(redemptionDocRef, {
@@ -7347,6 +7409,7 @@ export async function redeemMealVoucherMerchantCore({
       voucherCode: voucherData.voucherCode,
       billAmountNaira: normalizedBillAmount,
       discountNaira: actualDiscount,
+      discountAppliedNaira: actualDiscount,
       finalPayableNaira: finalPayable,
       vendorId: voucherData.vendorId,
       vendorName: voucherData.vendorName,
@@ -7424,8 +7487,8 @@ export async function migrateCampaignReservationsCore({
       const lockExpiryMs = lock.leaseExpiresAt?.toMillis
         ? lock.leaseExpiresAt.toMillis()
         : lock.leaseExpiresAt?.toDate
-        ? lock.leaseExpiresAt.toDate().getTime()
-        : 0;
+          ? lock.leaseExpiresAt.toDate().getTime()
+          : 0;
 
       // If lease is still valid and held by another worker, block
       if (nowMs < lockExpiryMs && lock.workerId !== effectiveWorkerId) {
@@ -7565,8 +7628,8 @@ export async function migrateCampaignReservationsCore({
         const expMs = vData.expiresAt?.toMillis
           ? vData.expiresAt.toMillis()
           : vData.expiresAt?.toDate
-          ? vData.expiresAt.toDate().getTime()
-          : new Date(vData.expiresAt).getTime();
+            ? vData.expiresAt.toDate().getTime()
+            : new Date(vData.expiresAt).getTime();
 
         if (nowMs >= expMs || vData.status === "expired") {
           t.update(vDoc.ref, {
@@ -7724,8 +7787,8 @@ export async function reconcileExpiredVouchersCore({
         const expMs = vData.expiresAt?.toMillis
           ? vData.expiresAt.toMillis()
           : vData.expiresAt?.toDate
-          ? vData.expiresAt.toDate().getTime()
-          : new Date(vData.expiresAt).getTime();
+            ? vData.expiresAt.toDate().getTime()
+            : new Date(vData.expiresAt).getTime();
 
         if (nowMs < expMs) return null;
 
@@ -8121,6 +8184,7 @@ export const redeemMealVoucherMerchant = onCall({ cors: true, timeoutSeconds: 30
     vendorBranch,
     billAmountNaira,
     voucherPin,
+    requirePin: true,
     idempotencyKey,
   });
 });
@@ -8184,6 +8248,9 @@ export async function createVendorCampaignCore({
   minSpendNaira,
   pointsCost = 0,
   campaignBudgetNaira,
+  category = "Local Delicacies",
+  image = null,
+  imageUploadStatus = null,
   offerId,
   vendorName,
 }) {
@@ -8245,16 +8312,48 @@ export async function createVendorCampaignCore({
     );
   }
 
-  // 3. Resolve Vendor Name
+  // 3. Resolve Vendor Name, Branch & Branding Logo
   let resolvedVendorName = vendorName && typeof vendorName === "string" ? vendorName.trim() : null;
-  if (!resolvedVendorName) {
-    const vDoc = await db.collection("meal_vendors").doc(targetVendorId.trim()).get();
-    if (vDoc.exists && vDoc.data().name) {
-      resolvedVendorName = vDoc.data().name;
-    } else {
-      resolvedVendorName = targetVendorId.trim();
+  let resolvedBranch = "Main Branch";
+  let resolvedVendorLogoUrl = null;
+  let resolvedVendorLogoEmoji = "🍗";
+  const vDoc = await db.collection("meal_vendors").doc(targetVendorId.trim()).get();
+  if (vDoc.exists) {
+    const vData = vDoc.data() || {};
+    if (!resolvedVendorName && vData.name) {
+      resolvedVendorName = vData.name;
+    }
+    if (Array.isArray(vData.branches) && vData.branches.length > 0) {
+      resolvedBranch = vData.branches[0];
+    } else if (typeof vData.branch === "string" && vData.branch.trim()) {
+      resolvedBranch = vData.branch.trim();
+    }
+    if (vData.logoUrl) {
+      resolvedVendorLogoUrl = vData.logoUrl;
+    }
+    if (vData.logoEmoji) {
+      resolvedVendorLogoEmoji = vData.logoEmoji;
     }
   }
+  if (!resolvedVendorName) {
+    resolvedVendorName = targetVendorId.trim();
+  }
+
+  const allowedCategories = ["Small Chops", "Fast Foods", "Local Delicacies", "Drinks", "Pastries"];
+  const cleanCategory =
+    typeof category === "string" && allowedCategories.includes(category.trim())
+      ? category.trim()
+      : typeof category === "string" && category.trim()
+        ? category.trim()
+        : "Local Delicacies";
+
+  const cleanImage = typeof image === "string" && image.trim() ? image.trim() : null;
+  const cleanImageUploadStatus =
+    typeof imageUploadStatus === "string" && ["uploading", "synced", "failed", "none"].includes(imageUploadStatus)
+      ? imageUploadStatus
+      : cleanImage
+      ? "synced"
+      : "none";
 
   const campRef = db.collection("meal_campaigns").doc();
   const campaignId = campRef.id;
@@ -8281,7 +8380,14 @@ export async function createVendorCampaignCore({
       offerId: canonicalOfferId,
       vendorId: targetVendorId.trim(),
       vendorName: resolvedVendorName,
+      vendorLogoUrl: resolvedVendorLogoUrl,
+      vendorLogoEmoji: resolvedVendorLogoEmoji,
+      branch: resolvedBranch,
       title: title.trim(),
+      category: cleanCategory,
+      image: cleanImage,
+      imageUploadStatus: cleanImageUploadStatus,
+      isFeatured: false,
       pointsCost: Math.round(points),
       discountNaira: Math.round(discount),
       minSpendNaira: Math.round(minSpend),
@@ -8300,7 +8406,14 @@ export async function createVendorCampaignCore({
       offerId: canonicalOfferId,
       vendorId: targetVendorId.trim(),
       vendorName: resolvedVendorName,
+      vendorLogoUrl: resolvedVendorLogoUrl,
+      vendorLogoEmoji: resolvedVendorLogoEmoji,
+      branch: resolvedBranch,
       title: title.trim(),
+      category: cleanCategory,
+      image: cleanImage,
+      imageUploadStatus: cleanImageUploadStatus,
+      isFeatured: false,
       pointsCost: Math.round(points),
       discountNaira: Math.round(discount),
       minSpendNaira: Math.round(minSpend),
@@ -8319,7 +8432,12 @@ export async function createVendorCampaignCore({
       offerId: canonicalOfferId,
       vendorId: targetVendorId.trim(),
       vendorName: resolvedVendorName,
+      branch: resolvedBranch,
       title: title.trim(),
+      category: cleanCategory,
+      image: cleanImage,
+      imageUploadStatus: cleanImageUploadStatus,
+      isFeatured: false,
       pointsCost: Math.round(points),
       discountNaira: Math.round(discount),
       minSpendNaira: Math.round(minSpend),
@@ -8337,19 +8455,888 @@ export const createVendorCampaign = onCall({ cors: true, timeoutSeconds: 300 }, 
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Authentication required to create campaign.");
   }
-  const { targetVendorId, title, discountNaira, minSpendNaira, pointsCost, campaignBudgetNaira, offerId, vendorName } = request.data || {};
-  return await createVendorCampaignCore({
-    callerUid,
+  const {
     targetVendorId,
+    vendorId,
     title,
     discountNaira,
     minSpendNaira,
     pointsCost,
     campaignBudgetNaira,
+    category,
+    image,
+    imageUploadStatus,
+    offerId,
+    vendorName,
+  } = request.data || {};
+  return await createVendorCampaignCore({
+    callerUid,
+    targetVendorId: targetVendorId || vendorId,
+    title,
+    discountNaira,
+    minSpendNaira,
+    pointsCost,
+    campaignBudgetNaira,
+    category,
+    image,
+    imageUploadStatus,
     offerId,
     vendorName,
   });
 });
+
+/**
+ * Stage 4 Merchant-Funded Dashboard Backend Query.
+ *
+ * Enforces:
+ * - Server-side authentication and role check via verifyVendorAuthorizationCore
+ * - Strict multi-tenant isolation (only targetVendorId data is returned)
+ * - Authoritative metrics aggregation (allocated budget, consumed spent, reserved, available capacity)
+ * - Returns vendor's recent completed redemptions
+ */
+export async function getMerchantDashboardDataCore({
+  callerUid,
+  targetVendorId,
+}) {
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to view merchant dashboard.");
+  }
+  if (!targetVendorId || typeof targetVendorId !== "string" || !targetVendorId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid targetVendorId is required.");
+  }
+
+  const vId = targetVendorId.trim();
+
+  // Authorize: cashier, manager, owner, or platform admin
+  const authResult = await verifyVendorAuthorizationCore({
+    callerUid,
+    targetVendorId: vId,
+    requiredRole: "cashier",
+  });
+
+  // Fetch Vendor Profile
+  const vendorSnap = await db.collection("meal_vendors").doc(vId).get();
+  const vendorProfile = vendorSnap.exists
+    ? { id: vId, ...vendorSnap.data() }
+    : { id: vId, name: vId, branch: authResult.vendorBranch || "Main Branch" };
+
+  // Fetch Campaigns for this vendor (Tenant Isolation)
+  const campsSnap = await db.collection("meal_campaigns")
+    .where("vendorId", "==", vId)
+    .get();
+
+  let totalAllocatedBudgetNaira = 0;
+  let totalSpentBudgetNaira = 0;
+  let totalReservedBudgetNaira = 0;
+  let totalAvailableCapacityNaira = 0;
+  let activeCampaignsCount = 0;
+  let pausedCampaignsCount = 0;
+  let endedCampaignsCount = 0;
+  let haltedCampaignsCount = 0;
+
+  const campaigns = campsSnap.docs.map((docSnap) => {
+    const cData = docSnap.data();
+    const budget = Number(cData.campaignBudgetNaira || 0);
+    const spent = Number(cData.campaignSpentNaira || 0);
+    const reserved = Number(cData.campaignReservedNaira || 0);
+    const discount = Number(cData.discountNaira || 0);
+    const minSpend = Number(cData.minSpendNaira || 0);
+    const pointsCost = Number(cData.pointsCost || 0);
+    const committed = spent + reserved;
+    const availableCapacity = Math.max(0, budget - committed);
+    const status = cData.status || "active";
+
+    totalAllocatedBudgetNaira += budget;
+    totalSpentBudgetNaira += spent;
+    totalReservedBudgetNaira += reserved;
+    totalAvailableCapacityNaira += availableCapacity;
+
+    if (status === "active") activeCampaignsCount++;
+    else if (status === "paused") pausedCampaignsCount++;
+    else if (status === "ended") endedCampaignsCount++;
+    else if (status === "emergency_halt") haltedCampaignsCount++;
+
+    return {
+      id: docSnap.id,
+      campaignId: docSnap.id,
+      offerId: cData.offerId || docSnap.id,
+      vendorId: cData.vendorId,
+      vendorName: cData.vendorName || vendorProfile.name,
+      branch: cData.branch || vendorProfile.branch || "Main Branch",
+      title: cData.title || "Meal Discount Offer",
+      category: cData.category || "Local Delicacies",
+      image: cData.image || null,
+      imageUploadStatus: cData.imageUploadStatus || (cData.image ? "synced" : "none"),
+      isFeatured: Boolean(cData.isFeatured),
+      pointsCost,
+      discountNaira: discount,
+      minSpendNaira: minSpend,
+      campaignBudgetNaira: budget,
+      campaignSpentNaira: spent,
+      campaignReservedNaira: reserved,
+      committedExposureNaira: committed,
+      availableCapacityNaira: availableCapacity,
+      isAvailable: status === "active" && cData.migrationStatus === "ready" && availableCapacity >= discount,
+      status,
+      migrationStatus: cData.migrationStatus || "ready",
+      createdAt: cData.createdAt?.toDate ? cData.createdAt.toDate().toISOString() : cData.createdAt,
+      updatedAt: cData.updatedAt?.toDate ? cData.updatedAt.toDate().toISOString() : cData.updatedAt,
+    };
+  });
+
+  // Fetch Recent Completed Redemptions for this vendor (Tenant Isolation)
+  let recentRedemptions = [];
+  try {
+    const redSnap = await db.collection("meal_redemptions")
+      .where("vendorId", "==", vId)
+      .orderBy("redeemedAt", "desc")
+      .limit(50)
+      .get();
+
+    recentRedemptions = redSnap.docs.map((docSnap) => {
+      const rData = docSnap.data();
+      return {
+        id: docSnap.id,
+        redemptionReference: rData.redemptionReference || docSnap.id,
+        voucherCode: rData.voucherCode,
+        campaignId: rData.campaignId,
+        offerId: rData.offerId,
+        cashierUid: rData.cashierUid,
+        cashierName: rData.cashierName || "Cashier",
+        vendorBranch: rData.vendorBranch,
+        billAmountNaira: Number(rData.billAmountNaira || 0),
+        discountNaira: Number(rData.discountNaira || 0),
+        finalPayableNaira: Number(rData.finalPayableNaira || 0),
+        status: rData.status || "completed",
+        redeemedAt: rData.redeemedAt?.toDate ? rData.redeemedAt.toDate().toISOString() : rData.redeemedAt,
+      };
+    });
+  } catch (err) {
+    const fallbackRedSnap = await db.collection("meal_redemptions")
+      .where("vendorId", "==", vId)
+      .get();
+    recentRedemptions = fallbackRedSnap.docs
+      .map((docSnap) => {
+        const rData = docSnap.data();
+        const dateMs = rData.redeemedAt?.toMillis ? rData.redeemedAt.toMillis() : new Date(rData.redeemedAt || 0).getTime();
+        return {
+          id: docSnap.id,
+          redemptionReference: rData.redemptionReference || docSnap.id,
+          voucherCode: rData.voucherCode,
+          campaignId: rData.campaignId,
+          offerId: rData.offerId,
+          cashierUid: rData.cashierUid,
+          cashierName: rData.cashierName || "Cashier",
+          vendorBranch: rData.vendorBranch,
+          billAmountNaira: Number(rData.billAmountNaira || 0),
+          discountNaira: Number(rData.discountNaira || 0),
+          finalPayableNaira: Number(rData.finalPayableNaira || 0),
+          status: rData.status || "completed",
+          redeemedAt: rData.redeemedAt?.toDate ? rData.redeemedAt.toDate().toISOString() : rData.redeemedAt,
+          _dateMs: dateMs,
+        };
+      })
+      .sort((a, b) => b._dateMs - a._dateMs)
+      .slice(0, 50);
+  }
+
+  const totalGrossBillAmountNaira = recentRedemptions.reduce((acc, r) => acc + r.billAmountNaira, 0);
+  const totalMerchantRevenueNaira = recentRedemptions.reduce((acc, r) => acc + r.finalPayableNaira, 0);
+
+  return {
+    success: true,
+    callerRole: authResult.vendorRole,
+    isAdmin: authResult.isAdmin,
+    vendor: vendorProfile,
+    summary: {
+      totalCampaigns: campaigns.length,
+      activeCampaigns: activeCampaignsCount,
+      pausedCampaigns: pausedCampaignsCount,
+      endedCampaigns: endedCampaignsCount,
+      haltedCampaigns: haltedCampaignsCount,
+      totalAllocatedBudgetNaira,
+      totalSpentBudgetNaira,
+      totalReservedBudgetNaira,
+      totalAvailableCapacityNaira,
+      totalRedemptionsCount: recentRedemptions.length,
+      totalGrossBillAmountNaira,
+      totalMerchantRevenueNaira,
+    },
+    metrics: {
+      totalCampaigns: campaigns.length,
+      activeCampaigns: activeCampaignsCount,
+      pausedCampaigns: pausedCampaignsCount,
+      endedCampaigns: endedCampaignsCount,
+      haltedCampaigns: haltedCampaignsCount,
+      totalAllocatedBudgetNaira,
+      totalSpentBudgetNaira,
+      totalReservedBudgetNaira,
+      totalAvailableCapacityNaira,
+      totalRedemptionsCount: recentRedemptions.length,
+      totalGrossBillAmountNaira,
+      totalMerchantRevenueNaira,
+    },
+    campaigns,
+    recentRedemptions,
+  };
+}
+
+export const getMerchantDashboardData = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to view merchant dashboard.");
+  }
+  const { targetVendorId } = request.data || {};
+  return await getMerchantDashboardDataCore({ callerUid, targetVendorId });
+});
+
+/**
+ * Stage 4 Merchant Campaign Status Transition Core.
+ *
+ * Enforces:
+ * - Role check: requires 'manager' or 'owner' role on targetVendorId
+ * - Allowed merchant transitions: 'active' <-> 'paused', and ('active'|'paused') -> 'ended'
+ * - Inviolability: strictly blocks setting or clearing 'emergency_halt'
+ * - Atomically synchronizes public_meal_offers projection availability
+ */
+export async function updateMerchantCampaignStatusCore({
+  callerUid,
+  campaignId,
+  newStatus,
+}) {
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to update campaign status.");
+  }
+  if (!campaignId || typeof campaignId !== "string" || !campaignId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid campaignId is required.");
+  }
+
+  const allowedMerchantStatuses = ["active", "paused", "ended"];
+  if (newStatus === "emergency_halt") {
+    throw new HttpsError(
+      "invalid-argument",
+      "Merchants cannot assert emergency administrative halt. This status is reserved for system administrators."
+    );
+  }
+  if (!allowedMerchantStatuses.includes(newStatus)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Invalid status: must be one of ${allowedMerchantStatuses.join(", ")}.`
+    );
+  }
+
+  const campRef = db.collection("meal_campaigns").doc(campaignId.trim());
+
+  return await db.runTransaction(async (t) => {
+    const cSnap = await t.get(campRef);
+    if (!cSnap.exists) {
+      throw new HttpsError("not-found", "Campaign not found.");
+    }
+    const cData = cSnap.data();
+
+    // Verify Authorization: caller must be manager, owner, or admin for this specific vendor
+    await verifyVendorAuthorizationCore({
+      callerUid,
+      targetVendorId: cData.vendorId,
+      requiredRole: "manager",
+    });
+
+    // Inviolability check: If campaign is under emergency_halt, merchant cannot modify it!
+    if (cData.status === "emergency_halt") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Campaign is under emergency administrative halt and cannot be modified by merchant. Contact platform administration."
+      );
+    }
+
+    const pmoRef = db.collection("public_meal_offers").doc(campaignId.trim());
+    const pmoSnap = await t.get(pmoRef);
+    const qRef = db.collection("quarantined_meal_campaigns").doc(campaignId.trim());
+    const qSnap = await t.get(qRef);
+
+    t.update(campRef, {
+      status: newStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const currentSpent = Number(cData.campaignSpentNaira || 0);
+    const currentReserved = Number(cData.campaignReservedNaira || 0);
+    const budget = Number(cData.campaignBudgetNaira || 0);
+    const availableCap = budget - (currentSpent + currentReserved);
+    const discount = Number(cData.discountNaira || 0);
+
+    // Public offer recalculation: only available if active, ready, not quarantined, and has capacity
+    const isAvail =
+      newStatus === "active" &&
+      cData.migrationStatus === "ready" &&
+      !qSnap.exists &&
+      availableCap >= discount;
+
+    if (pmoSnap.exists) {
+      t.update(pmoRef, {
+        status: newStatus,
+        isAvailable: isAvail,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return {
+      success: true,
+      campaignId: campaignId.trim(),
+      vendorId: cData.vendorId,
+      previousStatus: cData.status,
+      status: newStatus,
+      isAvailable: isAvail,
+    };
+  });
+}
+
+export const updateMerchantCampaignStatus = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to update campaign status.");
+  }
+  const { campaignId, newStatus } = request.data || {};
+  return await updateMerchantCampaignStatusCore({
+    callerUid,
+    campaignId,
+    newStatus,
+  });
+});
+
+/**
+ * Stage 4 Merchant Campaign Budget Top-up onCall wrapper.
+ */
+export const updateMerchantCampaignBudget = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to update campaign budget.");
+  }
+  const { campaignId, newBudgetNaira } = request.data || {};
+  return await updateCampaignBudgetCore({
+    callerUid,
+    campaignId,
+    newBudgetNaira,
+  });
+});
+
+/**
+ * Stage 4 Admin Provisioning Core: Creates Firebase Auth user & configures Firestore users/{uid}.
+ * Restricted strictly to platform administrators (role === 'admin' || isAdmin === true).
+ */
+export async function adminProvisionVendorUserCore({
+  callerUid,
+  email,
+  password,
+  fullName,
+  targetVendorId,
+  vendorRole = "cashier",
+  vendorBranch = "Main Branch",
+}) {
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required for admin provisioning.");
+  }
+  const adminSnap = await db.collection("users").doc(callerUid).get();
+  if (!adminSnap.exists) {
+    throw new HttpsError("permission-denied", "Caller profile not found.");
+  }
+  const adminData = adminSnap.data() || {};
+  const isAdmin = adminData.role === "admin" || adminData.isAdmin === true;
+  if (!isAdmin) {
+    throw new HttpsError("permission-denied", "Only platform administrators can provision vendor users.");
+  }
+
+  if (!email || typeof email !== "string" || !email.includes("@")) {
+    throw new HttpsError("invalid-argument", "Valid email address is required.");
+  }
+  if (!password || typeof password !== "string" || password.length < 6) {
+    throw new HttpsError("invalid-argument", "Password must be at least 6 characters long.");
+  }
+  if (!targetVendorId || typeof targetVendorId !== "string" || !targetVendorId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid targetVendorId is required.");
+  }
+
+  const cleanRole = ["owner", "manager", "cashier"].includes(vendorRole) ? vendorRole : "cashier";
+  const cleanVendorId = targetVendorId.trim();
+  const cleanName = fullName?.trim() || "Store Staff";
+
+  // Check if vendor exists in meal_vendors (or auto-create stub if requested)
+  const vendorRef = db.collection("meal_vendors").doc(cleanVendorId);
+  const vendorDoc = await vendorRef.get();
+  if (!vendorDoc.exists) {
+    await vendorRef.set({
+      id: cleanVendorId,
+      name: cleanVendorId,
+      branches: [vendorBranch?.trim() || "Main Branch"],
+      isActive: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Create or retrieve Auth User
+  let authUser;
+  try {
+    authUser = await admin.auth().getUserByEmail(email.trim().toLowerCase());
+    await admin.auth().updateUser(authUser.uid, {
+      password: password,
+      displayName: cleanName,
+    });
+  } catch (err) {
+    if (err.code === "auth/user-not-found") {
+      authUser = await admin.auth().createUser({
+        email: email.trim().toLowerCase(),
+        password: password,
+        displayName: cleanName,
+      });
+    } else {
+      throw new HttpsError("internal", `Auth creation failed: ${err.message}`);
+    }
+  }
+
+  // Write authoritative profile to users/{uid}
+  const userRef = db.collection("users").doc(authUser.uid);
+  await userRef.set(
+    {
+      uid: authUser.uid,
+      userEmail: email.trim().toLowerCase(),
+      userName: cleanName,
+      cashierName: cleanName,
+      role: "vendor",
+      vendorId: cleanVendorId,
+      vendorRole: cleanRole,
+      vendorBranch: vendorBranch?.trim() || "Main Branch",
+      isProvisionedByAdmin: true,
+      provisionedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return {
+    success: true,
+    uid: authUser.uid,
+    email: email.trim().toLowerCase(),
+    vendorId: cleanVendorId,
+    vendorRole: cleanRole,
+    vendorBranch: vendorBranch?.trim() || "Main Branch",
+    cashierName: cleanName,
+  };
+}
+
+export const adminProvisionVendorUser = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required for admin provisioning.");
+  }
+  const { email, password, fullName, targetVendorId, vendorRole, vendorBranch } = request.data || {};
+  return await adminProvisionVendorUserCore({
+    callerUid,
+    email,
+    password,
+    fullName,
+    targetVendorId,
+    vendorRole,
+    vendorBranch,
+  });
+});
+
+/**
+ * Stage 4 Admin Store Entity Registration Core: Creates or updates meal_vendors/{slug}.
+ * Restricted strictly to platform administrators (role === 'admin' || isAdmin === true).
+ */
+export async function adminRegisterVendorStoreCore({
+  callerUid,
+  name,
+  slug,
+  branches,
+  logoEmoji = "🍗",
+  contactEmail = null,
+}) {
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required for store registration.");
+  }
+
+  const adminSnap = await db.collection("users").doc(callerUid).get();
+  if (!adminSnap.exists) {
+    throw new HttpsError("permission-denied", "Caller profile not found.");
+  }
+  const adminData = adminSnap.data() || {};
+  const isAdmin = adminData.role === "admin" || adminData.isAdmin === true;
+  if (!isAdmin) {
+    throw new HttpsError("permission-denied", "Only platform administrators can register vendor stores.");
+  }
+
+  const cleanName = typeof name === "string" ? name.trim() : "";
+  if (cleanName.length < 2 || cleanName.length > 100) {
+    throw new HttpsError("invalid-argument", "Store name must be between 2 and 100 characters.");
+  }
+
+  const rawSlug = typeof slug === "string" && slug.trim() ? slug.trim() : cleanName;
+  const cleanSlug = rawSlug
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+  if (!cleanSlug) {
+    throw new HttpsError("invalid-argument", "A valid store ID slug is required.");
+  }
+
+  let cleanBranches = ["Main Branch"];
+  if (Array.isArray(branches)) {
+    const filtered = branches.map((b) => String(b).trim()).filter(Boolean);
+    if (filtered.length > 0) cleanBranches = filtered;
+  } else if (typeof branches === "string" && branches.trim()) {
+    const filtered = branches
+      .split(",")
+      .map((b) => b.trim())
+      .filter(Boolean);
+    if (filtered.length > 0) cleanBranches = filtered;
+  }
+
+  const cleanEmoji = typeof logoEmoji === "string" && logoEmoji.trim() ? logoEmoji.trim() : "🍗";
+  const cleanEmail = typeof contactEmail === "string" && contactEmail.trim() ? contactEmail.trim().toLowerCase() : null;
+
+  const vendorRef = db.collection("meal_vendors").doc(cleanSlug);
+  const existingSnap = await vendorRef.get();
+
+  const payload = {
+    id: cleanSlug,
+    name: cleanName,
+    branches: cleanBranches,
+    logoEmoji: cleanEmoji,
+    contactEmail: cleanEmail,
+    isActive: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (!existingSnap.exists) {
+    payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+  }
+
+  await vendorRef.set(payload, { merge: true });
+
+  return {
+    success: true,
+    vendorId: cleanSlug,
+    name: cleanName,
+    branches: cleanBranches,
+    logoEmoji: cleanEmoji,
+    contactEmail: cleanEmail,
+  };
+}
+
+export const adminRegisterVendorStore = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required for store registration.");
+  }
+  const { name, slug, branches, logoEmoji, contactEmail } = request.data || {};
+  return await adminRegisterVendorStoreCore({
+    callerUid,
+    name,
+    slug,
+    branches,
+    logoEmoji,
+    contactEmail,
+  });
+});
+
+/**
+ * Update Vendor Profile (Logo, Banner, Description)
+ * Restricted to Owner of the target vendor or Admin.
+ */
+export async function updateVendorProfileCore({
+  callerUid,
+  targetVendorId,
+  logoUrl,
+  bannerUrl,
+  description,
+  address,
+  phone,
+}) {
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to update vendor profile.");
+  }
+  if (!targetVendorId || typeof targetVendorId !== "string" || !targetVendorId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid targetVendorId is required.");
+  }
+
+  const vId = targetVendorId.trim();
+
+  // Requires 'owner' role on target vendor or platform admin
+  await verifyVendorAuthorizationCore({
+    callerUid,
+    targetVendorId: vId,
+    requiredRole: "owner",
+  });
+
+  const vendorRef = db.collection("meal_vendors").doc(vId);
+  const vSnap = await vendorRef.get();
+  if (!vSnap.exists) {
+    throw new HttpsError("not-found", "Vendor not found.");
+  }
+
+  const updateData = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+  if (bannerUrl !== undefined) updateData.bannerUrl = bannerUrl;
+  if (description !== undefined) updateData.description = description;
+  if (address !== undefined) updateData.address = address;
+  if (phone !== undefined) updateData.phone = phone;
+
+  await vendorRef.set(updateData, { merge: true });
+
+  // Propagate updated store logoUrl to existing campaigns and public offers
+  if (logoUrl !== undefined) {
+    try {
+      const [campsSnap, offersSnap] = await Promise.all([
+        db.collection("meal_campaigns").where("vendorId", "==", vId).get(),
+        db.collection("public_meal_offers").where("vendorId", "==", vId).get(),
+      ]);
+
+      const refsToUpdate = [...campsSnap.docs.map((d) => d.ref), ...offersSnap.docs.map((d) => d.ref)];
+      for (let i = 0; i < refsToUpdate.length; i += 400) {
+        const batch = db.batch();
+        const chunk = refsToUpdate.slice(i, i + 400);
+        for (const ref of chunk) {
+          batch.update(ref, {
+            vendorLogoUrl: logoUrl,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+    } catch (propErr) {
+      logger.warn("Non-fatal error cascading vendorLogoUrl to offers/campaigns:", propErr);
+    }
+  }
+
+  return {
+    success: true,
+    vendorId: vId,
+    ...updateData,
+  };
+}
+
+export const updateVendorProfile = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to update vendor profile.");
+  }
+  const { targetVendorId, logoUrl, bannerUrl, description, address, phone } = request.data || {};
+  return await updateVendorProfileCore({
+    callerUid,
+    targetVendorId,
+    logoUrl,
+    bannerUrl,
+    description,
+    address,
+    phone,
+  });
+});
+
+/**
+ * Reconcile or Retry Campaign Image Upload (Background Upload Reconciliation Engine).
+ * Updates both meal_campaigns/{campaignId} and public_meal_offers/{campaignId}.
+ */
+export async function updateVendorCampaignImageCore({
+  callerUid,
+  campaignId,
+  imageUrl,
+  imageUploadStatus = "synced",
+}) {
+  try {
+    if (!callerUid) {
+      throw new HttpsError("unauthenticated", "Authentication required to update campaign image.");
+    }
+    if (!campaignId || typeof campaignId !== "string" || !campaignId.trim()) {
+      throw new HttpsError("invalid-argument", "Valid campaignId is required.");
+    }
+
+    const cleanId = campaignId.trim();
+    const campRef = db.collection("meal_campaigns").doc(cleanId);
+    const campSnap = await campRef.get();
+    if (!campSnap.exists) {
+      throw new HttpsError("not-found", "Campaign not found.");
+    }
+    const campData = campSnap.data() || {};
+
+    // Require manager/owner of the campaign's vendor or platform admin
+    await verifyVendorAuthorizationCore({
+      callerUid,
+      targetVendorId: campData.vendorId,
+      requiredRole: "manager",
+    });
+
+    const cleanImage = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : null;
+    const cleanStatus = ["uploading", "synced", "failed", "none"].includes(imageUploadStatus)
+      ? imageUploadStatus
+      : cleanImage
+      ? "synced"
+      : "none";
+
+    await campRef.update({
+      image: cleanImage,
+      imageUploadStatus: cleanStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const pmoRef = db.collection("public_meal_offers").doc(cleanId);
+    const pmoSnap = await pmoRef.get();
+    if (pmoSnap.exists) {
+      await pmoRef.update({
+        image: cleanImage,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return {
+      success: true,
+      campaignId: cleanId,
+      vendorId: campData.vendorId,
+      image: cleanImage,
+      imageUploadStatus: cleanStatus,
+    };
+  } catch (err) {
+    logger.error("updateVendorCampaignImageCore error:", {
+      callerUid,
+      campaignId,
+      error: err?.message || String(err),
+      stack: err?.stack || null,
+    });
+
+    // Write diagnostic failure audit log so engineer can inspect backend failure reasons
+    try {
+      await db.collection("admin_audit_logs").add({
+        action: "CAMPAIGN_IMAGE_UPDATE_FAILED",
+        callerUid: callerUid || null,
+        campaignId: campaignId || null,
+        imageUrl: typeof imageUrl === "string" ? imageUrl.slice(0, 500) : null,
+        errorMessage: err?.message || String(err),
+        errorCode: err?.code || "internal",
+        errorStack: err?.stack || null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (auditErr) {
+      logger.error("Failed to write to admin_audit_logs:", auditErr);
+    }
+
+    if (err instanceof HttpsError) {
+      throw err;
+    }
+    throw new HttpsError("internal", err?.message || "Internal error updating campaign image.");
+  }
+}
+
+export const updateVendorCampaignImage = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to update campaign image.");
+  }
+  const { campaignId, imageUrl, imageUploadStatus } = request.data || {};
+  return await updateVendorCampaignImageCore({
+    callerUid,
+    campaignId,
+    imageUrl,
+    imageUploadStatus,
+  });
+});
+
+/**
+ * Admin Featured Campaign Promotion Engine.
+ * Allows platform administrators ONLY (role === 'admin' || isAdmin === true)
+ * to promote or unpromote a campaign for the Featured Partner spotlight section.
+ */
+export async function adminSetCampaignFeaturedCore({
+  callerUid,
+  campaignId,
+  isFeatured,
+}) {
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to promote featured campaign.");
+  }
+  if (!campaignId || typeof campaignId !== "string" || !campaignId.trim()) {
+    throw new HttpsError("invalid-argument", "Valid campaignId is required.");
+  }
+
+  const adminSnap = await db.collection("users").doc(callerUid).get();
+  if (!adminSnap.exists) {
+    throw new HttpsError("permission-denied", "Caller profile not found.");
+  }
+  const adminData = adminSnap.data() || {};
+  const isAdmin = adminData.role === "admin" || adminData.isAdmin === true;
+  if (!isAdmin) {
+    throw new HttpsError("permission-denied", "Only platform administrators can promote featured partner campaigns.");
+  }
+
+  const targetId = campaignId.trim();
+  const featuredFlag = Boolean(isFeatured);
+
+  // If setting isFeatured=true, clear isFeatured on any other campaigns so the admin's choice is the single Featured Partner
+  if (featuredFlag) {
+    const prevFeaturedCamps = await db.collection("meal_campaigns").where("isFeatured", "==", true).get();
+    for (const docSnap of prevFeaturedCamps.docs) {
+      if (docSnap.id !== targetId) {
+        await docSnap.ref.update({ isFeatured: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        const pRef = db.collection("public_meal_offers").doc(docSnap.id);
+        const pSnap = await pRef.get();
+        if (pSnap.exists) {
+          await pRef.update({ isFeatured: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+      }
+    }
+  }
+
+  const campRef = db.collection("meal_campaigns").doc(targetId);
+  const campSnap = await campRef.get();
+  if (!campSnap.exists) {
+    throw new HttpsError("not-found", "Campaign not found.");
+  }
+
+  await campRef.update({
+    isFeatured: featuredFlag,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const pmoRef = db.collection("public_meal_offers").doc(targetId);
+  const pmoSnap = await pmoRef.get();
+  if (pmoSnap.exists) {
+    await pmoRef.update({
+      isFeatured: featuredFlag,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  return {
+    success: true,
+    campaignId: targetId,
+    isFeatured: featuredFlag,
+  };
+}
+
+export const adminSetCampaignFeatured = onCall({ cors: true, timeoutSeconds: 300 }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = request.auth?.uid || (isEmulator && !request.auth ? request.data?.testCallerUid : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required to promote featured campaign.");
+  }
+  const { campaignId, isFeatured } = request.data || {};
+  return await adminSetCampaignFeaturedCore({
+    callerUid,
+    campaignId,
+    isFeatured,
+  });
+});
+
+
 
 /**
  * Stage 3.1 Bounded, Resumable Public Projection Backfill Engine.
@@ -8536,6 +9523,12 @@ export async function backfillPublicMealOffersCore({
         offerId: cData.offerId || campId,
         vendorId: cData.vendorId || "paywaka-demo-foods",
         vendorName: cData.vendorName || cData.vendorId || "PayWaka Partner Food",
+        vendorLogoUrl: cData.vendorLogoUrl || null,
+        vendorLogoEmoji: cData.vendorLogoEmoji || "🍗",
+        branch: cData.branch || "Main Branch",
+        category: cData.category || "Local Delicacies",
+        image: cData.image || null,
+        isFeatured: Boolean(cData.isFeatured),
         title: cData.title || `${cData.vendorName || "Meal"} Voucher`,
         pointsCost: Number(cData.pointsCost || 0),
         discountNaira: discount,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { Store, Ticket, ScanLine } from "lucide-react";
+import { Store, Ticket, ScanLine, LayoutDashboard } from "lucide-react";
 import { auth, db, doc, onSnapshot, collection, query, where } from "@/firebaseConfig";
 
 export default function MealFloatingNav({ className = "" }) {
@@ -12,6 +12,7 @@ export default function MealFloatingNav({ className = "" }) {
   const currentUid = reduxUser?.uid || auth.currentUser?.uid;
 
   const [userRole, setUserRole] = useState(reduxUser?.role || "user");
+  const [isAdminFlag, setIsAdminFlag] = useState(Boolean(reduxUser?.isAdmin));
   const [activeVouchersCount, setActiveVouchersCount] = useState(0);
 
   // Authoritative real-time role and voucher tracking
@@ -22,6 +23,7 @@ export default function MealFloatingNav({ className = "" }) {
     const setupListeners = (uid) => {
       if (!uid) {
         setUserRole("user");
+        setIsAdminFlag(false);
         setActiveVouchersCount(0);
         return;
       }
@@ -32,6 +34,7 @@ export default function MealFloatingNav({ className = "" }) {
         if (snap.exists()) {
           const data = snap.data();
           setUserRole(data.role || "user");
+          setIsAdminFlag(Boolean(data.isAdmin));
         }
       });
 
@@ -86,37 +89,38 @@ export default function MealFloatingNav({ className = "" }) {
 
   const isMarketplace = pathname === "/services/meals" || pathname === "/services/meals/";
   const isVouchers = pathname.startsWith("/services/meals/vouchers") || pathname.startsWith("/services/meals/voucher/");
-  const isTerminal = pathname.startsWith("/services/meals/terminal") || pathname.startsWith("/merchant/meals");
+  const isTerminal = pathname.startsWith("/services/meals/terminal");
+  const isDashboard = pathname.startsWith("/merchant/meals");
 
-  // Merchant terminal tab is ONLY visible to verified cashiers (role == 'vendor') and administrators (role == 'admin')
-  const isMerchantOrAdmin = userRole === "vendor" || userRole === "admin";
+  // Merchant terminal & dashboard tabs are ONLY visible to verified merchants (role == 'vendor') and administrators (role == 'admin' || isAdmin == true)
+  const isMerchantOrAdmin = userRole === "vendor" || userRole === "admin" || isAdminFlag;
 
   return (
     <nav
       aria-label="Meal Rewards Navigation"
-      className={`w-full max-w-md sm:w-auto mx-auto sm:mx-0 flex items-center justify-between p-1 rounded-full bg-[#16181d] border border-[#282a2e] shadow-lg text-[#e2e2e8] ${className}`}
+      className={`w-full max-w-full sm:w-auto sm:max-w-none mx-auto sm:mx-0 flex items-center justify-start sm:justify-between gap-1 p-1.5 rounded-2xl sm:rounded-full bg-[#16181d] border border-[#282a2e] shadow-lg text-[#e2e2e8] overflow-x-auto no-scrollbar ${className}`}
     >
       <Link
         to="/services/meals"
-        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-4 rounded-full font-bold text-xs sm:text-sm whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
+        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
           isMarketplace
             ? "bg-[#ff6b00] text-white shadow-[0_2px_12px_rgba(255,107,0,0.35)]"
             : "text-zinc-400 hover:text-white hover:bg-[#202227]"
         }`}
       >
-        <Store className="w-4 h-4 flex-shrink-0" />
+        <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
         <span className="whitespace-nowrap">Marketplace</span>
       </Link>
 
       <Link
         to="/services/meals/vouchers"
-        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-4 rounded-full font-bold text-xs sm:text-sm whitespace-nowrap flex-shrink-0 transition-all duration-200 relative ${
+        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 relative ${
           isVouchers
             ? "bg-[#ff6b00] text-white shadow-[0_2px_12px_rgba(255,107,0,0.35)]"
             : "text-zinc-400 hover:text-white hover:bg-[#202227]"
         }`}
       >
-        <Ticket className="w-4 h-4 flex-shrink-0" />
+        <Ticket className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
         <span className="whitespace-nowrap">My Vouchers</span>
         {activeVouchersCount > 0 && (
           <span
@@ -129,20 +133,35 @@ export default function MealFloatingNav({ className = "" }) {
         )}
       </Link>
 
-      {/* Merchant Terminal Tab: Exclusively exposed to authorized cashiers and admins */}
+      {/* Merchant Dashboard & Terminal Tabs: Exclusively exposed to authorized merchants and admins */}
       {isMerchantOrAdmin && (
-        <Link
-          to="/services/meals/terminal"
-          data-testid="merchant-terminal-tab"
-          className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-4 rounded-full font-bold text-xs sm:text-sm whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
-            isTerminal
-              ? "bg-[#44e092] text-[#091e14] shadow-[0_2px_12px_rgba(68,224,146,0.35)] font-black"
-              : "text-zinc-400 hover:text-white hover:bg-[#202227]"
-          }`}
-        >
-          <ScanLine className="w-4 h-4 flex-shrink-0" />
-          <span className="whitespace-nowrap">Terminal</span>
-        </Link>
+        <>
+          <Link
+            to="/merchant/meals"
+            data-testid="merchant-dashboard-tab"
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
+              isDashboard
+                ? "bg-[#ff6b00] text-white shadow-[0_2px_12px_rgba(255,107,0,0.35)]"
+                : "text-zinc-400 hover:text-white hover:bg-[#202227]"
+            }`}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="whitespace-nowrap">Dashboard</span>
+          </Link>
+
+          <Link
+            to="/services/meals/terminal"
+            data-testid="merchant-terminal-tab"
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
+              isTerminal
+                ? "bg-[#44e092] text-[#091e14] shadow-[0_2px_12px_rgba(68,224,146,0.35)] font-black"
+                : "text-zinc-400 hover:text-white hover:bg-[#202227]"
+            }`}
+          >
+            <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="whitespace-nowrap">Terminal</span>
+          </Link>
+        </>
       )}
     </nav>
   );

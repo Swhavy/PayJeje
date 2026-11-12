@@ -583,7 +583,7 @@ const Wallet = () => {
                             e.preventDefault();
                         }} // Prevents negative and exponential input
                         name="amount"
-                        onWheel={(e) => e.target.blur()} // Prevents number input scroll
+                        onWheel={(e) => e.currentTarget.blur()} // Prevents number input scroll
                         value={accountDetails.amount}
                         onChange={handleInput}
                         type="number"
@@ -604,7 +604,7 @@ const Wallet = () => {
                     <div className="mt-1.5">
                       <Input
                         id="accountNumber"
-                        onWheel={(e) => e.target.blur()} // Prevents number input scroll
+                        onWheel={(e) => e.currentTarget.blur()} // Prevents number input scroll
                         name="accountNumber"
                         value={accountDetails.accountNumber}
                         onChange={handleInput}

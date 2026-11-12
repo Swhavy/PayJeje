@@ -29,6 +29,8 @@ export default function MyMealVouchersPage() {
   const currentUid = user?.uid || auth.currentUser?.uid;
 
   const [vouchers, setVouchers] = useState([]);
+  const [publicOffersMap, setPublicOffersMap] = useState({});
+  const [vendorsMap, setVendorsMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
 
@@ -36,6 +38,39 @@ export default function MyMealVouchersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilterChip, setActiveFilterChip] = useState("all");
   const [copiedCodeId, setCopiedCodeId] = useState(null);
+
+  // Real-time subscription to public_meal_offers and meal_vendors so campaign images & store logos resolve live
+  useEffect(() => {
+    const unsubOffers = onSnapshot(
+      collection(db, "public_meal_offers"),
+      (snap) => {
+        const map = {};
+        snap.docs.forEach((d) => {
+          const oData = d.data();
+          map[d.id] = oData;
+          if (oData.offerId) map[oData.offerId] = oData;
+          if (oData.campaignId) map[oData.campaignId] = oData;
+        });
+        setPublicOffersMap(map);
+      },
+      () => {}
+    );
+    const unsubVendors = onSnapshot(
+      collection(db, "meal_vendors"),
+      (snap) => {
+        const vMap = {};
+        snap.docs.forEach((d) => {
+          vMap[d.id] = d.data();
+        });
+        setVendorsMap(vMap);
+      },
+      () => {}
+    );
+    return () => {
+      unsubOffers();
+      unsubVendors();
+    };
+  }, []);
 
   // Real-time subscription to authenticated user's meal vouchers in Firestore
   useEffect(() => {
@@ -66,6 +101,10 @@ export default function MyMealVouchersPage() {
             const data = docSnap.data();
             const offerMeta = getMealOfferById(data.offerId);
             const vendorMeta = getVendorById(data.vendorId);
+            const liveOffer =
+              publicOffersMap[data.campaignId] ||
+              publicOffersMap[data.offerId] ||
+              null;
 
             const discountNaira = Number.isFinite(Number(data.discountNaira))
               ? Number(data.discountNaira)
@@ -85,13 +124,17 @@ export default function MyMealVouchersPage() {
               ? data.expiresAt.toDate().getTime()
               : new Date(data.expiresAt || 0).getTime();
 
-            const isPastExpiry = expiresMs > 0 && expiresMs < nowMs;
-            const effectiveStatus =
-              data.status === "redeemed" || data.status === "used"
-                ? "used"
-                : data.status === "expired" || isPastExpiry
-                ? "expired"
-                : "active";
+            const isRedeemedOrUsed =
+              data.status === "redeemed" ||
+              data.status === "used" ||
+              Boolean(data.redeemedAt) ||
+              Boolean(data.redemptionId);
+            const isPastExpiry = !isRedeemedOrUsed && expiresMs > 0 && expiresMs < nowMs;
+            const effectiveStatus = isRedeemedOrUsed
+              ? "used"
+              : data.status === "expired" || isPastExpiry
+              ? "expired"
+              : "active";
 
             const hoursRemaining = expiresMs > nowMs ? Math.max(0, Math.round((expiresMs - nowMs) / (3600 * 1000))) : 0;
             const timeText = hoursRemaining > 0 ? `${hoursRemaining}h left` : "Expiring soon";
@@ -104,24 +147,39 @@ export default function MyMealVouchersPage() {
               ? data.createdAt.toMillis()
               : 0;
 
+            const resolvedCategory =
+              data.category ||
+              liveOffer?.category ||
+              offerMeta?.category ||
+              vendorMeta?.category ||
+              "Local Delicacies";
+
+            const resolvedTitle =
+              data.title ||
+              liveOffer?.title ||
+              offerMeta?.title ||
+              (data.vendorName ? `${data.vendorName} Meal Voucher` : "Meal Discount Voucher");
+
             const voucherImage =
+              data.image ||
+              liveOffer?.image ||
               offerMeta?.image ||
               resolveBundledMealImage(
-                data.category || offerMeta?.category,
-                data.title || offerMeta?.title,
+                resolvedCategory,
+                resolvedTitle,
                 data.vendorName || vendorMeta?.name
               );
 
             return {
               id: docSnap.id,
+              campaignId: data.campaignId,
               offerId: data.offerId,
               vendorId: data.vendorId || offerMeta?.vendorId,
-              vendorName: data.vendorName || vendorMeta?.name || offerMeta?.vendorName || "PayWaka Partner Food",
-              vendorBranch: data.redeemedVendorBranch || vendorMeta?.branch || offerMeta?.branch || "Lagos Branches",
-              title:
-                data.title ||
-                offerMeta?.title ||
-                (data.vendorName ? `${data.vendorName} Meal Voucher` : "Meal Discount Voucher"),
+              vendorName: data.vendorName || liveOffer?.vendorName || vendorMeta?.name || offerMeta?.vendorName || "PayWaka Partner Food",
+              vendorBranch: data.redeemedVendorBranch || liveOffer?.branch || vendorMeta?.branch || offerMeta?.branch || "Main Branch",
+              vendorLogoUrl: data.vendorLogoUrl || liveOffer?.vendorLogoUrl || vendorMeta?.logoUrl || null,
+              vendorLogoEmoji: data.vendorLogoEmoji || liveOffer?.vendorLogoEmoji || vendorMeta?.logoEmoji || "🍗",
+              title: resolvedTitle,
               discountAmount: discountNaira,
               discountDisplay,
               minSpend: minSpendNaira,
@@ -129,11 +187,12 @@ export default function MyMealVouchersPage() {
               pin: data.voucherPin || "",
               status: effectiveStatus,
               rawStatus: data.status,
-              category: data.category || offerMeta?.category || vendorMeta?.category || "Local Delicacies",
+              category: resolvedCategory,
               image: voucherImage,
               timeText,
               hoursRemaining,
               expiresAt: data.expiresAt,
+              redeemedAt: data.redeemedAt,
               issuedMs,
             };
           });
@@ -174,9 +233,30 @@ export default function MyMealVouchersPage() {
     };
   }, [currentUid]);
 
-  const activeList = vouchers.filter((v) => v.status === "active");
-  const usedList = vouchers.filter((v) => v.status === "used" || v.status === "redeemed");
-  const expiredList = vouchers.filter((v) => v.status === "expired");
+  const enrichVoucher = (v) => {
+    const liveOffer = publicOffersMap[v.campaignId] || publicOffersMap[v.offerId];
+    const liveVendor = vendorsMap[v.vendorId];
+    const fixtureVendor = getVendorById(v.vendorId);
+    const resolvedImage =
+      liveOffer?.image && v.image !== liveOffer.image && (!v.image || v.image.startsWith("/images/meals/"))
+        ? liveOffer.image
+        : v.image;
+    const resolvedVendorLogoUrl =
+      liveVendor?.logoUrl || v.vendorLogoUrl || liveOffer?.vendorLogoUrl || fixtureVendor?.logoUrl || null;
+    const resolvedVendorLogoEmoji =
+      liveVendor?.logoEmoji || v.vendorLogoEmoji || liveOffer?.vendorLogoEmoji || fixtureVendor?.logoEmoji || "🍗";
+    return {
+      ...v,
+      image: resolvedImage,
+      vendorLogoUrl: resolvedVendorLogoUrl,
+      vendorLogoEmoji: resolvedVendorLogoEmoji,
+    };
+  };
+
+  const enrichedVouchers = vouchers.map(enrichVoucher);
+  const activeList = enrichedVouchers.filter((v) => v.status === "active");
+  const usedList = enrichedVouchers.filter((v) => v.status === "used" || v.status === "redeemed");
+  const expiredList = enrichedVouchers.filter((v) => v.status === "expired");
 
   const currentList =
     activeTab === "active"
@@ -461,8 +541,16 @@ export default function MyMealVouchersPage() {
 
                       {/* Vendor Logo & Tag */}
                       <div className="absolute top-3 left-3 flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-[#004729]/60 flex items-center justify-center shadow-md text-base border border-[#44e092]/30">
-                          🍗
+                        <div className="w-8 h-8 rounded-full bg-[#004729]/60 flex items-center justify-center shadow-md text-base border border-[#44e092]/30 overflow-hidden">
+                          {voucher.vendorLogoUrl ? (
+                            <img
+                              src={voucher.vendorLogoUrl}
+                              alt={voucher.vendorName}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span>{voucher.vendorLogoEmoji || "🍗"}</span>
+                          )}
                         </div>
                         <span className="px-3.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-white text-xs font-semibold border border-white/10 whitespace-nowrap shadow-sm">
                           {voucher.vendorName}
@@ -476,7 +564,7 @@ export default function MyMealVouchersPage() {
                           <span>{voucher.timeText || "Active"}</span>
                         </div>
                       ) : isUsed ? (
-                        <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#282a2e] text-zinc-400 px-3 py-1 rounded-full text-xs font-bold border border-white/5 whitespace-nowrap">
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#004729]/90 text-[#44e092] px-3 py-1 rounded-full text-xs font-bold border border-[#44e092]/40 whitespace-nowrap shadow-md">
                           <CheckCircle className="w-3.5 h-3.5 text-[#44e092]" />
                           <span>Redeemed</span>
                         </div>
@@ -580,6 +668,15 @@ export default function MyMealVouchersPage() {
                           <QrCode className="w-4 h-4" />
                           <span>Show QR Code & Claim PIN</span>
                         </button>
+                      ) : isUsed ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/services/meals/voucher/${voucher.id}`)}
+                          className="w-full py-2.5 rounded-full bg-[#004729]/40 hover:bg-[#004729]/60 text-[#44e092] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border border-[#44e092]/30"
+                        >
+                          <CheckCircle className="w-4 h-4 text-[#44e092]" />
+                          <span>Redeemed • View Ticket Receipt</span>
+                        </button>
                       ) : (
                         <button
                           type="button"
@@ -587,7 +684,7 @@ export default function MyMealVouchersPage() {
                           className="w-full py-2.5 rounded-full bg-[#282a2e] hover:bg-[#333539] text-zinc-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-white/5"
                         >
                           <Receipt className="w-4 h-4" />
-                          <span>View Ticket Archive</span>
+                          <span>Expired • View Ticket Archive</span>
                         </button>
                       )}
                     </div>

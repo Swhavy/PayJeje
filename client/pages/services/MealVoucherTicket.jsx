@@ -73,25 +73,33 @@ export default function MealVoucherTicketPage() {
   }, [voucherId, isRealVoucher]);
 
   const [parentCampaignDoc, setParentCampaignDoc] = useState(null);
+  const [liveVendorDoc, setLiveVendorDoc] = useState(null);
 
   const voucher = liveVoucherDoc
     ? {
         id: liveVoucherDoc.id || voucherId,
         campaignId: liveVoucherDoc.campaignId,
         vendorId: liveVoucherDoc.vendorId || "paywaka-demo-foods",
-        vendorName: liveVoucherDoc.vendorName || "PayWaka Demo Foods",
-        vendorBranch: liveVoucherDoc.redeemedVendorBranch || "Victoria Island • 1.2km",
+        vendorName: liveVoucherDoc.vendorName || parentCampaignDoc?.vendorName || "PayWaka Partner Vendor",
+        vendorBranch: liveVoucherDoc.redeemedVendorBranch || parentCampaignDoc?.branch || "Main Branch",
         title:
           liveVoucherDoc.title ||
+          parentCampaignDoc?.title ||
           (liveVoucherDoc.vendorName ? `${liveVoucherDoc.vendorName} Meal Voucher` : "Meal Discount Voucher"),
+        image: liveVoucherDoc.image || parentCampaignDoc?.image || null,
         discountAmount: Number(liveVoucherDoc.discountNaira || 0),
         discountDisplay: `₦${Number(liveVoucherDoc.discountNaira || 0).toLocaleString()} OFF`,
         minSpend: Number(liveVoucherDoc.minSpendNaira || 0),
         code: liveVoucherDoc.voucherCode,
         pin: liveVoucherDoc.voucherPin,
         status: liveVoucherDoc.status || "active",
+        redeemedAt: liveVoucherDoc.redeemedAt?.toDate
+          ? liveVoucherDoc.redeemedAt.toDate().toLocaleString()
+          : liveVoucherDoc.redeemedAt || null,
+        billAmountNaira: liveVoucherDoc.billAmountNaira ? Number(liveVoucherDoc.billAmountNaira) : null,
+        finalPayableNaira: liveVoucherDoc.finalPayableNaira ? Number(liveVoucherDoc.finalPayableNaira) : null,
         expiresAt: liveVoucherDoc.expiresAt?.toDate ? liveVoucherDoc.expiresAt.toDate().toISOString() : liveVoucherDoc.expiresAt,
-        category: "Local Delicacies",
+        category: liveVoucherDoc.category || parentCampaignDoc?.category || "Local Delicacies",
         transparencyText: `Enjoy ₦${Number(liveVoucherDoc.discountNaira || 0).toLocaleString()} off meals when spending ₦${Number(liveVoucherDoc.minSpendNaira || 0).toLocaleString()} or more.`,
         instructions: [
           "Present this QR code or 4-digit claim PIN to cashier before order placement.",
@@ -122,7 +130,45 @@ export default function MealVoucherTicketPage() {
     return () => unsub();
   }, [liveVoucherDoc?.campaignId]);
 
-  const vendor = getVendorById(voucher?.vendorId);
+  // Real-time merchant store profile lookup for logo display
+  const activeVendorId = liveVoucherDoc?.vendorId || voucher?.vendorId || null;
+  useEffect(() => {
+    if (!activeVendorId) {
+      setLiveVendorDoc(null);
+      return;
+    }
+
+    const unsubVendor = onSnapshot(
+      doc(db, "meal_vendors", activeVendorId),
+      (snap) => {
+        if (snap.exists()) {
+          setLiveVendorDoc({ id: snap.id, ...snap.data() });
+        } else {
+          setLiveVendorDoc(null);
+        }
+      },
+      (err) => {
+        console.warn("[MealVoucherTicket] Vendor profile read notice:", err.message);
+      }
+    );
+
+    return () => unsubVendor();
+  }, [activeVendorId]);
+
+  const fixtureVendor = getVendorById(voucher?.vendorId);
+  const vendor = liveVendorDoc || fixtureVendor;
+  const resolvedVendorLogoUrl =
+    liveVendorDoc?.logoUrl ||
+    liveVoucherDoc?.vendorLogoUrl ||
+    parentCampaignDoc?.vendorLogoUrl ||
+    fixtureVendor?.logoUrl ||
+    null;
+  const resolvedVendorLogoEmoji =
+    liveVendorDoc?.logoEmoji ||
+    liveVoucherDoc?.vendorLogoEmoji ||
+    parentCampaignDoc?.vendorLogoEmoji ||
+    fixtureVendor?.logoEmoji ||
+    "🍗";
 
   const [copied, setCopied] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -167,9 +213,16 @@ export default function MealVoucherTicketPage() {
     }
   };
 
-  const isActive = voucher?.status === "active";
-  const isUsed = voucher?.status === "used";
-  const isExpired = voucher?.status === "expired";
+  const isUsed =
+    voucher?.status === "used" ||
+    voucher?.status === "redeemed" ||
+    Boolean(liveVoucherDoc?.redeemedAt) ||
+    Boolean(liveVoucherDoc?.redemptionId);
+  const isExpired =
+    !isUsed &&
+    (voucher?.status === "expired" ||
+      (voucher?.status === "active" && secondsRemaining <= 0 && Boolean(liveVoucherDoc?.expiresAt)));
+  const isActive = !isUsed && !isExpired && voucher?.status === "active";
 
   if (loading && !liveVoucherDoc) {
     return (
@@ -205,7 +258,7 @@ export default function MealVoucherTicketPage() {
                   isActive
                     ? "bg-[#44e092] animate-pulse shadow-[0_0_8px_rgba(68,224,146,0.8)]"
                     : isUsed
-                    ? "bg-zinc-500"
+                    ? "bg-[#44e092]"
                     : "bg-[#ffb4ab]"
                 }`}
               />
@@ -246,8 +299,16 @@ export default function MealVoucherTicketPage() {
               {/* Brand & Status Header */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-12 h-12 rounded-2xl bg-[#004729]/60 flex items-center justify-center text-2xl shadow-inner border border-[#44e092]/30 flex-shrink-0">
-                    {vendor?.logoEmoji || "🍗"}
+                  <div className="w-12 h-12 rounded-2xl bg-[#004729]/60 flex items-center justify-center text-2xl shadow-inner border border-[#44e092]/30 flex-shrink-0 overflow-hidden">
+                    {resolvedVendorLogoUrl ? (
+                      <img
+                        src={resolvedVendorLogoUrl}
+                        alt={voucher?.vendorName || "Merchant Logo"}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span>{resolvedVendorLogoEmoji}</span>
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -269,13 +330,13 @@ export default function MealVoucherTicketPage() {
                     isActive
                       ? "bg-[#004729] text-[#44e092] border border-[#44e092]/30"
                       : isUsed
-                      ? "bg-[#282a2e] text-zinc-400 border border-white/5"
+                      ? "bg-[#004729]/80 text-[#44e092] border border-[#44e092]/40"
                       : "bg-[#93000a]/20 text-[#ffdad6] border border-[#ffdad6]/20"
                   }`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
-                      isActive ? "bg-[#44e092]" : isUsed ? "bg-zinc-500" : "bg-[#ffb4ab]"
+                      isActive ? "bg-[#44e092]" : isUsed ? "bg-[#44e092]" : "bg-[#ffb4ab]"
                     }`}
                   />
                   <span>{isActive ? "Ready" : isUsed ? "Redeemed" : "Expired"}</span>
@@ -413,10 +474,15 @@ export default function MealVoucherTicketPage() {
                   </div>
                 </div>
               ) : isUsed ? (
-                <div className="w-full flex items-center gap-3 bg-gradient-to-r from-[#071911] to-[#101713] text-zinc-400 p-4 rounded-2xl border border-[#44e092]/25 text-left">
-                  <CheckCircle className="w-4 h-4 text-[#44e092]" />
-                  <span className="text-xs">
-                    Redeemed at cashier ({voucher?.redeemedAt || "Past Order"})
+                <div className="w-full flex flex-col gap-1 bg-gradient-to-r from-[#071911] to-[#101713] text-[#44e092] p-4 rounded-2xl border border-[#44e092]/35 text-left">
+                  <div className="flex items-center gap-2 font-bold text-xs">
+                    <CheckCircle className="w-4 h-4 text-[#44e092] flex-shrink-0" />
+                    <span>Voucher Successfully Redeemed at Counter</span>
+                  </div>
+                  <span className="text-[11px] text-zinc-300 pl-6">
+                    {voucher?.vendorBranch ? `${voucher.vendorBranch} • ` : ""}
+                    {voucher?.redeemedAt || "Settled"}
+                    {voucher?.billAmountNaira ? ` • Bill: ₦${voucher.billAmountNaira.toLocaleString()}` : ""}
                   </span>
                 </div>
               ) : (
@@ -443,7 +509,7 @@ export default function MealVoucherTicketPage() {
                     1
                   </span>
                   <span className="text-xs sm:text-[13px] text-zinc-300 leading-relaxed">
-                    Present this QR code or 6-digit claim PIN before cashier generates your final bill.
+                    Present this QR code or 4-digit claim PIN before cashier generates your final bill.
                   </span>
                 </div>
                 <div className="flex gap-3.5 items-start">

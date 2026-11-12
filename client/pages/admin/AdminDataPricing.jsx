@@ -604,6 +604,7 @@ export default function AdminDataPricing() {
                         <td className="px-4 py-3 text-right">
                           <Input
                             type="number"
+                            onWheel={(e) => e.currentTarget.blur()}
                             placeholder="None"
                             value={plan.competitorPrice ?? ""}
                             onChange={(e) => handleFieldChange(plan.id, "competitorPrice", e.target.value)}
@@ -631,6 +632,7 @@ export default function AdminDataPricing() {
                         <td className="px-4 py-3 text-right">
                           <Input
                             type="number"
+                            onWheel={(e) => e.currentTarget.blur()}
                             placeholder="Auto"
                             value={plan.customDisplayPrice ?? ""}
                             onChange={(e) => handleFieldChange(plan.id, "customDisplayPrice", e.target.value)}
@@ -735,6 +737,7 @@ export default function AdminDataPricing() {
                         <Label className="text-xs text-gray-400">Margin % (Over Cost)</Label>
                         <Input
                           type="number"
+                          onWheel={(e) => e.currentTarget.blur()}
                           step="0.01"
                           value={netConfig.marginRate}
                           onChange={(e) =>
@@ -756,6 +759,7 @@ export default function AdminDataPricing() {
                         <Label className="text-xs text-gray-400">Cashback % (Of Selling Price)</Label>
                         <Input
                           type="number"
+                          onWheel={(e) => e.currentTarget.blur()}
                           step="0.001"
                           value={netConfig.cashbackRate}
                           onChange={(e) =>
@@ -789,6 +793,7 @@ export default function AdminDataPricing() {
                     <Label className="text-xs text-gray-400">Undercut Spread Min (₦)</Label>
                     <Input
                       type="number"
+                      onWheel={(e) => e.currentTarget.blur()}
                       value={editGlobalConfig.undercutSpreadMin ?? 20}
                       onChange={(e) =>
                         setEditGlobalConfig((prev) => ({
@@ -804,6 +809,7 @@ export default function AdminDataPricing() {
                     <Label className="text-xs text-gray-400">Undercut Discount (₦)</Label>
                     <Input
                       type="number"
+                      onWheel={(e) => e.currentTarget.blur()}
                       value={editGlobalConfig.undercutDiscount ?? 10}
                       onChange={(e) =>
                         setEditGlobalConfig((prev) => ({
@@ -819,6 +825,7 @@ export default function AdminDataPricing() {
                     <Label className="text-xs text-gray-400">Large Plan Threshold (₦)</Label>
                     <Input
                       type="number"
+                      onWheel={(e) => e.currentTarget.blur()}
                       value={editGlobalConfig.largePlanThreshold ?? 10000}
                       onChange={(e) =>
                         setEditGlobalConfig((prev) => ({
@@ -834,6 +841,7 @@ export default function AdminDataPricing() {
                     <Label className="text-xs text-gray-400">Hero Cashback % (0.005 = 0.5%)</Label>
                     <Input
                       type="number"
+                      onWheel={(e) => e.currentTarget.blur()}
                       step="0.001"
                       value={editGlobalConfig.heroCashbackRate ?? 0.005}
                       onChange={(e) =>

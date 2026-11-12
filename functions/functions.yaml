@@ -14,6 +14,34 @@
       "callableTrigger": {},
       "entryPoint": "adminGetPricingConfig"
     },
+    "adminProvisionVendorUser": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminProvisionVendorUser"
+    },
+    "adminRegisterVendorStore": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminRegisterVendorStore"
+    },
     "adminSeedPricingFromExcel": {
       "availableMemoryMb": null,
       "timeoutSeconds": null,
@@ -83,6 +111,20 @@
       "labels": {},
       "callableTrigger": {},
       "entryPoint": "adminUpdatePricingConfig"
+    },
+    "backfillPublicMealOffers": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "backfillPublicMealOffers"
     },
     "billHistory": {
       "availableMemoryMb": null,
@@ -320,6 +362,20 @@
       "callableTrigger": {},
       "entryPoint": "createTransactionPin"
     },
+    "createVendorCampaign": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "createVendorCampaign"
+    },
     "fetchBalance": {
       "availableMemoryMb": null,
       "timeoutSeconds": null,
@@ -376,6 +432,20 @@
       "callableTrigger": {},
       "entryPoint": "fetchDataPlans"
     },
+    "finalizePublicOffersVerificationRun": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "finalizePublicOffersVerificationRun"
+    },
     "flutterwaveWebhook": {
       "availableMemoryMb": null,
       "timeoutSeconds": null,
@@ -389,6 +459,20 @@
       "labels": {},
       "httpsTrigger": {},
       "entryPoint": "flutterwaveWebhook"
+    },
+    "getMerchantDashboardData": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "getMerchantDashboardData"
     },
     "getServerTime": {
       "availableMemoryMb": null,
@@ -462,6 +546,20 @@
         }
       },
       "entryPoint": "loginNotification"
+    },
+    "migrateCampaignReservations": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "migrateCampaignReservations"
     },
     "nightlyConsolidatedSubaccountSweep": {
       "availableMemoryMb": null,
@@ -619,6 +717,38 @@
       },
       "entryPoint": "processAirtimeTopupRequest"
     },
+    "reconcileExpiredMealVouchers": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "reconcileExpiredMealVouchers"
+    },
+    "reconcileExpiredMealVouchersScheduled": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "scheduleTrigger": {
+        "schedule": "every 15 minutes",
+        "retryConfig": {},
+        "timeZone": "Africa/Lagos"
+      },
+      "entryPoint": "reconcileExpiredMealVouchersScheduled"
+    },
     "redeemMealCoupon": {
       "availableMemoryMb": null,
       "timeoutSeconds": 300,
@@ -697,7 +827,7 @@
     },
     "setDemoCashierRole": {
       "availableMemoryMb": null,
-      "timeoutSeconds": null,
+      "timeoutSeconds": 300,
       "minInstances": null,
       "maxInstances": null,
       "ingressSettings": null,
@@ -708,6 +838,104 @@
       "labels": {},
       "callableTrigger": {},
       "entryPoint": "setDemoCashierRole"
+    },
+    "startPublicOffersVerificationRun": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "startPublicOffersVerificationRun"
+    },
+    "stepPublicOffersVerificationRun": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "stepPublicOffersVerificationRun"
+    },
+    "updateMerchantCampaignBudget": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "updateMerchantCampaignBudget"
+    },
+    "updateMerchantCampaignStatus": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "updateMerchantCampaignStatus"
+    },
+    "adminSetCampaignFeatured": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "adminSetCampaignFeatured"
+    },
+    "updateVendorProfile": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "updateVendorProfile"
+    },
+    "updateVendorCampaignImage": {
+      "availableMemoryMb": null,
+      "timeoutSeconds": 300,
+      "minInstances": null,
+      "maxInstances": null,
+      "ingressSettings": null,
+      "concurrency": null,
+      "serviceAccountEmail": null,
+      "vpc": null,
+      "platform": "gcfv2",
+      "labels": {},
+      "callableTrigger": {},
+      "entryPoint": "updateVendorCampaignImage"
     },
     "userDPUpdate": {
       "availableMemoryMb": null,
@@ -739,7 +967,7 @@
     },
     "validateMealVoucherForMerchant": {
       "availableMemoryMb": null,
-      "timeoutSeconds": null,
+      "timeoutSeconds": 300,
       "minInstances": null,
       "maxInstances": null,
       "ingressSettings": null,

@@ -231,7 +231,13 @@ export function resolveBundledMealImage(category, title, vendorName) {
   if (combined.includes("pizza") || combined.includes("pasta") || combined.includes("italian")) {
     return BUNDLED_MEAL_IMAGES.pizza;
   }
-  if (combined.includes("burger") || combined.includes("fast food") || combined.includes("sandwich")) {
+  if (
+    combined.includes("burger") ||
+    combined.includes("fast food") ||
+    combined.includes("fast foods") ||
+    combined.includes("small chops") ||
+    combined.includes("sandwich")
+  ) {
     return BUNDLED_MEAL_IMAGES.burger;
   }
   if (
@@ -239,7 +245,10 @@ export function resolveBundledMealImage(category, title, vendorName) {
     combined.includes("coffee") ||
     combined.includes("croissant") ||
     combined.includes("dessert") ||
-    combined.includes("pastry")
+    combined.includes("pastry") ||
+    combined.includes("pastries") ||
+    combined.includes("drink") ||
+    combined.includes("drinks")
   ) {
     return BUNDLED_MEAL_IMAGES.bakery;
   }

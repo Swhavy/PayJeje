@@ -1,6 +1,7 @@
 import "./global.css";
 
 import { Toaster } from "@/components/ui/toaster";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -39,7 +40,6 @@ import WithdrawalStatePage from "./pages/WithdrawalStatePage";
 import Earn from "./pages/Earn";
 import Referrals from "./pages/Referrals";
 import Settings from "./pages/Settings";
-import DevCard from "./pages/DevCard";
 import DataPreference from "@/pages/DataPreference";
 import PaymentSuccesful from "@/pages/PaymentSuccesful";
 import FeedbackAlert from "@/components/Alert";
@@ -55,14 +55,33 @@ import MealCouponDetail from "./pages/services/MealCouponDetail";
 import MealVoucherTicket from "./pages/services/MealVoucherTicket";
 import MyMealVouchers from "./pages/services/MyMealVouchers";
 import MealMerchantTerminal from "./pages/services/MealMerchantTerminal";
+import MealMerchantDashboard from "./pages/services/MealMerchantDashboard";
+import MerchantLogin from "./pages/auth/MerchantLogin";
+import AdminMerchantProvisioning from "./pages/admin/AdminMerchantProvisioning";
 import MerchantRoute from "./components/MerchantRoute";
+import AdminRoute from "./components/AdminRoute";
 import AdminDataPricing from "./pages/admin/AdminDataPricing";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 
 const queryClient = new QueryClient();
 
+const NumberInputWheelGuard = () => {
+  useEffect(() => {
+    const handleWheel = () => {
+      const el = document.activeElement;
+      if (el && el.tagName === "INPUT" && el.type === "number") {
+        el.blur();
+      }
+    };
+    document.addEventListener("wheel", handleWheel, { passive: true, capture: true });
+    return () => document.removeEventListener("wheel", handleWheel, { capture: true });
+  }, []);
+  return null;
+};
+
 const App = () => (
   <BrowserRouter>
+    <NumberInputWheelGuard />
     <Provider store={store}>
       <PersistGate
         loading={
@@ -85,8 +104,8 @@ const App = () => (
                   <Routes>
                     {/* Public Routes */}
                     <Route path="/" element={<HomePage />} />
-                    <Route path="/devCard" element={<DevCard />} />
                     <Route path="/auth/login" element={<Login />} />
+                    <Route path="/merchant/login" element={<MerchantLogin />} />
                     <Route
                       path="/auth/signUp/:referredBy?"
                       element={<Register />}
@@ -152,6 +171,14 @@ const App = () => (
                         <ProtectedRoute>
                           <AdminDataPricing />
                         </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/merchants/provision"
+                      element={
+                        <AdminRoute>
+                          <AdminMerchantProvisioning />
+                        </AdminRoute>
                       }
                     />
                     <Route
@@ -258,6 +285,10 @@ const App = () => (
                     />
                     <Route
                       path="/services/meals/terminal"
+                      element={<Navigate to="/merchant/terminal" replace />}
+                    />
+                    <Route
+                      path="/merchant/terminal"
                       element={
                         <MerchantRoute>
                           <MealMerchantTerminal />
@@ -268,7 +299,7 @@ const App = () => (
                       path="/merchant/meals"
                       element={
                         <MerchantRoute>
-                          <MealMerchantTerminal />
+                          <MealMerchantDashboard />
                         </MerchantRoute>
                       }
                     />

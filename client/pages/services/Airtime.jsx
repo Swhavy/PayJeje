@@ -305,6 +305,7 @@ export default function AirtimePage() {
                   <Input
                     id="phone"
                     type="number"
+                    onWheel={(e) => e.currentTarget.blur()}
                     placeholder="080 1234 5678"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
@@ -338,6 +339,7 @@ export default function AirtimePage() {
                   </div>
                   <Input
                     type="number"
+                    onWheel={(e) => e.currentTarget.blur()}
                     placeholder="Enter custom amount"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}

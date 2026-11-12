@@ -623,6 +623,7 @@ export default function DashboardLayout({ children }) {
                 </span>
                 <input
                   type="number"
+                  onWheel={(e) => e.currentTarget.blur()}
                   placeholder="5,000"
                   value={fundsAmount}
                   onChange={(e) => setFundsAmount(e.target.value)}

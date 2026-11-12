@@ -68,13 +68,14 @@ describe("Phase 2: Meal Marketplace UI Foundation - Fixtures & States", () => {
   });
 
   it("validates categories coverage", () => {
-    expect(MEAL_CATEGORIES.length).toBeGreaterThanOrEqual(5);
+    expect(MEAL_CATEGORIES.length).toBe(6);
     const categoryIds = MEAL_CATEGORIES.map((c) => c.id);
     expect(categoryIds).toContain("all");
-    expect(categoryIds).toContain("fast-food");
+    expect(categoryIds).toContain("small-chops");
+    expect(categoryIds).toContain("fast-foods");
     expect(categoryIds).toContain("local-delicacies");
-    expect(categoryIds).toContain("pizza-pasta");
-    expect(categoryIds).toContain("desserts");
+    expect(categoryIds).toContain("drinks");
+    expect(categoryIds).toContain("pastries");
   });
 
   it("verifies user vouchers span all 3 required lifecycle states: active, used, expired", () => {

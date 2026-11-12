@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import MealFloatingNav from "@/components/meals/MealFloatingNav";
-import { db, auth, doc, collection, onSnapshot } from "@/firebaseConfig";
+import { db, auth, doc, collection, query, where, onSnapshot } from "@/firebaseConfig";
 import {
   resolveOfferAvailability,
   validatePublicOfferTerms,
@@ -214,11 +214,27 @@ export default function MealsPage() {
     };
   }, [prefersReducedMotion]);
 
-  // Real-time Public Meal Offers & Customer Claims Subscriptions
+  // Real-time Public Meal Offers, Vendor Branding & Customer Claims Subscriptions
   const [offers, setOffers] = useState([]);
+  const [vendorsMap, setVendorsMap] = useState({});
   const [offersLoading, setOffersLoading] = useState(true);
   const [offersError, setOffersError] = useState(null);
   const [userClaimsMap, setUserClaimsMap] = useState({});
+
+  useEffect(() => {
+    const unsubVendors = onSnapshot(
+      collection(db, "meal_vendors"),
+      (snap) => {
+        const map = {};
+        snap.docs.forEach((d) => {
+          map[d.id] = d.data();
+        });
+        setVendorsMap(map);
+      },
+      () => {}
+    );
+    return () => unsubVendors();
+  }, []);
 
   useEffect(() => {
     setOffersLoading(true);
@@ -251,7 +267,9 @@ export default function MealsPage() {
             title: data.title,
             vendorId: data.vendorId,
             vendorName: data.vendorName,
-            branch: data.branch || "Lagos Partner Spot",
+            vendorLogoUrl: data.vendorLogoUrl || null,
+            vendorLogoEmoji: data.vendorLogoEmoji || "🍗",
+            branch: data.branch || "Main Branch",
             category: data.category || "Local Delicacies",
             discountNaira: terms.discountNaira,
             minSpendNaira: terms.minSpendNaira,
@@ -284,44 +302,85 @@ export default function MealsPage() {
       setUserClaimsMap({});
       return;
     }
+    let rawClaimsMap = {};
+    let vouchersStatusById = {};
+
+    const recomputeClaims = () => {
+      const merged = {};
+      const nowMs = Date.now();
+      Object.entries(rawClaimsMap).forEach(([claimKey, cData]) => {
+        const activeExpiresAtMs = cData.activeVoucherExpiresAt?.toMillis
+          ? cData.activeVoucherExpiresAt.toMillis()
+          : cData.activeVoucherExpiresAt?.toDate
+          ? cData.activeVoucherExpiresAt.toDate().getTime()
+          : new Date(cData.activeVoucherExpiresAt || 0).getTime();
+
+        const vId = cData.activeVoucherId;
+        const liveVchStatus = vId ? vouchersStatusById[vId] : null;
+        // Voucher is only considered active if activeVoucherId exists, not expired, and not already redeemed/used/expired in meal_vouchers
+        const isStillActiveInVault = !liveVchStatus || liveVchStatus === "active";
+        const hasActive = Boolean(vId && nowMs < activeExpiresAtMs && isStillActiveInVault);
+
+        merged[claimKey] = {
+          ...cData,
+          hasActiveVoucher: hasActive,
+          activeVoucherId: hasActive ? vId : null,
+          lifetimeClaimCount: Number(cData.lifetimeClaimCount || 0),
+        };
+      });
+      setUserClaimsMap(merged);
+    };
+
     const unsubClaims = onSnapshot(
       collection(db, "users", currentUid, "mealClaims"),
       (snapshot) => {
-        const claims = {};
-        const nowMs = Date.now();
+        const nextRaw = {};
         snapshot.forEach((claimDoc) => {
-          const cData = claimDoc.data();
-          const activeExpiresAtMs = cData.activeVoucherExpiresAt?.toMillis
-            ? cData.activeVoucherExpiresAt.toMillis()
-            : cData.activeVoucherExpiresAt?.toDate
-            ? cData.activeVoucherExpiresAt.toDate().getTime()
-            : new Date(cData.activeVoucherExpiresAt || 0).getTime();
-          const hasActive = Boolean(cData.activeVoucherId && nowMs < activeExpiresAtMs);
-          claims[claimDoc.id] = {
-            ...cData,
-            hasActiveVoucher: hasActive,
-            activeVoucherId: hasActive ? cData.activeVoucherId : null,
-            lifetimeClaimCount: Number(cData.lifetimeClaimCount || 0),
-          };
+          nextRaw[claimDoc.id] = claimDoc.data();
         });
-        setUserClaimsMap(claims);
+        rawClaimsMap = nextRaw;
+        recomputeClaims();
       },
       (err) => {
         console.warn("[Meals Marketplace] Claims subscription error:", err);
       }
     );
-    return () => unsubClaims();
+
+    const unsubVouchers = onSnapshot(
+      query(collection(db, "meal_vouchers"), where("userId", "==", currentUid)),
+      (snapshot) => {
+        const nextStatuses = {};
+        snapshot.forEach((vDoc) => {
+          const vData = vDoc.data();
+          const isRedeemed =
+            vData.status === "redeemed" ||
+            vData.status === "used" ||
+            Boolean(vData.redeemedAt) ||
+            Boolean(vData.redemptionId);
+          nextStatuses[vDoc.id] = isRedeemed ? "redeemed" : vData.status || "active";
+        });
+        vouchersStatusById = nextStatuses;
+        recomputeClaims();
+      },
+      () => {}
+    );
+
+    return () => {
+      unsubClaims();
+      unsubVouchers();
+    };
   }, [currentUid]);
 
-  const featuredOffer = offers.find((o) => o.isFeatured) || offers[0] || null;
-  const regularOffers = featuredOffer ? offers.filter((o) => o.id !== featuredOffer.id) : offers;
+  const featuredOffer = offers.find((o) => o.isFeatured === true) || null;
 
-  const filteredOffers = regularOffers.filter((offer) => {
+  const filteredOffers = offers.filter((offer) => {
     if (selectedCategory === "all") return true;
-    if (selectedCategory === "fast-food") return offer.category === "Fast Food";
-    if (selectedCategory === "local-delicacies") return offer.category === "Local Delicacies";
-    if (selectedCategory === "pizza-pasta") return offer.category === "Pizza & Pasta";
-    if (selectedCategory === "desserts") return offer.category === "Desserts";
+    const cat = (offer.category || "").toLowerCase();
+    if (selectedCategory === "small-chops") return cat === "small chops";
+    if (selectedCategory === "fast-foods") return cat === "fast foods" || cat === "fast food";
+    if (selectedCategory === "local-delicacies") return cat === "local delicacies";
+    if (selectedCategory === "drinks") return cat === "drinks" || cat === "drink";
+    if (selectedCategory === "pastries") return cat === "pastries" || cat === "pastry" || cat === "desserts";
     return true;
   });
 
@@ -535,7 +594,7 @@ export default function MealsPage() {
 
               {/* Greyed Supporting Text — Less Bold, Soft Neutral & Refined Desktop Spacing */}
               <p className="text-xs sm:text-sm md:text-base text-zinc-400 font-normal max-w-md sm:max-w-xl mx-auto leading-relaxed px-2 tracking-normal">
-                Use your accumulated PayWaka Points to unlock instant meal discount vouchers at participating restaurants across Lagos.
+                Use your accumulated PayWaka Points to unlock instant meal discount vouchers at participating partner restaurants.
               </p>
 
               {/* PayWaka Emerald Points Balance Card with Floating & Glass Highlight Animation */}
@@ -630,7 +689,7 @@ export default function MealsPage() {
             </div>
             <h3 className="text-lg font-bold text-white">No Meal Offers Available</h3>
             <p className="text-xs text-zinc-400 max-w-sm leading-relaxed">
-              Our partner restaurants in Lagos are preparing new promotions. Check back soon for exclusive food rewards!
+              Our partner restaurants are preparing new promotions. Check back soon for exclusive food rewards!
             </p>
           </div>
         ) : (
@@ -687,15 +746,28 @@ export default function MealsPage() {
                     </div>
 
                     <div className="p-5 sm:p-6 flex flex-col gap-3.5">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h4 className="text-lg font-bold text-white">{featuredOffer.vendorName}</h4>
-                          <div className="flex items-center gap-1 text-zinc-400 text-xs mt-1">
-                            <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                            <span>{featuredOffer.branch}</span>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-xl bg-[#004729]/70 border border-[#44e092]/30 flex items-center justify-center text-xl flex-shrink-0 overflow-hidden shadow-inner">
+                            {vendorsMap[featuredOffer.vendorId]?.logoUrl || featuredOffer.vendorLogoUrl ? (
+                              <img
+                                src={vendorsMap[featuredOffer.vendorId]?.logoUrl || featuredOffer.vendorLogoUrl}
+                                alt={featuredOffer.vendorName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span>{vendorsMap[featuredOffer.vendorId]?.logoEmoji || featuredOffer.vendorLogoEmoji || "🍗"}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-lg font-bold text-white truncate">{featuredOffer.vendorName}</h4>
+                            <div className="flex items-center gap-1 text-zinc-400 text-xs mt-0.5">
+                              <MapPin className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
+                              <span className="truncate">{featuredOffer.branch}</span>
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex-shrink-0">
                           <span className="text-lg font-black text-white">{featuredOffer.pointsCost} pts</span>
                           <div className="text-xs text-zinc-400">required</div>
                         </div>
@@ -764,7 +836,7 @@ export default function MealsPage() {
             <section className="py-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-bold text-white">Categories</span>
-                <span className="text-xs text-zinc-400 font-medium">Lagos Partner Spots</span>
+                <span className="text-xs text-zinc-400 font-medium">Verified Partner Spots</span>
               </div>
 
               <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none snap-x">
@@ -846,9 +918,22 @@ export default function MealsPage() {
                         <div className="p-4 flex-1 flex flex-col justify-between gap-3">
                           <div>
                             <h4 className="text-sm font-bold text-white truncate">{offer.title}</h4>
-                            <div className="flex items-center justify-between text-xs text-zinc-400 mt-1">
-                              <span className="truncate">{offer.vendorName}</span>
-                              <span>₦{offer.minSpend?.toLocaleString()} min</span>
+                            <div className="flex items-center justify-between text-xs text-zinc-400 mt-1.5 gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-5 h-5 rounded-md bg-[#004729]/70 border border-[#44e092]/30 flex items-center justify-center text-[11px] flex-shrink-0 overflow-hidden">
+                                  {vendorsMap[offer.vendorId]?.logoUrl || offer.vendorLogoUrl ? (
+                                    <img
+                                      src={vendorsMap[offer.vendorId]?.logoUrl || offer.vendorLogoUrl}
+                                      alt={offer.vendorName}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <span>{vendorsMap[offer.vendorId]?.logoEmoji || offer.vendorLogoEmoji || "🍗"}</span>
+                                  )}
+                                </span>
+                                <span className="truncate">{offer.vendorName}</span>
+                              </div>
+                              <span className="flex-shrink-0">₦{offer.minSpend?.toLocaleString()} min</span>
                             </div>
                           </div>
 
@@ -1008,7 +1093,7 @@ export default function MealsPage() {
                 </div>
                 <div className="p-3.5 sm:p-4 bg-[#0c0e12] rounded-2xl border border-[#282a2e]">
                   <strong className="text-white block mb-1">4. Redeem at Counter</strong>
-                  Each unlocked voucher generates a secure digital QR code and 6-digit PIN. Present this to the cashier before paying to deduct your discount.
+                  Each unlocked voucher generates a secure digital QR code and 4-digit PIN. Present this to the cashier before paying to deduct your discount.
                 </div>
               </div>
 
