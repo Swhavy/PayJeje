@@ -1,64 +1,147 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* =====================================================================
+ * PAYWAKA 3A DESIGN TOKENS — Apple Glassmorphic Obsidian Emerald & Pearl.
+ * Single source of truth mapped into tailwind.config.js.
+ * ===================================================================== */
 @layer base {
   :root {
-    /* Light mode — warm cream/parchment palette */
-    --background: 36 33% 94%;        /* rgb(245, 242, 235) */
-    --foreground: 222 47% 11%;       /* dark navy text #0f1729 */
-    --card: 0 0% 100%;               /* pure white cards */
+    /* Surfaces ("Apple Frosted Pearl Glass") */
+    --background: 155 24% 96%;
+    /* #F2F6F4 alabaster-mint canvas */
+    --foreground: 222 47% 11%;
+    /* #0F172A deep slate ink */
+    --card: 0 0% 100%;
+    /* frosted translucent white base */
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 151 95% 36%;          /* slightly deeper green for light bg contrast */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 36 20% 90%;         /* warm light secondary */
-    --secondary-foreground: 222 30% 30%;
-    --muted: 36 18% 91%;             /* soft warm muted */
-    --muted-foreground: 215 16% 47%; /* medium slate #5a6b82 */
-    --accent: 36 22% 88%;            /* warm accent surface */
-    --accent-foreground: 222 30% 20%;
-    --destructive: 0 84% 60%;
+    --panel: 160 18% 97%;
+    /* inner smoked glass slab */
+    --secondary: 160 18% 94%;
+    --secondary-foreground: 215 25% 27%;
+    --muted: 160 16% 94%;
+    --muted-foreground: 215 16% 38%;
+    /* >=5.5:1 on white & translucent pearl */
+    --accent: 160 22% 93%;
+    --accent-foreground: 222 47% 11%;
+    --border: 215 20% 89%;
+    --input: 215 20% 86%;
+
+    /* Brand (Satin Obsidian Emerald family) */
+    --brand-500: 163 93% 22%;
+    /* #046C4E primary CTA fill (white text >=6.4:1) */
+    --brand-500-foreground: 0 0% 100%;
+    --brand-400: 163 94% 24%;
+    /* #047857 icons & brand accents */
+    --brand-glow: 155 100% 45%;
+    /* #00E887 receipt shimmer */
+    --brand-50: 152 81% 95%;
+    --brand-950: 160 75% 11%;
+    --brand-tint: var(--brand-50);
+
+    --primary: var(--brand-500);
+    --primary-foreground: var(--brand-500-foreground);
+    --ring: var(--brand-400);
+
+    /* Semantic: red = debit / error only, amber = warning / points only */
+    --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 85%;           /* soft grey border #d8dde6 */
-    --input: 220 13% 88%;            /* light input bg */
-    --ring: 151 95% 36%;
-    --radius: 0.625rem;
-    --chart-1: 151 80% 35%;
-    --chart-2: 201 90% 45%;
-    --chart-3: 38 85% 50%;
-    --chart-4: 220 55% 50%;
-    --chart-5: 354 80% 55%;
+    --warning: 32 95% 33%;
+    /* WCAG AA safe amber */
+    --warning-foreground: 0 0% 100%;
+
+    /* Charts */
+    --chart-1: var(--brand-400);
+    --chart-2: 0 60% 55%;
+    --chart-3: 32 95% 44%;
+    --chart-4: 215 16% 47%;
+    --chart-5: 155 100% 45%;
+
+    /* Radius & 3A Layered Glass Elevation */
+    --radius: 0.9375rem;
+    /* inner panel 15px */
+    --radius-card: 1.375rem;
+    /* card 22px (Apple squircle) */
+    --shadow-card:
+      0 1px 2px 0 rgb(15 23 42 / 0.04),
+      0 12px 32px -16px rgb(15 23 42 / 0.12),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.95);
+    --shadow-glass:
+      0 8px 28px -12px rgb(15 23 42 / 0.10),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.92);
+    --shadow-hero:
+      0 20px 50px -20px rgb(4 120 87 / 0.16),
+      0 8px 24px -12px rgb(15 23 42 / 0.08),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.95);
+    --shadow-emerald-glow: 0 22px 48px -14px rgb(4 120 87 / 0.36);
+    --shadow-sheet: 0 -12px 40px -12px rgb(15 23 42 / 0.18);
+
+    /* Layout */
+    --header-h: 3.5rem;
+    --bottom-nav-h: 4rem;
+
+    color-scheme: light;
   }
 
   .dark {
-    /* Dark mode — deep navy premium palette */
-    --background: 220 65% 4%;        /* #040a14 deep navy */
-    --foreground: 216 60% 95%;       /* #e8f0ff bright white-blue */
-    --card: 220 55% 7%;              /* #0d1a30 elevated navy */
-    --card-foreground: 216 60% 95%;
-    --popover: 220 55% 7%;
-    --popover-foreground: 216 60% 95%;
-    --primary: 151 100% 40%;         /* PayWaka green #00cc6e */
-    --primary-foreground: 151 100% 4%;
-    --secondary: 220 40% 12%;
-    --secondary-foreground: 220 30% 70%;
-    --muted: 220 36% 10%;
-    --muted-foreground: 215 20% 48%;
-    --accent: 220 38% 14%;
-    --accent-foreground: 220 30% 75%;
-    --destructive: 354 100% 68%;
-    --destructive-foreground: 220 52% 4%;
-    --border: 220 35% 16%;           /* subtle navy border #1a2d4a */
-    --input: 220 42% 12%;
-    --ring: 151 100% 40%;
-    --chart-1: 151 100% 40%;
-    --chart-2: 201 100% 50%;
-    --chart-3: 38 90% 55%;
-    --chart-4: 220 60% 55%;
-    --chart-5: 354 100% 68%;
+    /* Surfaces ("Obsidian Emerald Glass") */
+    --background: 155 36% 2.5%;
+    /* #040806 deep obsidian-emerald canvas */
+    --foreground: 210 40% 98%;
+    /* #F8FAFC crisp alabaster text */
+    --card: 156 30% 6%;
+    /* #0B1411 */
+    --card-foreground: 210 40% 98%;
+    --popover: 156 30% 7%;
+    --popover-foreground: 210 40% 98%;
+    --panel: 156 24% 8%;
+    /* smoked inner glass slab */
+    --secondary: 156 24% 11%;
+    --secondary-foreground: 214 32% 88%;
+    --muted: 156 24% 10%;
+    --muted-foreground: 215 16% 68%;
+    /* >=7:1 contrast on obsidian glass */
+    --accent: 156 26% 12%;
+    --accent-foreground: 210 40% 98%;
+    --border: 156 22% 14%;
+    --input: 156 22% 17%;
+
+    --brand-500: 156 84% 40%;
+    /* #10B981 rich obsidian-emerald CTA */
+    --brand-500-foreground: 166 91% 8%;
+    /* #02261E high contrast dark text */
+    --brand-400: 153 86% 52%;
+    /* #1BF292 luminous emerald accent */
+    --brand-tint: var(--brand-950);
+
+    --destructive: 0 91% 71%;
+    /* #F87171 */
+    --destructive-foreground: 0 60% 8%;
+    --warning: 43 96% 58%;
+    /* #FBBF24 warm gold */
+    --warning-foreground: 32 80% 10%;
+
+    --chart-2: 0 70% 66%;
+    --chart-3: 43 96% 58%;
+    --chart-4: 215 20% 60%;
+
+    --shadow-card:
+      0 18px 42px -20px rgb(0 0 0 / 0.75),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.075);
+    --shadow-glass:
+      0 14px 36px -18px rgb(0 0 0 / 0.72),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+    --shadow-hero:
+      0 26px 64px -22px rgb(0 0 0 / 0.86),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.10);
+    --shadow-emerald-glow: 0 22px 50px -14px rgb(0 200 106 / 0.36);
+    --shadow-sheet: 0 -16px 48px -12px rgb(0 0 0 / 0.75);
+
+    color-scheme: dark;
   }
 }
 
@@ -66,51 +149,368 @@
   * {
     @apply border-border;
   }
+
+  html {
+    font-family:
+      "Plus Jakarta Sans",
+      "Inter",
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-size: 0.9375rem;
+    /* 15px body */
+    line-height: 1.5;
+    /* Document scroll (PWA): let iOS toolbars collapse and native overscroll work */
+    overscroll-behavior-y: auto;
     transition:
-      background-color 0.3s ease,
-      color 0.3s ease;
+      background-color 0.2s ease,
+      color 0.2s ease;
+  }
+
+  /* iOS Safari zooms any focused field below 16px. Utilities can still override on desktop. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+
+  /* Tabular numerals for crisp money alignment + monospace codes for references */
+  .font-mono,
+  code,
+  kbd,
+  samp {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "zero" 0;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+/* =====================================================================
+ * PAYWAKA 3A GLASSMORPHISM PRIMITIVES (token-only)
+ * ===================================================================== */
+@layer components {
+
+  /* Atmospheric ambient field behind frosted cards */
+  .pw-app-canvas {
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(65% 45% at 88% 0%, hsl(var(--brand-400) / 0.08) 0%, transparent 65%),
+      radial-gradient(50% 40% at 10% 100%, hsl(var(--brand-500) / 0.05) 0%, transparent 70%);
+  }
+
+  .dark .pw-app-canvas {
+    background-image:
+      radial-gradient(70% 45% at 88% 0%, rgb(16 185 129 / 0.09) 0%, transparent 60%),
+      radial-gradient(55% 45% at 12% 95%, rgb(4 120 87 / 0.07) 0%, transparent 65%);
+  }
+
+  /* Primary frosted glass card */
+  .pw-card {
+    @apply text-card-foreground rounded-card shadow-card;
+    background: rgb(255 255 255 / 0.84);
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    border: 1px solid rgb(15 23 42 / 0.075);
+  }
+
+  .dark .pw-card {
+    background: linear-gradient(155deg, rgb(16 32 24 / 0.72) 0%, rgb(7 13 10 / 0.88) 100%);
+    backdrop-filter: blur(24px) saturate(155%);
+    -webkit-backdrop-filter: blur(24px) saturate(155%);
+    border: 1px solid rgb(255 255 255 / 0.08);
+  }
+
+  /* Flagship outer hero glass container (matches Reference Images 1 & 2) */
+  .pw-glass-hero {
+    @apply text-card-foreground rounded-[24px] shadow-hero relative overflow-hidden;
+    background:
+      radial-gradient(115% 85% at 92% 0%, rgb(16 185 129 / 0.10) 0%, transparent 60%),
+      rgb(255 255 255 / 0.88);
+    backdrop-filter: blur(26px) saturate(160%);
+    -webkit-backdrop-filter: blur(26px) saturate(160%);
+    border: 1px solid rgb(4 120 87 / 0.14);
+  }
+
+  .dark .pw-glass-hero {
+    background:
+      radial-gradient(115% 85% at 88% 0%, rgb(16 185 129 / 0.18) 0%, transparent 60%),
+      linear-gradient(160deg, rgb(12 24 18 / 0.86) 0%, rgb(5 10 8 / 0.96) 100%);
+    border: 1px solid rgb(52 211 153 / 0.16);
+  }
+
+  /* Lush satin emerald hero wallet card (matches Reference Image 2) */
+  .pw-wallet-hero-card {
+    @apply relative overflow-hidden text-white rounded-[22px] shadow-emerald-glow;
+    background-color: #047857;
+    background-image: linear-gradient(135deg, #008B4D 0%, #047857 48%, #04625D 100%);
+    border: 1px solid rgb(255 255 255 / 0.22);
+    box-shadow:
+      var(--shadow-emerald-glow),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.32);
+  }
+
+  .pw-wallet-hero-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(80% 70% at 10% 0%, rgb(74 222 128 / 0.28) 0%, transparent 60%),
+      radial-gradient(60% 60% at 95% 100%, rgb(45 212 191 / 0.18) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Recessed smoked inner glass slab (matches Reference Image 1 metric rows) */
+  .pw-panel {
+    @apply rounded-panel;
+    background: rgb(15 23 42 / 0.028);
+    border: 1px solid rgb(15 23 42 / 0.06);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.7);
+  }
+
+  .dark .pw-panel {
+    background: rgb(255 255 255 / 0.03);
+    border: 1px solid rgb(255 255 255 / 0.065);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.045);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  /* Apple frosted segmented tab track */
+  .pw-segmented {
+    @apply rounded-pill p-1 border border-border;
+    background: rgb(255 255 255 / 0.75);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+
+  .dark .pw-segmented {
+    background: rgb(255 255 255 / 0.04);
+    border-color: rgb(255 255 255 / 0.08);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+
+  /* Pure white glass pill button for lush emerald hero card */
+  .pw-glass-cta-white {
+    @apply pw-pressable inline-flex items-center justify-center gap-1.5 rounded-pill bg-white font-bold transition-all;
+    color: #046c4e;
+    box-shadow: 0 10px 24px -8px rgb(0 0 0 / 0.28);
+  }
+
+  .pw-glass-cta-white:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.94);
+    transform: translateY(-1px);
+  }
+
+  /* Receipt label: small uppercase, letter-spaced */
+  .pw-label {
+    @apply text-muted-foreground font-bold uppercase;
+    font-size: 0.625rem; /* 10px */
+    line-height: 0.875rem;
+    letter-spacing: 0.1em;
+  }
+
+  /* Geometric tabular numerals for balances, stat cards & prices */
+  .pw-num {
+    font-family: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -0.02em;
+  }
+
+  /* Monospace tabular glyphs for account numbers, references & codes */
+  .pw-code {
+    @apply font-mono tabular-nums;
+  }
+
+  /* Typography scale */
+  .pw-page-title {
+    @apply text-page-title text-foreground lg:text-page-title-lg;
+  }
+
+  .pw-section-title {
+    @apply text-section-title text-foreground;
+  }
+
+  .pw-card-title {
+    @apply text-card-title text-foreground;
+  }
+
+  .pw-caption {
+    @apply text-caption text-muted-foreground;
+  }
+
+  /* Chips */
+  .pw-chip {
+    @apply inline-flex items-center gap-1 rounded-pill border border-border bg-muted/70 backdrop-blur-sm px-2.5 py-0.5 text-caption font-semibold text-muted-foreground whitespace-nowrap shrink-0;
+  }
+
+  .pw-chip-brand {
+    @apply inline-flex items-center gap-1 rounded-pill border border-brand-400/25 bg-brand-tint px-2.5 py-0.5 text-caption font-bold text-brand-400 whitespace-nowrap shrink-0;
+  }
+
+  .pw-pill-gold {
+    @apply inline-flex items-center gap-1 rounded-pill border border-warning/30 bg-warning/10 backdrop-blur-md px-3 py-1 text-caption font-bold text-warning whitespace-nowrap shrink-0;
+  }
+
+  /* Luminous Glass Icon Squircles (emerald, ruby, gold, neutral) */
+  .pw-tile {
+    @apply inline-flex shrink-0 items-center justify-center rounded-panel bg-brand-tint text-brand-400 border border-brand-400/20;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14);
+  }
+
+  .pw-tile-neutral {
+    @apply inline-flex shrink-0 items-center justify-center rounded-panel bg-muted/80 text-muted-foreground border border-border;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+  }
+
+  .pw-tile-ruby {
+    @apply inline-flex shrink-0 items-center justify-center rounded-panel bg-destructive/10 text-destructive border border-destructive/20;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+  }
+
+  .pw-tile-gold {
+    @apply inline-flex shrink-0 items-center justify-center rounded-panel bg-warning/10 text-warning border border-warning/25;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+  }
+
+  /* Pressed state for touch (hover does not exist on touch) */
+  .pw-pressable {
+    @apply transition-transform duration-150 ease-out;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .pw-pressable:active:not(:disabled) {
+    transform: scale(0.98);
+    filter: brightness(0.95);
+  }
+
+  /* Receipt perforation divider */
+  .pw-perforation {
+    @apply border-t-2 border-dashed border-border;
+  }
+
+  /* Form inputs (frosted glass field) */
+  .pw-input {
+    @apply flex h-11 w-full rounded-panel border border-input px-3.5 text-sm text-foreground placeholder:text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/25 focus-visible:border-brand-400 disabled:cursor-not-allowed disabled:opacity-50;
+    background: rgb(255 255 255 / 0.86);
+  }
+
+  .dark .pw-input {
+    background: rgb(255 255 255 / 0.045);
+    border-color: rgb(255 255 255 / 0.10);
+  }
+
+  /* Minimum touch target */
+  .pw-tap {
+    @apply min-h-11 min-w-11;
   }
 }
 
 @layer utilities {
-  .bg-gradient-hero {
-    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--card)) 60%, hsl(151 100% 12%) 100%);
+
+  /* Receipt gradient strip */
+  .bg-brand-strip {
+    background: linear-gradient(90deg,
+        hsl(var(--brand-400)) 0%,
+        hsl(var(--brand-glow)) 50%,
+        hsl(var(--brand-400)) 100%);
   }
 
-  .dark .bg-gradient-hero {
-    background: linear-gradient(135deg, #060d1a 0%, #0a1628 60%, #003d20 100%);
+  /* Safe areas (viewport-fit=cover) */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .pl-safe {
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .pr-safe {
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .h-bottom-nav-safe {
+    height: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+  }
+
+  .pb-bottom-nav-safe {
+    padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 1.5rem);
+  }
+
+  .bottom-above-nav {
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+  }
+
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+
+  /* Hide scrollbar but keep scrolling */
+  .no-scrollbar::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar,
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Legacy helpers kept for marketing pages, now token-driven */
+  .bg-gradient-hero {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--card)) 60%, hsl(var(--brand-tint)) 100%);
   }
 
   .bg-gradient-card {
     background: linear-gradient(160deg, hsl(var(--card)) 0%, hsl(var(--background)) 100%);
   }
 
-  .dark .bg-gradient-card {
-    background: linear-gradient(160deg, #0f2040 0%, #0a1628 100%);
-  }
-
   .bg-gradient-accent {
-    background: linear-gradient(135deg, #00c96e 0%, #00a8ff 100%);
+    background: linear-gradient(135deg, hsl(var(--brand-400)) 0%, hsl(var(--brand-glow)) 100%);
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(90deg, hsl(var(--brand-400)), hsl(var(--brand-glow)));
   }
 }
 
-html {
-  scroll-behavior: smooth;
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
+/* Custom scrollbar (desktop) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-/* Hide scrollbar for Chrome, Safari and Opera */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-/* Hide scrollbar for IE, Edge and Firefox */
-.no-scrollbar {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+
+::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/25 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/40;
 }
 
 /* Custom styles for Spline element to overlay correctly */
@@ -120,7 +520,7 @@ spline-viewer {
   height: 100%;
 }
 
-/* Custom background animation particles */
+/* Background animation particles (marketing) */
 .particle {
   position: absolute;
   border-radius: 50%;
@@ -128,7 +528,7 @@ spline-viewer {
   z-index: 1;
 }
 
-/* Scroll Fade Animation Helper */
+/* Scroll fade helper (marketing) */
 .fade-up-element {
   opacity: 0;
   transform: translateY(30px);
@@ -142,47 +542,18 @@ spline-viewer {
   transform: translateY(0);
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-muted;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/30 rounded-full;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/50;
-}
-
-/* Smooth transitions for theme changes */
-* {
-  transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease,
-    color 0.3s ease;
-}
-
-/* Glass morphism effect */
+/* Glass (marketing only) */
 .glass {
-  @apply backdrop-blur-md bg-white/10 dark:bg-black/10 border border-white/20 dark:border-white/10;
+  @apply backdrop-blur-md bg-card/10 border border-border/40;
 }
 
-/* Gradient text */
-.gradient-text {
-  @apply bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent;
-}
-
-/* Custom animations */
 @keyframes float {
+
   0%,
   100% {
     transform: translateY(0px);
   }
+
   50% {
     transform: translateY(-10px);
   }
@@ -193,12 +564,14 @@ spline-viewer {
 }
 
 @keyframes pulse-glow {
+
   0%,
   100% {
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 20px hsl(var(--brand-400) / 0.3);
   }
+
   50% {
-    box-shadow: 0 0 30px rgba(34, 197, 94, 0.6);
+    box-shadow: 0 0 30px hsl(var(--brand-400) / 0.6);
   }
 }
 
@@ -206,132 +579,102 @@ spline-viewer {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
-/* Loading animations */
+/* Success check animation (respects reduced motion below) */
+@keyframes pw-check-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes pw-check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.pw-check-pop {
+  animation: pw-check-pop 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.pw-check-draw {
+  stroke-dasharray: 24;
+  animation: pw-check-draw 360ms 180ms ease-out both;
+}
+
+/* Skeleton shimmer */
 @keyframes shimmer {
   0% {
     background-position: -200px 0;
   }
+
   100% {
     background-position: calc(200px + 100%) 0;
   }
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, hsl(var(--card) / 0.5), transparent);
   background-size: 200px 100%;
   animation: shimmer 1.5s infinite;
 }
 
-/* Payment flow animations */
-@keyframes payment-flow {
-  0% {
-    transform: translateX(-100%);
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-}
-
-.payment-flow {
-  animation: payment-flow 3s ease-in-out infinite;
+.skeleton {
+  @apply animate-pulse bg-muted rounded-panel;
 }
 
 /* date picker icon */
 input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(50%) sepia(80%) saturate(200%) hue-rotate(200deg);
+  opacity: 0.6;
 }
 
-/* Success animations */
-@keyframes success-bounce {
-  0%,
-  20%,
-  53%,
-  80%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  40%,
-  43% {
-    transform: translate3d(0, -30px, 0);
-  }
-  70% {
-    transform: translate3d(0, -15px, 0);
-  }
-  90% {
-    transform: translate3d(0, -4px, 0);
-  }
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
 }
 
-.success-bounce {
-  animation: success-bounce 1s ease-in-out;
+/* Number input spinners off */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-/* Mobile-first responsive design */
-@media (max-width: 640px) {
-  .mobile-padding {
-    @apply px-4;
-  }
-
-  /* Improve touch targets on mobile */
-  button,
-  a,
-  input,
-  select {
-    min-height: 30px;
-  }
-
-  /* Better mobile typography */
-  h1 {
-    @apply text-2xl;
-  }
-
-  h2 {
-    @apply text-xl;
-  }
-
-  /* Mobile-friendly spacing */
-  .mobile-spacing > * + * {
-    @apply mt-4;
-  }
-}
-
-/* Tablet optimizations */
-@media (min-width: 641px) and (max-width: 1024px) {
-  .tablet-grid {
-    @apply grid-cols-2;
-  }
-}
-
-/* Focus styles for accessibility */
-.focus-visible:focus-visible {
-  @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 /* High contrast mode support */
 @media (prefers-contrast: high) {
   :root {
-    --border: 0 0% 20%;
-    --muted: 0 0% 90%;
+    --border: 215 20% 40%;
+    --muted-foreground: 215 25% 27%;
   }
 
   .dark {
-    --border: 0 0% 80%;
-    --muted: 0 0% 10%;
+    --border: 156 20% 60%;
+    --muted-foreground: 214 32% 85%;
   }
 }
 
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {
@@ -356,39 +699,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   }
 }
 
-/* Custom utilities for better mobile UX */
-.touch-manipulation {
-  touch-action: manipulation;
-}
-
-.animate-gradient-flow {
-  background-size: 200% 200%;
-  animation: gradient-flow 3s ease infinite;
-}
-
-.safe-area-inset {
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-}
-
-/* Loading skeleton styles */
-.skeleton {
-  @apply animate-pulse bg-muted rounded;
-}
-
-.skeleton-text {
-  @apply h-4 bg-muted rounded;
-}
-
-.skeleton-avatar {
-  @apply w-10 h-10 bg-muted rounded-full;
-}
-
-/* Card hover effects */
-.card-hover {
-  @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
-}
-
 /* Button loading state */
 .btn-loading {
   @apply opacity-70 cursor-not-allowed;
@@ -397,45 +707,4 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .btn-loading::after {
   content: "";
   @apply inline-block w-4 h-4 ml-2 border-2 border-current border-t-transparent rounded-full animate-spin;
-}
-
-/* Chrome, Safari, Edge, Opera */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-/* Firefox */
-input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-[data-radix-select-viewport] ~ div[data-radix-popper-content-wrapper] {
-  /* Your overlay styles */
-  background: red;
-}
-
-/* Or target the overlay directly */
-.fixed.inset-0[style*="pointer-events"] {
-  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
-  backdrop-filter: blur(4px); /* Optional blur effect */
-}
-
-.bg {
-  /* animation: pulse-glow 2s ease-in-out infinite; */
-  color: yellow;
-  animation-name: width-expand;
-  animation-iteration-count: infinite;
-  animation-delay: 500ms;
-  animation-timing-function: ease-in-out;
-}
-
-@keyframes width-expand {
-  from {
-    width: 20%;
-  }
-  to {
-    width: 80%;
-  }
 }

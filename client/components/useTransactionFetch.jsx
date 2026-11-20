@@ -67,7 +67,7 @@ const useTransactionFetch = () => {
         },
         (error) => {
           setAppContext((prev) => ({ ...prev, spinner: false }));
-          toast.error("trxn", error);
+          setTrxn((prev) => prev ?? []);
           console.error("Error fetching tx document -swhay:", error);
         },
       );

@@ -1,361 +1,142 @@
-import React, { useState } from "react";
+import React from "react";
+import ModalPortal from "@/components/ui/ModalPortal";
+import { Button } from "@/components/ui/button";
 import {
   ShieldCheck,
-  Sparkles,
-  ArrowUpRight,
-  Gift,
-  Zap,
-  Smartphone,
-  Check,
-  X,
-  ChevronRight,
-  Info,
-  Percent,
-  Award,
-  Wallet,
-  Building2,
   ArrowRight,
+  X,
+  AlertCircle,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
+import { formatNaira } from "@/lib/format";
+import {
+  ReceiptAmount,
+  ReceiptRow,
+  ReceiptRows,
+  ReceiptStatusPill,
+  ReceiptStrip,
+} from "@/components/receipts/ReceiptParts";
 
 export default function WithdrawalConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
-  amount = 25000,
+  amount = 0,
   bankName = "Destination Bank",
   accountNumber = "0000000000",
-  accountHolder = "Valued Customer",
-  userCashbackBalance = 1250,
-  userPoints = 350,
+  accountHolder = "Beneficiary",
+  isP2P = false,
+  transferFee = 0,
 }) {
-  const navigate = useNavigate();
-
-  // State for interactive cashback & bonus toggles
-  const [applyCashbackBalance, setApplyCashbackBalance] = useState(false);
-  const [applyPointsBonus, setApplyPointsBonus] = useState(false);
-  const [selectedQuickPerk, setSelectedQuickPerk] = useState(null);
-
-  if (!isOpen) return null;
-
-  // Amount parsing
-  const numericAmount =
+  const numAmount =
     typeof amount === "number"
       ? amount
       : parseFloat(String(amount).replace(/,/g, "")) || 0;
 
-  // Calculate bonus additions
-  const cashbackAddon = applyCashbackBalance ? userCashbackBalance : 0;
-  const pointsAddon = applyPointsBonus ? 500 : 0;
-  const totalNetPayout = numericAmount + cashbackAddon + pointsAddon;
+  let calculatedFee = 0;
+  if (!isP2P) {
+    if (transferFee !== undefined && transferFee !== null && transferFee > 0) {
+      calculatedFee = transferFee;
+    } else {
+      if (numAmount <= 5000) calculatedFee = 10;
+      else if (numAmount <= 50000) calculatedFee = 25;
+      else calculatedFee = 50;
+    }
+  }
 
-  const formatMoney = (val) => {
-    return Number(val).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
-
-  const handleConfirmWithdrawal = () => {
-    onConfirm({
-      finalAmount: totalNetPayout,
-      appliedCashback: cashbackAddon,
-      appliedPointsBonus: pointsAddon,
-    });
-  };
+  const totalDeduction = numAmount + calculatedFee;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div
-        className="bg-[#070e1b] border border-border rounded-3xl w-full max-w-lg overflow-hidden relative shadow-2xl animate-in zoom-in-95 duration-200 text-foreground my-auto max-h-[92vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Subtle Ambient Background Glows */}
-        <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl -ml-16 -mb-16 pointer-events-none" />
+    <ModalPortal
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="sheet"
+      noPadding
+      maxWidthClass="max-w-[440px]"
+      ariaLabel={isP2P ? "Confirm P2P Transfer" : "Confirm Withdrawal"}
+    >
+      <ReceiptStrip />
 
-        {/* Modal Header */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-border bg-card/60 relative z-10 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-black tracking-tight text-foreground flex items-center gap-2">
-                Confirm Withdrawal
-                <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5">
-                  Instant
-                </Badge>
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Review payout details & available cashback perks
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-muted-foreground hover:text-foreground rounded-xl hover:bg-muted/60 transition-all shrink-0"
-            aria-label="Close modal"
-          >
-            <X className="h-5 w-5" />
-          </button>
+      <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="text-card-title text-foreground truncate">
+            {isP2P ? "Confirm P2P Transfer" : "Confirm Withdrawal"}
+          </h3>
+          <ReceiptStatusPill status="success" label="INSTANT" />
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close modal"
+          className="pw-tap pw-pressable inline-flex items-center justify-center rounded-panel hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+        <div className="pw-panel p-4">
+          <ReceiptAmount
+            label="TRANSFER AMOUNT"
+            amount={numAmount}
+            positive
+            subtitle="Exact amount credited to recipient"
+          />
         </div>
 
-        {/* Scrollable Modal Content */}
-        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto custom-scrollbar relative z-10">
-          {/* Main Withdrawal Summary Box */}
-          <div className="bg-card/80 border border-border p-4 sm:p-5 rounded-2xl space-y-3.5">
-            <div className="flex items-center justify-between pb-3 border-b border-border/80">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                Requested Amount
-              </span>
-              <span className="text-xl sm:text-2xl font-black font-display text-emerald-400 tracking-tight">
-                ₦{formatMoney(numericAmount)}
-              </span>
-            </div>
+        <ReceiptRows>
+          <ReceiptRow
+            label={isP2P ? "Transfer Type" : "Destination Bank"}
+            value={isP2P ? "PayWaka Wallet (P2P)" : bankName}
+          />
+          <ReceiptRow
+            label={isP2P ? "Barter ID" : "Account Number"}
+            value={accountNumber}
+            mono
+          />
+          <ReceiptRow label="Beneficiary" value={accountHolder} />
+        </ReceiptRows>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="space-y-1">
-                <span className="text-muted-foreground font-medium block">
-                  Destination Bank
-                </span>
-                <p className="font-bold text-foreground truncate flex items-center gap-1.5">
-                  <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  {bankName}
-                </p>
-              </div>
+        <ReceiptRows>
+          <ReceiptRow label="Principal Amount" value={formatNaira(numAmount)} mono />
+          <ReceiptRow
+            label="Processing Fee"
+            value={isP2P ? "₦0.00 (Free)" : formatNaira(calculatedFee)}
+            mono
+            accent={isP2P}
+          />
+          <ReceiptRow
+            label="Total Wallet Debit"
+            value={formatNaira(totalDeduction)}
+            mono
+            accent
+          />
+        </ReceiptRows>
 
-              <div className="space-y-1">
-                <span className="text-muted-foreground font-medium block">
-                  Account Number
-                </span>
-                <p className="font-mono font-bold text-foreground">
-                  {accountNumber}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-muted-foreground font-medium block">
-                  Beneficiary Name
-                </span>
-                <p className="font-bold text-foreground truncate">
-                  {accountHolder}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-muted-foreground font-medium block">
-                  Transfer Fee
-                </span>
-                <p className="font-bold text-emerald-400">
-                  ₦0.00{" "}
-                  <span className="text-[10px] text-muted-foreground font-normal">
-                    (Free)
-                  </span>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* In the Meantime: Cashbacks & Boosters Banner */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-amber-400 animate-pulse" />
-                <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-foreground">
-                  In the Meantime: Cashbacks & Perks
-                </h4>
-              </div>
-              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                Active Perks Available
-              </span>
-            </div>
-
-            {/* Perk Option 1: Use Cashback Wallet Balance */}
-            <div
-              onClick={() => setApplyCashbackBalance(!applyCashbackBalance)}
-              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                applyCashbackBalance
-                  ? "bg-emerald-950/30 border-emerald-500/50 text-foreground shadow-lg shadow-emerald-950/50"
-                  : "bg-card/40 border-border hover:border-border text-foreground"
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    applyCashbackBalance
-                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                      : "bg-muted border-border text-muted-foreground"
-                  }`}
-                >
-                  <Wallet className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-foreground">
-                      Apply Cashback Wallet Balance
-                    </span>
-                    <Badge className="bg-amber-500/15 text-amber-300 border-amber-500/30 text-[9px] px-1.5 py-0">
-                      +₦{formatMoney(userCashbackBalance)}
-                    </Badge>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                    Combine your earned cashback balance into this transfer.
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                  applyCashbackBalance
-                    ? "bg-emerald-500 border-emerald-400 text-black"
-                    : "border-border bg-muted"
-                }`}
-              >
-                {applyCashbackBalance && (
-                  <Check className="h-3.5 w-3.5 stroke-[3]" />
-                )}
-              </div>
-            </div>
-
-            {/* Perk Option 2: Redeem Points for Withdrawal Bonus */}
-            <div
-              onClick={() => setApplyPointsBonus(!applyPointsBonus)}
-              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                applyPointsBonus
-                  ? "bg-purple-950/30 border-purple-500/50 text-foreground shadow-lg shadow-purple-950/50"
-                  : "bg-card/40 border-border hover:border-border text-foreground"
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    applyPointsBonus
-                      ? "bg-purple-500/20 border-purple-500/40 text-purple-400"
-                      : "bg-muted border-border text-muted-foreground"
-                  }`}
-                >
-                  <Award className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-foreground">
-                      Redeem 200 Points for +₦500 Bonus
-                    </span>
-                    <Badge className="bg-purple-500/15 text-purple-300 border-purple-500/30 text-[9px] px-1.5 py-0">
-                      {userPoints} Pts Available
-                    </Badge>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                    Use reward points to boost your final withdrawal amount.
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                  applyPointsBonus
-                    ? "bg-purple-500 border-purple-400 text-foreground"
-                    : "border-border bg-muted"
-                }`}
-              >
-                {applyPointsBonus && (
-                  <Check className="h-3.5 w-3.5 stroke-[3]" />
-                )}
-              </div>
-            </div>
-
-            {/* Quick Service Cashback In-App Quick Actions */}
-            <div className="grid grid-cols-2 gap-2.5 pt-1">
-              <div
-                onClick={() => {
-                  onClose();
-                  navigate("/services/airtime");
-                }}
-                className="p-3 bg-blue-950/20 border border-blue-900/50 hover:border-blue-500/40 rounded-2xl cursor-pointer transition-all hover:bg-blue-950/40 group"
-              >
-                <div className="flex items-center gap-2 text-blue-400 text-xs font-bold">
-                  <Smartphone className="h-4 w-4 shrink-0" />
-                  <span>5% VTU Cashback</span>
-                  <ArrowUpRight className="h-3.5 w-3.5 ml-auto opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Buy Airtime/Data instead & get up to ₦1,000 instant cashback.
-                </p>
-              </div>
-
-              <div
-                onClick={() => {
-                  onClose();
-                  navigate("/services/bills");
-                }}
-                className="p-3 bg-amber-950/20 border border-amber-900/50 hover:border-amber-500/40 rounded-2xl cursor-pointer transition-all hover:bg-amber-950/40 group"
-              >
-                <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
-                  <Zap className="h-4 w-4 shrink-0" />
-                  <span>₦500 Bill Cashback</span>
-                  <ArrowUpRight className="h-3.5 w-3.5 ml-auto opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Pay power or TV bills and get ₦500 flat wallet credit.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Final Calculation Box */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-card to-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest block">
-                Total Net Payout to Bank
-              </span>
-              {(applyCashbackBalance || applyPointsBonus) && (
-                <div className="text-[10px] text-emerald-400 font-semibold mt-0.5 flex items-center gap-1">
-                  <span>Base ₦{formatMoney(numericAmount)}</span>
-                  {applyCashbackBalance && (
-                    <span>+ ₦{formatMoney(userCashbackBalance)} Cashback</span>
-                  )}
-                  {applyPointsBonus && <span>+ ₦500 Bonus</span>}
-                </div>
-              )}
-            </div>
-
-            <div className="text-right">
-              <span className="text-2xl sm:text-3xl font-black font-display text-emerald-400 tracking-tight">
-                ₦{formatMoney(totalNetPayout)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Modal Footer Actions */}
-        <div className="p-4 sm:p-5 bg-card border-t border-border flex flex-col sm:flex-row gap-2.5 relative z-10 shrink-0">
-          <button
-            onClick={onClose}
-            className="w-full sm:w-1/3 py-3 px-4 rounded-2xl text-xs font-bold bg-muted hover:bg-muted text-foreground border border-border transition-colors"
-          >
-            Modify Details
-          </button>
-
-          <button
-            onClick={handleConfirmWithdrawal}
-            className="w-full sm:w-2/3 py-3 px-5 rounded-2xl text-xs font-black bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            <span>Confirm & Complete Withdrawal</span>
-            <ArrowRight className="h-4 w-4 ml-1" />
-          </button>
-        </div>
-
-        {/* Security Micro Footnote */}
-        <div className="bg-[#040810] py-2 px-4 border-t border-border/60 text-center text-[10px] text-muted-foreground flex items-center justify-center gap-1.5 shrink-0">
-          <ShieldCheck className="h-3 w-3 text-emerald-500" />
+        <div className="pw-panel p-3 text-caption text-muted-foreground leading-relaxed flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 text-brand-400 shrink-0 mt-0.5" />
           <span>
-            NIBSS Direct Credit Instant Settlement • 256-bit Encrypted
+            Your official receipt will display the clean transfer amount (
+            <span className="pw-num font-semibold text-foreground">{formatNaira(numAmount)}</span>).
           </span>
         </div>
       </div>
-    </div>
+
+      <div className="p-4 border-t border-border pb-safe flex gap-2.5 shrink-0 bg-card">
+        <Button type="button" variant="outline" onClick={onClose} className="w-1/3">
+          Modify
+        </Button>
+        <Button
+          type="button"
+          onClick={() =>
+            onConfirm?.({ amount: numAmount, fee: calculatedFee, totalDeduction })
+          }
+          className="w-2/3"
+        >
+          <ShieldCheck className="h-4 w-4" />
+          <span>Enter PIN</span>
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </ModalPortal>
   );
 }

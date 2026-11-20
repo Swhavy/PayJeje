@@ -1,11 +1,12 @@
 import { useDispatch, useSelector } from "react-redux";
-import { selectedPrice, billerInfo } from "../Features/userSlice";
+import { selectedPrice, billerInfo, setBillCatalog } from "../Features/userSlice";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "@/firebaseConfig";
 import { toast } from "sonner";
 
 const useCloudfunc = () => {
   const user = useSelector((state) => state?.user?.user) || {};
+  const billCatalog = useSelector((state) => state?.user?.billCatalog);
   const { accountReference } = user;
   const dispatch = useDispatch();
 
@@ -13,6 +14,9 @@ const useCloudfunc = () => {
   const billsFetch = httpsCallable(functions, "billsFetch");
   const fetchBanksCall = httpsCallable(functions, "fetchBanks");
   const withdrawCall = httpsCallable(functions, "withdraw");
+  const resolvePaywakaRecipientCall = httpsCallable(functions, "resolvePaywakaRecipient");
+  const transferPaywakaP2PCall = httpsCallable(functions, "transferPaywakaP2P");
+  const verifyWithdrawalStatusCall = httpsCallable(functions, "verifyWithdrawalStatus");
   const fetchBalanceCall = httpsCallable(functions, "fetchBalance");
   const retryCreateWalletCall = httpsCallable(functions, "retryCreateWallet");
   const buyAirtimeCall = httpsCallable(functions, "buyAirtime");
@@ -26,8 +30,14 @@ const useCloudfunc = () => {
   const adminGetPricingConfigCall = httpsCallable(functions, "adminGetPricingConfig");
   const adminUpdatePricingConfigCall = httpsCallable(functions, "adminUpdatePricingConfig");
   const adminUpdatePlanPriceCall = httpsCallable(functions, "adminUpdatePlanPrice");
+  const adminUpdateCablePackagePriceCall = httpsCallable(functions, "adminUpdateCablePackagePrice");
   const adminSeedPricingFromExcelCall = httpsCallable(functions, "adminSeedPricingFromExcel");
   const adminGetDashboardDataCall = httpsCallable(functions, "adminGetDashboardData");
+  const getBillPricingConfigCall = httpsCallable(functions, "getBillPricingConfig");
+  const transferCashbackToWalletCall = httpsCallable(functions, "transferCashbackToWallet");
+  const verifyPendingClubKonnectOrderCall = httpsCallable(functions, "verifyPendingClubKonnectOrder");
+  const adminGetBillPricingConfigCall = httpsCallable(functions, "adminGetBillPricingConfig");
+  const adminUpdateBillPricingConfigCall = httpsCallable(functions, "adminUpdateBillPricingConfig");
   const createTransactionPinCall = httpsCallable(functions, "createTransactionPin");
   const changeTransactionPinCall = httpsCallable(functions, "changeTransactionPin");
   const resetTransactionPinCall = httpsCallable(functions, "resetTransactionPin");
@@ -51,6 +61,31 @@ const useCloudfunc = () => {
     return res.data;
   };
 
+  const getBillPricingConfig = async () => {
+    const res = await getBillPricingConfigCall();
+    return res.data;
+  };
+
+  const transferCashbackToWallet = async (payload) => {
+    const res = await transferCashbackToWalletCall(payload);
+    return res.data;
+  };
+
+  const verifyPendingClubKonnectOrder = async (payload) => {
+    const res = await verifyPendingClubKonnectOrderCall(payload);
+    return res.data;
+  };
+
+  const adminGetBillPricingConfig = async () => {
+    const res = await adminGetBillPricingConfigCall();
+    return res.data;
+  };
+
+  const adminUpdateBillPricingConfig = async (payload) => {
+    const res = await adminUpdateBillPricingConfigCall(payload);
+    return res.data;
+  };
+
   const adminSyncClubKonnect = async () => {
     const res = await adminSyncClubKonnectCall();
     return res.data;
@@ -71,6 +106,11 @@ const useCloudfunc = () => {
     return res.data;
   };
 
+  const adminUpdateCablePackagePrice = async (payload) => {
+    const res = await adminUpdateCablePackagePriceCall(payload);
+    return res.data;
+  };
+
   const adminSeedPricingFromExcel = async () => {
     const res = await adminSeedPricingFromExcelCall();
     return res.data;
@@ -87,11 +127,59 @@ const useCloudfunc = () => {
   };
 
   const fetchBanks = async () => {
-    return await fetchBanksCall();
+    const CACHE_KEY = "paywaka_cached_banks_ng_v1";
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Valid for up to 24 hours, refreshed nightly
+        if (
+          parsed.timestamp &&
+          Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000 &&
+          Array.isArray(parsed.banks) &&
+          parsed.banks.length > 0
+        ) {
+          return { data: { status: "success", bankDetails: parsed.banks, fromCache: true } };
+        }
+      }
+    } catch (e) {
+      console.warn("Error reading cached banks:", e);
+    }
+
+    const response = await fetchBanksCall();
+    if (response?.data?.status === "success" && Array.isArray(response.data.bankDetails)) {
+      try {
+        localStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({
+            banks: response.data.bankDetails,
+            timestamp: Date.now(),
+          })
+        );
+      } catch (e) {
+        console.warn("Failed to write banks to localStorage:", e);
+      }
+    }
+    return response;
   };
 
   const withdraw = async (payload) => {
     return await withdrawCall(payload);
+  };
+
+  const resolvePaywakaRecipient = async (payload) => {
+    const res = await resolvePaywakaRecipientCall(payload);
+    return res.data;
+  };
+
+  const transferPaywakaP2P = async (payload) => {
+    const res = await transferPaywakaP2PCall(payload);
+    return res.data;
+  };
+
+  const verifyWithdrawalStatus = async (payload) => {
+    const res = await verifyWithdrawalStatusCall(payload);
+    return res.data;
   };
 
   const validateCustomer = async (payload) => {
@@ -100,9 +188,13 @@ const useCloudfunc = () => {
 
   const biller = async (network, productName) => {
     const netUpper = (network || "MTN").toUpperCase();
-
-    // Reset previous billsInfo to prevent cross-service data leakage
-    dispatch(billerInfo({ billsInfo: [] }));
+    const netKey = netUpper.includes("GLO")
+      ? "GLO"
+      : netUpper.includes("AIRTEL")
+        ? "AIRTEL"
+        : netUpper.includes("9MOB") || netUpper.includes("ETISALAT") || netUpper.includes("T2")
+          ? "9MOBILE"
+          : "MTN";
 
     dispatch(
       selectedPrice({
@@ -112,8 +204,41 @@ const useCloudfunc = () => {
     );
 
     if (productName === "Data") {
+      const cachedPlans = billCatalog?.dataPlansByNetwork?.[netKey];
+      const syncedAtMs = billCatalog?.lastSyncedAtIso
+        ? Date.parse(billCatalog.lastSyncedAtIso)
+        : 0;
+      const maxAgeMs =
+        (Number(billCatalog?.syncIntervalHours) || 3) * 60 * 60 * 1000;
+      const isFresh =
+        Array.isArray(cachedPlans) &&
+        cachedPlans.length > 0 &&
+        Number.isFinite(syncedAtMs) &&
+        Date.now() - syncedAtMs <= maxAgeMs;
+
+      if (Array.isArray(cachedPlans) && cachedPlans.length > 0) {
+        // Hydrate UI synchronously with zero wipe and zero spinner
+        dispatch(billerInfo({ billsInfo: cachedPlans }));
+        if (!isFresh) {
+          fetchDataPlansCall({ network: netKey })
+            .then((res) => {
+              if (res?.data?.catalog) dispatch(setBillCatalog(res.data.catalog));
+              if (Array.isArray(res?.data?.data) && res.data.data.length > 0) {
+                dispatch(billerInfo({ billsInfo: res.data.data }));
+              }
+            })
+            .catch(() => { });
+        }
+        return true;
+      }
+
+      // Cold cache: reset previous list only when we truly have nothing cached for this network
+      dispatch(billerInfo({ billsInfo: [] }));
       try {
-        const res = await fetchDataPlansCall({ network: netUpper });
+        const res = await fetchDataPlansCall({ network: netKey });
+        if (res?.data?.catalog) {
+          dispatch(setBillCatalog(res.data.catalog));
+        }
         const plans = res.data?.data;
         if (Array.isArray(plans) && plans.length > 0) {
           dispatch(billerInfo({ billsInfo: plans }));
@@ -149,8 +274,14 @@ const useCloudfunc = () => {
 
       const rawNet = String(network || "01").trim();
       const provUpper = (CABLE_MAP[rawNet] || rawNet).toUpperCase();
+      const fbKey = provUpper.includes("GOTV")
+        ? "GOTV"
+        : provUpper.includes("STARTIMES") || provUpper.includes("STARTIME")
+          ? "STARTIMES"
+          : provUpper.includes("SHOWMAX")
+            ? "SHOWMAX"
+            : "DSTV";
 
-      dispatch(billerInfo({ billsInfo: [] }));
       dispatch(
         selectedPrice({
           network: provUpper,
@@ -191,8 +322,39 @@ const useCloudfunc = () => {
         ],
       };
 
+      const cachedPackages = billCatalog?.cablePackagesByProvider?.[fbKey];
+      const syncedAtMs = billCatalog?.lastSyncedAtIso
+        ? Date.parse(billCatalog.lastSyncedAtIso)
+        : 0;
+      const maxAgeMs =
+        (Number(billCatalog?.syncIntervalHours) || 3) * 60 * 60 * 1000;
+      const isFresh =
+        Array.isArray(cachedPackages) &&
+        cachedPackages.length > 0 &&
+        Number.isFinite(syncedAtMs) &&
+        Date.now() - syncedAtMs <= maxAgeMs;
+
+      if (Array.isArray(cachedPackages) && cachedPackages.length > 0) {
+        dispatch(billerInfo({ billsInfo: cachedPackages }));
+        if (!isFresh) {
+          fetchCablePackagesCall({ provider: provUpper })
+            .then((res) => {
+              if (res?.data?.catalog) dispatch(setBillCatalog(res.data.catalog));
+              if (Array.isArray(res?.data?.data) && res.data.data.length > 0) {
+                dispatch(billerInfo({ billsInfo: res.data.data }));
+              }
+            })
+            .catch(() => { });
+        }
+        return true;
+      }
+
+      dispatch(billerInfo({ billsInfo: [] }));
       try {
         const res = await fetchCablePackagesCall({ provider: provUpper });
+        if (res?.data?.catalog) {
+          dispatch(setBillCatalog(res.data.catalog));
+        }
         const packages = res.data?.data;
         if (Array.isArray(packages) && packages.length > 0) {
           const normalized = packages.map((p) => {
@@ -203,6 +365,9 @@ const useCloudfunc = () => {
               name: pName,
               short_name: p.short_name || `${pName} - ₦${amt.toLocaleString()}`,
               amount: amt,
+              costPrice: p.costPrice ?? null,
+              feeCharged: p.feeCharged ?? 0,
+              cashbackAmount: p.cashbackAmount ?? 0,
               package_code: p.package_code || p.id || p.PACKAGE_CODE,
               item_code: p.item_code || p.package_code || p.id || p.PACKAGE_CODE,
             };
@@ -215,14 +380,6 @@ const useCloudfunc = () => {
       }
 
       // Fallback
-      const fbKey = provUpper.includes("GOTV")
-        ? "GOTV"
-        : provUpper.includes("STARTIMES") || provUpper.includes("STARTIME")
-          ? "STARTIMES"
-          : provUpper.includes("SHOWMAX")
-            ? "SHOWMAX"
-            : "DSTV";
-
       const fallback = LOCAL_FALLBACKS[fbKey] || LOCAL_FALLBACKS.GOTV;
       dispatch(billerInfo({ billsInfo: fallback }));
       return true;
@@ -417,6 +574,9 @@ const useCloudfunc = () => {
     getWalletBalance,
     fetchBanks,
     withdraw,
+    resolvePaywakaRecipient,
+    transferPaywakaP2P,
+    verifyWithdrawalStatus,
     retryWalletCreation,
     buyAirtime,
     purchaseAirtime: buyAirtime,
@@ -433,8 +593,14 @@ const useCloudfunc = () => {
     adminGetPricingConfig,
     adminUpdatePricingConfig,
     adminUpdatePlanPrice,
+    adminUpdateCablePackagePrice,
     adminSeedPricingFromExcel,
     adminGetDashboardData,
+    getBillPricingConfig,
+    transferCashbackToWallet,
+    verifyPendingClubKonnectOrder,
+    adminGetBillPricingConfig,
+    adminUpdateBillPricingConfig,
     createTransactionPin,
     changeTransactionPin,
     resetTransactionPin,

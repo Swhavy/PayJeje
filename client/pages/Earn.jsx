@@ -7,23 +7,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import { ReceiptStrip } from "@/components/receipts/ReceiptParts";
 import {
   Star,
-  Clock,
-  Gift,
   Users,
   Zap,
   CheckCircle,
   Play,
-  Meh,
+  Sparkles,
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import CheckInCalendar from "../components/CheckinModal";
 import { useBillsStat } from "../components/useTransactionFetch";
+import { formatNaira, formatPoints } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export default function EarnPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -40,20 +39,22 @@ export default function EarnPage() {
     {
       title: "Complete Surveys",
       description: "Share your opinions and earn points",
-      points: "50-200 points",
-      time: "5-15 mins",
+      points: "50–200 points",
+      time: "5–15 mins",
       icon: Star,
-      color: "bg-yellow-500",
+      neutral: true,
       available: 12,
+      hidden: true,
     },
     {
       title: "Watch Videos",
       description: "Watch short promotional videos",
-      points: "10-50 points",
-      time: "1-3 mins",
+      points: "10–50 points",
+      time: "1–3 mins",
       icon: Play,
-      color: "bg-red-500",
+      neutral: true,
       available: 25,
+      hidden: true,
     },
     {
       title: "Refer Friends",
@@ -61,77 +62,24 @@ export default function EarnPage() {
       points: "20 points",
       time: "Instant",
       icon: Users,
-      color: "bg-blue-500",
+      neutral: false,
       available: "Unlimited",
+      hidden: false,
     },
     {
       title: "Daily Check-in",
-      description: "Login daily to earn bonus points",
-      points: "1 points",
-      time: "instant",
+      description: "Log in daily to earn bonus points",
+      points: "1 point",
+      time: "Instant",
       icon: CheckCircle,
-      color: "bg-green-500",
+      neutral: true,
       available: 1,
+      hidden: false,
     },
   ];
 
-  const dailyTasks = [
-    {
-      task: "Complete 3 surveys",
-      progress: 2,
-      total: 3,
-      points: 150,
-      completed: false,
-    },
-    {
-      task: "Watch 5 videos",
-      progress: 5,
-      total: 5,
-      points: 100,
-      completed: true,
-    },
-    {
-      task: "Refer 1 friend",
-      progress: 0,
-      total: 1,
-      points: 500,
-      completed: false,
-    },
-    {
-      task: "Daily check-in",
-      progress: 1,
-      total: 1,
-      points: 25,
-      completed: true,
-    },
-  ];
-
-  const achievements = [
-    {
-      title: "First Survey",
-      description: "Complete your first survey",
-      points: 50,
-      unlocked: true,
-    },
-    {
-      title: "Video Watcher",
-      description: "Watch 100 videos",
-      points: 200,
-      unlocked: true,
-    },
-    {
-      title: "Social Butterfly",
-      description: "Refer 10 friends",
-      points: 1000,
-      unlocked: false,
-    },
-    {
-      title: "Streak Master",
-      description: "30-day login streak",
-      points: 500,
-      unlocked: false,
-    },
-  ];
+  const weeklyPoints = Number(pointsData?.amount || 0);
+  const nairaEquivalent = (Math.round(Number(points || 0) * 20) / 100);
 
   return (
     <>
@@ -141,233 +89,113 @@ export default function EarnPage() {
       />
       <DashboardLayout>
         <div className="space-y-6">
-          {/* Header */}
+          {/* Unified Page Header */}
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Earn Points</h1>
-            <p className="text-muted-foreground">
-              Complete tasks and activities to earn points and rewards
+            <h1 className="pw-page-title">Earn Points</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Complete activities and referrals to build your PayWaka points balance.
             </p>
           </div>
 
-          {/* Current Points */}
-          <Card className="bg-gradient-to-r from-green-600 to-emerald-600 text-foreground border-0">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold mb-2">
-                    Your Points Balance
-                  </h2>
-                  <div className="text-3xl font-bold">{points}</div>
-                  <p className="text-green-100 mt-2">
-                    {/* 100points = ₦20 */}≈ ₦{Math.round(points * 20) / 100}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-green-100 mb-2">This Week</div>
-                  <div className="text-xl font-bold">
-                    {pointsData.amount === 0 ? 0 : `+${pointsData.amount}`}
-                  </div>
-                  <Badge
-                    className={
-                      pointsData.amount >= 50
-                        ? "bg-white/20 text-foreground border-white/30 mt-2"
-                        : "bg-red-300/20 text-red-700 border-red-700/30 mt-2"
-                    }
-                  >
-                    {pointsData.amount >= 50 ? (
-                      <>
-                        <Zap className="h-3 w-3 mr-1 text-green-500" /> On Fire!
-                      </>
-                    ) : (
-                      <>
-                        <Meh className="h-3 w-3 mr-1 text-red-700" /> Push
-                        harder!
-                      </>
-                    )}
-                  </Badge>
-                </div>
+          {/* Flagship Glass Points Balance Hero */}
+          <div className="pw-glass-hero max-w-2xl p-4 sm:p-5 flex items-center justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <span className="pw-label block">YOUR POINTS BALANCE</span>
+              <div className="pw-num text-2xl sm:text-3xl font-extrabold text-foreground whitespace-nowrap">
+                {formatPoints(points)}
               </div>
-            </CardContent>
-          </Card>
+              <p className="pw-num text-caption text-brand-400 font-semibold">
+                ≈ {formatNaira(nairaEquivalent)}
+              </p>
+            </div>
 
-          {/* Earning Sources */}
-          <div>
-            <h2 className="text-xl font-semibold text-foreground mb-4">
-              Ways to Earn
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {earningSources.map((source, index) => (
-                <Card
-                  key={index}
-                  className={`bg-card border-border hover:shadow-lg transition-all duration-300 ${source.title === "Complete Surveys" || source.title === "Watch Videos" ? "hidden" : ""}`}
-                >
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className={`p-2 rounded-lg ${source.color}`}>
-                        <source.icon className="h-5 w-5 text-foreground" />
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className="bg-muted text-muted-foreground"
-                      >
-                        {source.available === "Unlimited"
-                          ? `${source.available}`
-                          : `${source.available} available`}
-                      </Badge>
-                    </div>
-                    <CardTitle className="text-lg text-foreground">
-                      {source.title}
-                    </CardTitle>
-                    <CardDescription className="text-muted-foreground">
-                      {source.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Reward:</span>
-                        <span className="font-semibold text-green-600 dark:text-green-400">
-                          {source.points}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Time:</span>
-                        <span className="text-foreground">{source.time}</span>
-                      </div>
-                      <Button
-                        className="w-full bg-green-600 hover:bg-green-700 text-foreground"
-                        onClick={() => {
-                          if (source.title === "Refer Friends") {
-                            navigate("/referrals");
-                          } else if (source.title === "Daily Check-in") {
-                            setIsCalendarOpen(true);
-                          }
-                        }}
-                      >
-                        Start Earning
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className="pw-panel p-3.5 text-right space-y-1.5 shrink-0">
+              <span className="pw-label block">THIS WEEK</span>
+              <div className="pw-num text-xl font-extrabold text-foreground">
+                {weeklyPoints === 0 ? "0" : `+${weeklyPoints}`}
+              </div>
+              <span
+                className={cn(
+                  weeklyPoints >= 50 ? "pw-chip-brand" : "pw-pill-gold px-2.5 py-0.5 text-caption",
+                )}
+              >
+                {weeklyPoints >= 50 ? (
+                  <>
+                    <Zap className="h-3 w-3" />
+                    <span>On fire</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3 w-3" />
+                    <span>Keep going</span>
+                  </>
+                )}
+              </span>
             </div>
           </div>
 
-          {/* Daily Tasks and Achievements */}
-          <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-            {/* Daily Tasks */}
-
-            {/* Commented Dailt task feature for now in the MVP phase */}
-            {/* <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  Daily Tasks
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Complete these tasks to earn bonus points
-                </CardDescription>
-              </CardHeader>
-                <CardContent className="space-y-4">
-                {dailyTasks.map((task, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`text-sm ${
-                          task.completed
-                            ? "text-muted-foreground line-through"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {task.task}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                          +{task.points}
-                        </span>
-                        {task.completed && (
-                          <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Progress
-                        value={(task.progress / task.total) * 100}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {task.progress}/{task.total}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </CardContent> 
-            </Card> */}
-
-            {/* Achievements */}
-            {/*  <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <Gift className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                  Achievements
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Unlock special rewards and badges
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {achievements.map((achievement, index) => (
-                  <div
-                    key={index}
-                    className={`p-3 rounded-lg border ${
-                      achievement.unlocked
-                        ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
-                        : "bg-muted/50 border-border"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4
-                          className={`font-medium ${
-                            achievement.unlocked
-                              ? "text-green-700 dark:text-green-300"
-                              : "text-foreground"
-                          }`}
-                        >
-                          {achievement.title}
-                        </h4>
-                        <p
-                          className={`text-sm ${
-                            achievement.unlocked
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-muted-foreground"
-                          }`}
-                        >
-                          {achievement.description}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div
-                          className={`text-sm font-semibold ${
-                            achievement.unlocked
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-muted-foreground"
-                          }`}
-                        >
-                          +{achievement.points}
+          {/* Ways to Earn */}
+          <section className="space-y-3">
+            <h2 className="pw-section-title">Ways to Earn</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {earningSources
+                .filter((s) => !s.hidden)
+                .map((source) => {
+                  const Icon = source.icon;
+                  return (
+                    <Card key={source.title} className="flex flex-col justify-between">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div
+                            className={cn(
+                              "h-10 w-10",
+                              source.neutral ? "pw-tile-neutral" : "pw-tile",
+                            )}
+                          >
+                            <Icon className="h-5 w-5" />
+                          </div>
+                          <span className="pw-chip">
+                            {source.available === "Unlimited"
+                              ? "Unlimited"
+                              : `${source.available} available`}
+                          </span>
                         </div>
-                        {achievement.unlocked && (
-                          <Badge className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 mt-1">
-                            Unlocked
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card> */}
-          </div>
+                        <CardTitle className="pt-2">{source.title}</CardTitle>
+                        <CardDescription>{source.description}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="pw-panel p-3 space-y-2 text-caption">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Reward</span>
+                            <span className="font-bold text-brand-400">
+                              {source.points}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Timing</span>
+                            <span className="font-semibold text-foreground">
+                              {source.time}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={() => {
+                            if (source.title === "Refer Friends") {
+                              navigate("/referrals");
+                            } else if (source.title === "Daily Check-in") {
+                              setIsCalendarOpen(true);
+                            }
+                          }}
+                        >
+                          Start Earning
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+            </div>
+          </section>
         </div>
       </DashboardLayout>
     </>

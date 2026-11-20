@@ -297,8 +297,8 @@ export default function MyMealVouchersPage() {
 
   return (
     <DashboardLayout>
-      <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-16 sm:pb-20 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-4 sm:p-6 lg:p-8 shadow-2xl">
-        <div className="max-w-4xl mx-auto flex flex-col gap-4">
+      <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-16 sm:pb-20 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-3 sm:p-5 lg:p-7 shadow-2xl overflow-hidden">
+        <div className="max-w-4xl mx-auto flex flex-col gap-4 min-w-0">
           {/* TOP STATUS BAR ROW & IN-FLOW SUB-NAVIGATION */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#282a2e]/70">
             <div className="flex items-center gap-3">
@@ -325,20 +325,20 @@ export default function MyMealVouchersPage() {
             </div>
           </div>
 
-          {/* UNIFIED STATUS FILTER TABS (SMOOTH EMERALD GRADIENT) */}
-          <div className="flex items-center p-1.5 bg-gradient-to-r from-[#071911] via-[#0b1e15] to-[#111815] rounded-full border border-[#44e092]/30 gap-1.5 shadow-inner">
+          {/* UNIFIED STATUS FILTER TABS (EVEN 3-COLUMN GRID PREVENTS RIGHTWARD OVERFLOW) */}
+          <div className="grid grid-cols-3 items-center p-1 bg-gradient-to-r from-[#071911] via-[#0b1e15] to-[#111815] rounded-full border border-[#44e092]/30 gap-1 shadow-inner w-full overflow-hidden">
             <button
               type="button"
               onClick={() => setActiveTab("active")}
-              className={`flex-1 py-2.5 px-3 rounded-full text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+              className={`min-w-0 min-h-9 py-1.5 px-1 sm:px-3 rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap transition-all ${
                 activeTab === "active"
                   ? "bg-[#004729] text-[#44e092] border border-[#44e092]/30 shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
             >
-              <span>Active</span>
+              <span className="truncate">Active</span>
               <span
-                className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
                   activeTab === "active" ? "bg-[#002110] text-[#44e092]" : "bg-[#282a2e] text-zinc-300"
                 }`}
               >
@@ -349,15 +349,15 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveTab("used")}
-              className={`flex-1 py-2.5 px-3 rounded-full text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+              className={`min-w-0 min-h-9 py-1.5 px-1 sm:px-3 rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap transition-all ${
                 activeTab === "used"
                   ? "bg-[#282a2e] text-white border border-[#383a40] shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
             >
-              <span>Redeemed</span>
+              <span className="truncate">Redeemed</span>
               <span
-                className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                   activeTab === "used" ? "bg-[#16181d] text-white" : "bg-[#282a2e] text-zinc-400"
                 }`}
               >
@@ -368,15 +368,15 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveTab("expired")}
-              className={`flex-1 py-2.5 px-3 rounded-full text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+              className={`min-w-0 min-h-9 py-1.5 px-1 sm:px-3 rounded-full text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap transition-all ${
                 activeTab === "expired"
                   ? "bg-[#282a2e] text-zinc-300 border border-[#383a40] shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
             >
-              <span>Expired</span>
+              <span className="truncate">Expired</span>
               <span
-                className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                   activeTab === "expired" ? "bg-[#16181d] text-zinc-300" : "bg-[#282a2e] text-zinc-400"
                 }`}
               >
@@ -392,7 +392,7 @@ export default function MyMealVouchersPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search food, vendors or voucher code..."
+              placeholder="Search meals or vendors..."
               className="w-full bg-[#121915] border border-[#44e092]/25 rounded-full py-2.5 pl-10 pr-10 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-[#44e092]/50 transition-colors"
             />
             {searchQuery && (
@@ -412,7 +412,7 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveFilterChip("all")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+              className={`min-h-9 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
                 activeFilterChip === "all"
                   ? "bg-[#004729] border border-[#44e092] text-[#44e092] shadow-sm"
                   : "bg-gradient-to-b from-[#091b13] to-[#121815] text-zinc-400 border border-[#44e092]/20"
@@ -423,7 +423,7 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveFilterChip("expiring-soon")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition-all ${
+              className={`min-h-9 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition-all ${
                 activeFilterChip === "expiring-soon"
                   ? "bg-[#282a2e] border border-[#ff6b00] text-white shadow-sm"
                   : "bg-gradient-to-b from-[#091b13] to-[#121815] text-zinc-400 border border-[#44e092]/20"
@@ -435,7 +435,7 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveFilterChip("high-value")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+              className={`min-h-9 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
                 activeFilterChip === "high-value"
                   ? "bg-[#282a2e] border border-[#ff6b00] text-white shadow-sm"
                   : "bg-gradient-to-b from-[#091b13] to-[#121815] text-zinc-400 border border-[#44e092]/20"
@@ -446,7 +446,7 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveFilterChip("fast-food")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+              className={`min-h-9 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
                 activeFilterChip === "fast-food"
                   ? "bg-[#282a2e] border border-[#ff6b00] text-white shadow-sm"
                   : "bg-gradient-to-b from-[#091b13] to-[#121815] text-zinc-400 border border-[#44e092]/20"
@@ -457,7 +457,7 @@ export default function MyMealVouchersPage() {
             <button
               type="button"
               onClick={() => setActiveFilterChip("bakery")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+              className={`min-h-9 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
                 activeFilterChip === "bakery"
                   ? "bg-[#282a2e] border border-[#ff6b00] text-white shadow-sm"
                   : "bg-gradient-to-b from-[#091b13] to-[#121815] text-zinc-400 border border-[#44e092]/20"

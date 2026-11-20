@@ -69,56 +69,56 @@ export default function Stats() {
   return (
     <section
       ref={containerRef}
-      className="relative bg-card border-b border-[#1d3a6a]/30 py-20 overflow-hidden"
+      className="relative bg-[#050A08]/80 backdrop-blur-xl border-b border-white/[0.07] py-20 overflow-hidden"
     >
       {/* Centered Ambient Green Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-[#00c96e]/5 blur-[100px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] h-[420px] rounded-full bg-emerald-500/8 blur-[110px] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-6 relative z-10">
         <ScrollFadeUp>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-0 items-center">
             {/* Stat 1 */}
             <div className="flex flex-col items-center text-center lg:px-6 relative group">
-              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-[#00c96e] mb-2 tracking-tight transition-transform duration-300 group-hover:scale-105 block">
+              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-emerald-400 mb-2 tracking-tight tabular-nums transition-transform duration-300 group-hover:scale-105 block">
                 {users.toLocaleString()}+
               </span>
-              <span className="text-sm font-semibold tracking-wider text-[#7a9cc8] uppercase">
+              <span className="text-sm font-semibold tracking-wider text-slate-400 uppercase">
                 Active Users
               </span>
               {/* Divider right for desktop */}
-              <div className="hidden lg:block absolute right-0 top-1/4 bottom-1/4 w-px bg-[#1d3a6a]/40" />
+              <div className="hidden lg:block absolute right-0 top-1/4 bottom-1/4 w-px bg-white/[0.08]" />
             </div>
 
             {/* Stat 2 */}
             <div className="flex flex-col items-center text-center lg:px-6 relative group">
-              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-[#00c96e] mb-2 tracking-tight transition-transform duration-300 group-hover:scale-105 block">
+              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-emerald-400 mb-2 tracking-tight tabular-nums transition-transform duration-300 group-hover:scale-105 block">
                 ₦{processed}B+
               </span>
-              <span className="text-sm font-semibold tracking-wider text-[#7a9cc8] uppercase">
+              <span className="text-sm font-semibold tracking-wider text-slate-400 uppercase">
                 Processed Volume
               </span>
               {/* Divider right for desktop */}
-              <div className="hidden lg:block absolute right-0 top-1/4 bottom-1/4 w-px bg-[#1d3a6a]/40" />
+              <div className="hidden lg:block absolute right-0 top-1/4 bottom-1/4 w-px bg-white/[0.08]" />
             </div>
 
             {/* Stat 3 */}
             <div className="flex flex-col items-center text-center lg:px-6 relative group">
-              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-[#00c96e] mb-2 tracking-tight transition-transform duration-300 group-hover:scale-105 block">
+              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-emerald-400 mb-2 tracking-tight tabular-nums transition-transform duration-300 group-hover:scale-105 block">
                 {rating.toFixed(1)}★
               </span>
-              <span className="text-sm font-semibold tracking-wider text-[#7a9cc8] uppercase">
+              <span className="text-sm font-semibold tracking-wider text-slate-400 uppercase">
                 App Store Rating
               </span>
               {/* Divider right for desktop */}
-              <div className="hidden lg:block absolute right-0 top-1/4 bottom-1/4 w-px bg-[#1d3a6a]/40" />
+              <div className="hidden lg:block absolute right-0 top-1/4 bottom-1/4 w-px bg-white/[0.08]" />
             </div>
 
             {/* Stat 4 */}
             <div className="flex flex-col items-center text-center lg:px-6 group">
-              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-[#00c96e] mb-2 tracking-tight transition-transform duration-300 group-hover:scale-105 block">
+              <span className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-emerald-400 mb-2 tracking-tight tabular-nums transition-transform duration-300 group-hover:scale-105 block">
                 {uptime.toFixed(1)}%
               </span>
-              <span className="text-sm font-semibold tracking-wider text-[#7a9cc8] uppercase">
+              <span className="text-sm font-semibold tracking-wider text-slate-400 uppercase">
                 Uptime SLA
               </span>
             </div>

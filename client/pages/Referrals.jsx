@@ -30,6 +30,9 @@ import {
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
 import referralsSnapshot from "@/components/referralsSnapshot";
+import { ReceiptStatusPill } from "@/components/receipts/ReceiptParts";
+import { formatNaira } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export default function ReferralsPage() {
   const reflink = useSelector((state) => state.user.user);
@@ -179,112 +182,94 @@ export default function ReferralsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="space-y-6">
+        {/* Unified Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-              Referral Program
-            </h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="pw-page-title">Referral Program</h1>
+            <p className="text-sm text-muted-foreground mt-1">
               Invite friends and earn rewards together
             </p>
           </div>
-          <Badge className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 w-fit">
+          <span className="pw-chip-brand w-fit">
             {refs?.length >= 30 ? (
               <>
-                {" "}
-                <Gem /> Referral Pro
+                <Gem className="h-3.5 w-3.5" />
+                <span>Referral Pro</span>
               </>
             ) : refs?.length >= 15 ? (
               <>
-                {" "}
-                <Rocket /> Referral Star
+                <Rocket className="h-3.5 w-3.5" />
+                <span>Referral Star</span>
               </>
             ) : refs?.length >= 1 ? (
               <>
-                {" "}
-                <Activity /> Hustle Mode{" "}
+                <Activity className="h-3.5 w-3.5" />
+                <span>Active Referrer</span>
               </>
             ) : (
               <>
-                {" "}
-                <Sparkles className="text-yellow-500" /> Let's Grow
+                <Sparkles className="h-3.5 w-3.5 text-warning" />
+                <span>Ready to Grow</span>
               </>
             )}
-          </Badge>
+          </span>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <Card className="bg-card border-border">
-            <CardContent className="p-4 sm:p-6 sm:px-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Total Referrals
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {referralStats.totalReferrals}
-                  </p>
-                </div>
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                  <Users className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 dark:text-blue-400" />
-                </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="pw-label">Referrals</p>
+                <p className="pw-num text-xl sm:text-2xl font-extrabold text-foreground">
+                  {referralStats.totalReferrals}
+                </p>
+              </div>
+              <div className="pw-tile-neutral h-10 w-10 shrink-0">
+                <Users className="h-5 w-5" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-card border-border">
-            <CardContent className="p-4 sm:p-6 sm:px-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Active Referrals
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {referralStats.activeReferrals}
-                  </p>
-                </div>
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
-                  <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-600 dark:text-green-400" />
-                </div>
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="pw-label">Active</p>
+                <p className="pw-num text-xl sm:text-2xl font-extrabold text-foreground">
+                  {referralStats.activeReferrals}
+                </p>
+              </div>
+              <div className="pw-tile h-10 w-10 shrink-0">
+                <CheckCircle className="h-5 w-5" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-card border-border">
-            <CardContent className="p-4 sm:p-6 sm:px-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Total Earned
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">
-                    ₦{referralStats.totalEarned.toLocaleString()}
-                  </p>
-                </div>
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-100 dark:bg-yellow-900 rounded-full flex items-center justify-center">
-                  <Star className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600 dark:text-yellow-400" />
-                </div>
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="pw-label">Earned</p>
+                <p className="pw-num text-xl sm:text-2xl font-extrabold text-foreground truncate">
+                  {formatNaira(referralStats.totalEarned)}
+                </p>
+              </div>
+              <div className="pw-tile-gold h-10 w-10 shrink-0">
+                <Star className="h-5 w-5" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-card border-border">
-            <CardContent className="p-4 sm:p-6 sm:px-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Pending Rewards
-                  </p>
-                  <p className="text-2xl font-bold text-foreground">
-                    ₦{referralStats.pendingRewards.toLocaleString()}
-                  </p>
-                </div>
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 dark:bg-orange-900 rounded-full flex items-center justify-center">
-                  <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600 dark:text-orange-400" />
-                </div>
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="pw-label">Pending</p>
+                <p className="pw-num text-xl sm:text-2xl font-extrabold text-foreground truncate">
+                  {formatNaira(referralStats.pendingRewards)}
+                </p>
+              </div>
+              <div className="pw-tile-neutral h-10 w-10 shrink-0">
+                <Clock className="h-5 w-5" />
               </div>
             </CardContent>
           </Card>
@@ -292,92 +277,88 @@ export default function ReferralsPage() {
 
         {/* Main Content */}
         <Tabs defaultValue="invite" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 bg-muted">
+          <TabsList className="pw-segmented grid w-full max-w-md grid-cols-2 h-auto">
             <TabsTrigger
               value="invite"
-              className="data-[state=active]:bg-background"
+              className="min-h-10 rounded-pill text-sm font-semibold data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm"
             >
               Invite Friends
             </TabsTrigger>
-            {/*  <TabsTrigger
-              value="rewards"
-              className="data-[state=active]:bg-background"
-            >
-              Reward Tiers
-            </TabsTrigger> */}
             <TabsTrigger
               value="history"
-              className="data-[state=active]:bg-background"
+              className="min-h-10 rounded-pill text-sm font-semibold data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm"
             >
               My Referrals
             </TabsTrigger>
           </TabsList>
 
           {/* Invite Tab */}
-          <TabsContent value="invite" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Referral Link */}
-              <Card className="bg-card border-border">
-                <CardHeader>
-                  <CardTitle className="text-foreground flex items-center gap-2">
-                    <Share2 className="h-5 w-5" />
-                    Your Referral Link
-                  </CardTitle>
-                  <CardDescription className="text-muted-foreground">
-                    Share this link with friends to earn rewards
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      value={referralLink}
-                      readOnly
-                      className="bg-muted border-border text-foreground"
-                    />
-                    <Button
-                      onClick={copyReferralLink}
-                      className="bg-green-600 hover:bg-green-700 text-foreground"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
+          <TabsContent value="invite" className="space-y-5 mt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Referral Link Hero */}
+              <div className="pw-glass-hero p-4 sm:p-5 space-y-3.5">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-card-title text-foreground">
+                    <Share2 className="h-4.5 w-4.5 text-brand-400" />
+                    <span>Your Referral Link</span>
                   </div>
+                  <p className="text-caption text-muted-foreground">
+                    Share this link with friends to earn rewards together
+                  </p>
+                </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Button
-                      onClick={shareViaEmail}
-                      variant="outline"
-                      className="border-border text-foreground hover:bg-muted bg-transparent"
-                    >
-                      <Mail className="h-4 w-4 mr-2" />
-                      Share via Email
-                    </Button>
-                    <Button
-                      onClick={shareViaWhatsApp}
-                      variant="outline"
-                      className="border-border text-foreground hover:bg-muted bg-transparent"
-                    >
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Share on WhatsApp
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                <div className="flex gap-2">
+                  <Input
+                    value={referralLink}
+                    readOnly
+                    aria-label="Referral link"
+                    className="pw-code text-xs h-10"
+                  />
+                  <Button
+                    type="button"
+                    onClick={copyReferralLink}
+                    aria-label="Copy referral link"
+                    className="shrink-0 h-10"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    onClick={shareViaEmail}
+                    variant="outline"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>Share via Email</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={shareViaWhatsApp}
+                    variant="outline"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    <span>Share on WhatsApp</span>
+                  </Button>
+                </div>
+              </div>
 
               {/* Email Invite */}
-              <Card className="bg-card border-border">
+              <Card>
                 <CardHeader>
-                  <CardTitle className="text-foreground flex items-center gap-2">
-                    <Mail className="h-5 w-5" />
-                    Send Email Invite
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="h-5 w-5 text-brand-400" />
+                    <span>Send Email Invite</span>
                   </CardTitle>
-                  <CardDescription className="text-muted-foreground">
+                  <CardDescription>
                     Invite friends directly via email
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email" className="text-foreground">
-                      Friend's Email Address
+                  <div className="space-y-1.5">
+                    <Label htmlFor="email" className="pw-label block">
+                      Friend&apos;s Email Address
                     </Label>
                     <Input
                       id="email"
@@ -385,59 +366,57 @@ export default function ReferralsPage() {
                       placeholder="friend@example.com"
                       value={emailInvite}
                       onChange={(e) => setEmailInvite(e.target.value)}
-                      className="bg-background border-border text-foreground"
                     />
                   </div>
                   <Button
+                    type="button"
                     onClick={sendEmailInvite}
-                    className="w-full bg-green-600 hover:bg-green-700 text-foreground"
+                    className="w-full"
                   >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Send Invitation
+                    <Mail className="h-4 w-4" />
+                    <span>Send Invitation</span>
                   </Button>
                 </CardContent>
               </Card>
             </div>
 
             {/* How It Works */}
-            <Card className="bg-card border-border">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-foreground">
-                  How Referrals Work
-                </CardTitle>
+                <CardTitle>How Referrals Work</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Share2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="pw-panel p-4 text-center space-y-2.5">
+                    <div className="pw-tile h-12 w-12 mx-auto">
+                      <Share2 className="h-5 w-5" />
                     </div>
-                    <h3 className="font-semibold text-foreground mb-2">
+                    <h3 className="text-sm font-bold text-foreground">
                       1. Share Your Link
                     </h3>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Share your unique referral link with friends and family
                     </p>
                   </div>
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Users className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  <div className="pw-panel p-4 text-center space-y-2.5">
+                    <div className="pw-tile-neutral h-12 w-12 mx-auto">
+                      <Users className="h-5 w-5" />
                     </div>
-                    <h3 className="font-semibold text-foreground mb-2">
+                    <h3 className="text-sm font-bold text-foreground">
                       2. Friends Join
                     </h3>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Your friends sign up using your referral link
                     </p>
                   </div>
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Gift className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+                  <div className="pw-panel p-4 text-center space-y-2.5">
+                    <div className="pw-tile-gold h-12 w-12 mx-auto">
+                      <Gift className="h-5 w-5" />
                     </div>
-                    <h3 className="font-semibold text-foreground mb-2">
+                    <h3 className="text-sm font-bold text-foreground">
                       3. Earn Rewards
                     </h3>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Both you and your friend receive bonus points
                     </p>
                   </div>
@@ -446,166 +425,70 @@ export default function ReferralsPage() {
             </Card>
           </TabsContent>
 
-          {/* Rewards Tab */}
-          {/* <TabsContent value="rewards" className="space-y-6">
-            <Card className="bg-card border-border">
-              <CardHeader>
-                <CardTitle className="text-foreground">
-                  Referral Reward Tiers
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Unlock higher rewards as you refer more friends
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {rewardTiers.map((tier, index) => (
-                    <Card
-                      key={index}
-                      className={`border-2 ${
-                        tier.current
-                          ? "border-green-500 bg-green-50 dark:bg-green-950"
-                          : "border-border bg-card"
-                      }`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="text-center mb-4">
-                          <div
-                            className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2 ${
-                              tier.current
-                                ? "bg-green-600 text-foreground"
-                                : "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            <Trophy className="h-6 w-6" />
-                          </div>
-                          <h3 className="font-bold text-foreground">
-                            {tier.tier}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {tier.referrals} referrals
-                          </p>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="text-center">
-                            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                              {tier.bonus}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              per referral
-                            </p>
-                          </div>
-
-                          <div className="space-y-1">
-                            {tier.perks.map((perk, perkIndex) => (
-                              <div
-                                key={perkIndex}
-                                className="flex items-center gap-2"
-                              >
-                                <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />
-                                <span className="text-xs text-muted-foreground">
-                                  {perk}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-
-                          {tier.current && (
-                            <Badge className="w-full justify-center bg-green-600 text-foreground">
-                              Current Tier
-                            </Badge>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent> */}
-
           {/* History Tab */}
-          <TabsContent value="history" className="space-y-6">
-            <Card className="bg-card border-border">
+          <TabsContent value="history" className="space-y-6 mt-0">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-foreground">My Referrals</CardTitle>
-                <CardDescription className="text-muted-foreground">
+                <CardTitle>My Referrals</CardTitle>
+                <CardDescription>
                   Track your referred friends and earnings
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {refs &&
-                    refs.map((referral) => (
+              <CardContent className="space-y-3">
+                {refs && refs.length > 0 ? (
+                  refs.map((referral) => {
+                    const isRefActive = activeRefs.has(referral.id);
+                    return (
                       <div
                         key={referral.id}
-                        className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/50"
+                        className="pw-panel flex items-center justify-between gap-3 p-3.5"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="text-2xl">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 rounded-pill border border-border bg-brand-tint overflow-hidden flex items-center justify-center shrink-0">
                             {referral?.dp ? (
                               <img
                                 src={referral?.dp}
-                                className="w-10 h-10 rounded-full"
+                                alt={referral?.name || "Referral"}
+                                className="w-full h-full object-cover"
                               />
                             ) : (
-                              "🟢"
+                              <span className="text-xs font-extrabold text-brand-400">
+                                {(referral?.name || "PW").slice(0, 2).toUpperCase()}
+                              </span>
                             )}
                           </div>
-                          <div>
-                            <h4 className="font-medium text-foreground">
-                              {referral?.name}
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-bold text-foreground truncate">
+                              {referral?.name || "PayWaka Member"}
                             </h4>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-caption text-muted-foreground truncate">
                               {referral?.email}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              Joined:{" "}
-                              {referral?.referredOn
-                                ?.toDate()
-                                ?.toLocaleDateString()}
-                            </p>
+                            {referral?.referredOn?.toDate && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Joined: {referral.referredOn.toDate().toLocaleDateString()}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="text-right flex flex-col justify-center items-center">
-                          <p className="font-semibold text-green-600 dark:text-green-400">
-                            ₦{referral.points.toLocaleString()}
+                        <div className="text-right shrink-0 space-y-1">
+                          <p className="pw-num text-sm font-extrabold text-brand-400">
+                            {formatNaira(referral.points || 0)}
                           </p>
-                          <Badge
-                            variant={
-                              activeRefs.has(
-                                referral.id,
-                              ) /* referral.status === "active" */
-                                ? "default"
-                                : "secondary"
-                            }
-                            className={
-                              activeRefs.has(
-                                referral.id,
-                              ) /* referral.status === "active" */
-                                ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
-                                : "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
-                            }
-                          >
-                            {activeRefs.has(
-                              referral.id,
-                            ) /* referral.status === "active" */ ? (
-                              <>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Active
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="h-3 w-3 mr-1" />
-                                Pending
-                              </>
-                            )}
-                          </Badge>
+                          <ReceiptStatusPill
+                            status={isRefActive ? "success" : "pending"}
+                            label={isRefActive ? "ACTIVE" : "PENDING"}
+                            className="text-[9px] px-2 py-0.5"
+                          />
                         </div>
                       </div>
-                    ))}
-                </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-caption text-muted-foreground text-center py-6">
+                    No referrals yet. Share your link to start earning rewards.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

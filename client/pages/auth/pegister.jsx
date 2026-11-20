@@ -341,38 +341,28 @@ export default function SignupFlow() {
 
   return (
     <div
-      className={`min-h-screen relative ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""} bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] flex items-center justify-center p-4`}
+      className={`min-h-screen pw-app-canvas flex items-center justify-center pt-20 pb-10 px-4 ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
     >
-      {/* Logo */}
       <Navbar />
-      {/* <div className="text-center mb-8 fixed top-1 left-5 scale-90">
-        <Link to="/" className="inline-flex items-center gap-1 mb-6">
-          <Logo />
-          <span className="text-2xl font-bold text-foreground">
-            Pay
-            <span className="text-green-600 dark:text-green-400">waka</span>
-          </span>
-        </Link>
-      </div> */}
-      <div className="w-full max-w-md mt-20">
+      <div className="w-full max-w-md space-y-5">
         {/* Progress Bar */}
-        <div className="mb-8">
-          <div className="w-full h-2 bg-[#0a1f3a] rounded-full overflow-hidden border border-[#1a3a52]">
+        <div>
+          <div className="w-full h-1.5 bg-muted rounded-pill overflow-hidden border border-border">
             <div
-              className="h-full bg-[#00FF41] transition-all duration-500 ease-out rounded-full"
+              className="h-full bg-brand-500 transition-all duration-500 ease-out rounded-pill"
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
         </div>
 
         {/* Header with Step Indicators */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[#e8f0f8] mb-2">
-            Create Account
-          </h1>
-          <p className="text-[#8aa6b8] text-sm mb-6">
-            Join thousands earning with Paywaka
-          </p>
+        <div className="text-center space-y-3">
+          <div>
+            <h1 className="pw-page-title text-foreground">Create Account</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              Join thousands earning with PayWaka
+            </p>
+          </div>
 
           {/* Step Indicators */}
           <div className="flex gap-2 justify-center">
@@ -384,15 +374,15 @@ export default function SignupFlow() {
               return (
                 <div
                   key={stepNum}
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center font-semibold text-sm transition-all ${
+                  className={`w-8 h-8 rounded-panel flex items-center justify-center font-bold text-xs transition-all ${
                     isCompleted
-                      ? "bg-[#00FF41] text-[#001a2e]"
+                      ? "bg-brand-500 text-brand-foreground shadow-sm"
                       : isActive
-                        ? "bg-[#1a3a52] text-[#00FF41] border-2 border-[#00FF41]"
-                        : "bg-[#0a1f3a] text-[#8aa6b8] border border-[#1a3a52]"
+                        ? "bg-brand-tint text-brand-400 border border-brand-400"
+                        : "pw-panel text-muted-foreground"
                   }`}
                 >
-                  {isCompleted ? <Check className="w-5 h-5" /> : stepNum}
+                  {isCompleted ? <Check className="w-4 h-4" /> : stepNum}
                 </div>
               );
             })}
@@ -400,15 +390,16 @@ export default function SignupFlow() {
         </div>
 
         {/* Form Card */}
-        <div className="bg-gradient-to-br from-[#0a1f3a] to-[#001a2e] rounded-2xl border border-[#1a3a52] p-8 shadow-xl">
+        <div className="pw-glass-hero p-5 sm:p-6 space-y-5">
           {/* Social Login Buttons */}
-          <div className="space-y-3 mb-6">
+          <div className="space-y-2.5">
             <button
               type="button"
               onClick={() =>
                 handleOAuthSignup(new GoogleAuthProvider(), "Google")
               }
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#1a3a52] border border-[#2a4a62] rounded-lg text-[#e8f0f8] font-medium hover:bg-[#2a4a62] transition-all"
+              disabled={oauthLoading !== null}
+              className="w-full inline-flex items-center justify-center gap-2.5 h-10 px-4 rounded-xl border border-border bg-card/80 hover:bg-muted/60 text-foreground text-sm font-medium transition-colors disabled:opacity-50"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path
@@ -435,7 +426,7 @@ export default function SignupFlow() {
               type="button"
               onClick={() => handleOAuthSignup("Facebook")}
               disabled={oauthLoading !== null}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#1a3a52] border border-[#2a4a62] rounded-lg text-[#e8f0f8] font-medium hover:bg-[#2a4a62] transition-all"
+              className="w-full inline-flex items-center justify-center gap-2.5 h-10 px-4 rounded-xl border border-border bg-card/80 hover:bg-muted/60 text-foreground text-sm font-medium transition-colors disabled:opacity-50"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
@@ -447,7 +438,7 @@ export default function SignupFlow() {
               type="button"
               onClick={() => handleOAuthSignup("X")}
               disabled={oauthLoading !== null}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-[#1a3a52] border border-[#2a4a62] rounded-lg text-[#e8f0f8] font-medium hover:bg-[#2a4a62] transition-all"
+              className="w-full inline-flex items-center justify-center gap-2.5 h-10 px-4 rounded-xl border border-border bg-card/80 hover:bg-muted/60 text-foreground text-sm font-medium transition-colors disabled:opacity-50"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.694l-5.245-6.856-6.009 6.856h-3.315l7.717-8.806-8.162-10.694h6.882l4.743 6.276 5.466-6.276zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -456,12 +447,12 @@ export default function SignupFlow() {
             </button>
           </div>
 
-          <div className="relative mb-6">
+          <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-[#1a3a52]"></div>
+              <div className="w-full border-t border-border"></div>
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-3 bg-gradient-to-br from-[#0a1f3a] to-[#001a2e] text-[#8aa6b8] text-xs uppercase tracking-widest">
+            <div className="relative flex justify-center">
+              <span className="px-3 rounded-pill bg-card text-muted-foreground pw-label">
                 Or continue with email
               </span>
             </div>
@@ -470,106 +461,112 @@ export default function SignupFlow() {
           <form onSubmit={handleSubmit}>
             {/* Step 1: Account Information */}
             {currentStep === 1 && (
-              <div className="space-y-4">
-                <h2 className="text-xl font-bold text-[#e8f0f8] mb-6">
-                  Account Information
-                </h2>
+              <div className="space-y-3.5">
+                <h2 className="pw-section-title">Account Information</h2>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-email" className="pw-label block">
                     Email Address
-                  </label>
-                  <input
+                  </Label>
+                  <Input
+                    id="reg-email"
                     type="email"
                     name="email"
                     value={field.email}
                     onChange={handleInputChange}
                     placeholder="you@example.com"
-                    className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
                   />
                   {errors.email && (
-                    <p className="text-red-400 text-xs mt-1">{errors.email}</p>
+                    <p className="text-destructive text-xs mt-1">{errors.email}</p>
                   )}
                 </div>
                 {/* Username */}
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-username" className="pw-label block">
                     Username
-                  </label>
-                  <input
+                  </Label>
+                  <Input
+                    id="reg-username"
                     type="text"
                     name="userName"
                     value={field.userName}
                     onChange={handleInputChange}
                     placeholder="RocketRider"
-                    className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
                   />
                   {errors.username && (
-                    <p className="text-red-400 text-xs mt-1">
+                    <p className="text-destructive text-xs mt-1">
                       {errors.username}
                     </p>
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-password" className="pw-label block">
                     Password
-                  </label>
+                  </Label>
                   <div className="relative">
-                    <input
+                    <Input
+                      id="reg-password"
                       type={showPassword ? "text" : "password"}
                       name="password"
                       value={field.password}
                       onChange={handleInputChange}
                       placeholder="••••••••"
-                      className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
+                      className="pr-11"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                       onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8aa6b8] hover:text-[#00FF41] transition-colors"
+                      className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                     >
                       {showPassword ? (
                         <EyeOff className="w-4 h-4" />
                       ) : (
                         <Eye className="w-4 h-4" />
                       )}
-                    </button>
+                    </Button>
                   </div>
                   {errors.password && (
-                    <p className="text-red-400 text-xs mt-1">
+                    <p className="text-destructive text-xs mt-1">
                       {errors.password}
                     </p>
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-confirm-password" className="pw-label block">
                     Confirm Password
-                  </label>
+                  </Label>
                   <div className="relative">
-                    <input
+                    <Input
+                      id="reg-confirm-password"
                       type={showConfirmPassword ? "text" : "password"}
                       name="confirmPassword"
                       value={field.confirmPassword}
                       onChange={handleInputChange}
                       placeholder="••••••••"
-                      className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
+                      className="pr-11"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                       onClick={() => setShowConfirmPassword((prev) => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8aa6b8] hover:text-[#00FF41] transition-colors"
+                      className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                     >
                       {showConfirmPassword ? (
                         <EyeOff className="w-4 h-4" />
                       ) : (
                         <Eye className="w-4 h-4" />
                       )}
-                    </button>
+                    </Button>
                   </div>
                   {errors.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">
+                    <p className="text-destructive text-xs mt-1">
                       {errors.confirmPassword}
                     </p>
                   )}
@@ -579,45 +576,43 @@ export default function SignupFlow() {
 
             {/* Step 2: Personal Information */}
             {currentStep === 2 && (
-              <div className="space-y-4">
-                <h2 className="text-xl font-bold text-[#e8f0f8] mb-6">
-                  Personal Information
-                </h2>
+              <div className="space-y-3.5">
+                <h2 className="pw-section-title">Personal Information</h2>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reg-firstName" className="pw-label block">
                       First Name
-                    </label>
-                    <input
+                    </Label>
+                    <Input
+                      id="reg-firstName"
                       type="text"
                       name="firstName"
                       value={field.firstName}
                       onChange={handleInputChange}
                       placeholder="John"
-                      className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
                     />
                     {errors.firstName && (
-                      <p className="text-red-400 text-xs mt-1">
+                      <p className="text-destructive text-xs mt-1">
                         {errors.firstName}
                       </p>
                     )}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reg-lastName" className="pw-label block">
                       Last Name
-                    </label>
-                    <input
+                    </Label>
+                    <Input
+                      id="reg-lastName"
                       type="text"
                       name="lastName"
                       value={field.lastName}
                       onChange={handleInputChange}
                       placeholder="Doe"
-                      className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
                     />
                     {errors.lastName && (
-                      <p className="text-red-400 text-xs mt-1">
+                      <p className="text-destructive text-xs mt-1">
                         {errors.lastName}
                       </p>
                     )}
@@ -625,53 +620,55 @@ export default function SignupFlow() {
                 </div>
 
                 {/* TelPhone */}
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-phone" className="pw-label block">
                     Phone Number
-                  </label>
-                  <input
+                  </Label>
+                  <Input
+                    id="reg-phone"
                     type="tel"
                     onScroll={(e) => e.target.blur()}
                     name="phone"
                     value={field.phone}
                     onChange={handleInputChange}
-                    placeholder="123-456-7890"
-                    className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] placeholder-[#8aa6b8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
+                    placeholder="0801 234 5678"
+                    className="pw-code"
                   />
                   {errors.phone && (
-                    <p className="text-red-400 text-xs mt-1">{errors.phone}</p>
+                    <p className="text-destructive text-xs mt-1">{errors.phone}</p>
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-dob" className="pw-label block">
                     Date of Birth
-                  </label>
-                  <input
+                  </Label>
+                  <Input
+                    id="reg-dob"
                     type="date"
                     name="dateOfBirth"
                     value={field.dateOfBirth}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
                   />
                   {errors.dateOfBirth && (
-                    <p className="text-red-400 text-xs mt-1">
+                    <p className="text-destructive text-xs mt-1">
                       {errors.dateOfBirth}
                     </p>
                   )}
                 </div>
 
                 {/* Gender */}
-                <div onClick={() => setGenderClicked((prev) => !prev)}>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div onClick={() => setGenderClicked((prev) => !prev)} className="space-y-1.5">
+                  <Label htmlFor="reg-gender" className="pw-label block">
                     Gender
-                  </label>
+                  </Label>
                   <div className="relative">
                     <select
+                      id="reg-gender"
                       name="gender"
                       value={field.gender}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all appearance-none"
+                      className="pw-input pr-10 appearance-none"
                     >
                       <option value="" disabled>
                         Select gender
@@ -680,11 +677,11 @@ export default function SignupFlow() {
                       <option value="female">Female</option>
                     </select>
                     <ChevronDown
-                      className={`w-4 h-4 text-[#8aa6b8] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none transition-transform duration-100 ease-linear ${genderClicked ? "rotate-180" : ""}`}
+                      className={`w-4 h-4 text-muted-foreground absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-transform duration-100 ease-linear ${genderClicked ? "rotate-180" : ""}`}
                     />
                   </div>
                   {errors.gender && (
-                    <p className="text-red-400 text-xs mt-1">{errors.gender}</p>
+                    <p className="text-destructive text-xs mt-1">{errors.gender}</p>
                   )}
                 </div>
 
@@ -695,19 +692,18 @@ export default function SignupFlow() {
             {/* Step 3: Preferences & Terms */}
             {currentStep === 3 && (
               <div className="space-y-4">
-                <h2 className="text-xl font-bold text-[#e8f0f8] mb-6">
-                  Preferences
-                </h2>
+                <h2 className="pw-section-title">Preferences</h2>
 
-                <div>
-                  <label className="block text-sm font-medium text-[#e8f0f8] mb-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reg-accountType" className="pw-label block">
                     Account Type
-                  </label>
+                  </Label>
                   <select
+                    id="reg-accountType"
                     name="accountType"
                     value={field.accountType}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-2 bg-[#0a1f3a] border border-[#1a3a52] rounded-lg text-[#e8f0f8] focus:border-[#00FF41] focus:outline-none focus:ring-1 focus:ring-[#00FF41] transition-all"
+                    className="pw-input"
                   >
                     <option value="personal">Personal</option>
                     <option value="business">Business</option>
@@ -715,16 +711,16 @@ export default function SignupFlow() {
                   </select>
                 </div>
 
-                <div className="space-y-3">
+                <div className="pw-panel p-3.5 space-y-3">
                   <label className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="checkbox"
                       name="notifications"
                       checked={field.notifications}
                       onChange={handleInputChange}
-                      className="w-4 h-4 bg-[#0a1f3a] border border-[#1a3a52] rounded accent-[#00FF41] cursor-pointer"
+                      className="h-4 w-4 rounded border-border accent-brand-500 cursor-pointer shrink-0"
                     />
-                    <span className="text-sm text-[#e8f0f8]">
+                    <span className="text-xs sm:text-sm text-foreground">
                       Send me updates and promotional offers
                     </span>
                   </label>
@@ -735,57 +731,54 @@ export default function SignupFlow() {
                       name="terms"
                       checked={field.terms}
                       onChange={handleInputChange}
-                      className="w-4 h-4 bg-[#0a1f3a] border border-[#1a3a52] rounded accent-[#00FF41] cursor-pointer mt-0.5"
+                      className="h-4 w-4 rounded border-border accent-brand-500 cursor-pointer mt-0.5 shrink-0"
                     />
-                    <span className="text-sm text-[#e8f0f8]">
+                    <span className="text-xs sm:text-sm text-foreground">
                       I agree to the Terms of Service and Privacy Policy
                     </span>
                   </label>
                   {errors.terms && (
-                    <p className="text-red-400 text-xs">{errors.terms}</p>
+                    <p className="text-destructive text-xs">{errors.terms}</p>
                   )}
                 </div>
               </div>
             )}
 
             {/* Navigation Buttons */}
-            <div className="flex gap-3 mt-8">
-              <button
+            <div className="flex gap-2.5 mt-6">
+              <Button
                 type="button"
+                variant="outline"
                 onClick={handlePrev}
                 disabled={currentStep === 1}
-                className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                  currentStep === 1
-                    ? "bg-[#0a1f3a] text-[#8aa6b8]/50 cursor-not-allowed border border-[#1a3a52]/50"
-                    : "bg-[#1a3a52] text-[#e8f0f8] hover:bg-[#2a4a62] border border-[#1a3a52]"
-                }`}
+                className="h-11 px-4"
               >
                 <ChevronLeft className="w-4 h-4" />
-                Back
-              </button>
+                <span>Back</span>
+              </Button>
 
-              <button
+              <Button
                 type="button"
                 onClick={(e) => handleNext(e)}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-[#00FF41] text-[#001a2e] rounded-lg font-bold hover:shadow-lg hover:shadow-[#00FF41]/50 transition-all active:scale-95"
+                className="flex-1 h-11"
               >
-                {currentStep === TOTAL_STEPS ? "Complete" : "Next"}
+                <span>{currentStep === TOTAL_STEPS ? "Complete" : "Next"}</span>
                 {currentStep < TOTAL_STEPS && (
                   <ChevronRight className="w-4 h-4" />
                 )}
                 {currentStep === TOTAL_STEPS && <Check className="w-4 h-4" />}
-              </button>
+              </Button>
             </div>
           </form>
         </div>
 
         {/* Sign in link */}
         {currentStep && (
-          <p className="text-center text-[#8aa6b8] text-sm mt-6">
+          <p className="text-center text-muted-foreground text-xs sm:text-sm">
             Already have an account?{" "}
             <Link
               to="/auth/login"
-              className="text-[#00FF41] hover:underline font-semibold"
+              className="text-brand-600 dark:text-brand-400 hover:underline font-semibold"
             >
               Sign in
             </Link>
@@ -793,18 +786,16 @@ export default function SignupFlow() {
         )}
       </div>
       {verifiedEmail && (
-        <>
-          <FeedbackAlert
-            isOpen={verifiedEmail}
-            isClose={() => setVerifiedEmail((prev) => (prev = false))}
-            message={{
-              status: true,
-              statusMsg: "Email Verification Link Sent",
-              message:
-                "A verification link has been sent to your email. Please verify your email to complete the registration process.",
-            }}
-          />
-        </>
+        <FeedbackAlert
+          isOpen={verifiedEmail}
+          isClose={() => setVerifiedEmail(false)}
+          message={{
+            status: true,
+            statusMsg: "Email Verification Link Sent",
+            message:
+              "A verification link has been sent to your email. Please verify your email to complete the registration process.",
+          }}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -8,274 +8,50 @@ import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2,
   Clock,
-  ArrowRight,
-  Copy,
-  Download,
-  Share2,
   RefreshCw,
-  Building2,
-  Wallet,
   ShieldCheck,
   Check,
   Sparkles,
-  ExternalLink,
   ChevronLeft,
-  FileText,
   AlertCircle,
-  Zap,
-  Image as ImageIcon,
-  FileType,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
-import {db} from "@/firebaseConfig"
+import { db } from "@/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
+import useCloudfunc from "@/components/useCloudfunc";
+import PaywakaReceiptView, {
+  ProcessorFeeSlipCard,
+} from "@/components/receipts/PaywakaReceiptView";
+import {
+  getTransactionDisplayTitle,
+  formatNairaAmount,
+} from "@/lib/receiptUtils";
 
-
-// PayWaka Logo SVG Component (P + Upward Growth Arrows matching attached logo)
-export function PayWakaLogoSVG({
-  className = "w-6 h-6",
-  opacity = 1,
-  style = {},
-}) {
-  return (
-    <svg
-      viewBox="0 0 200 200"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      style={{ opacity, ...style }}
-    >
-      <defs>
-        <linearGradient id="pwStemGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#10b981" />
-          <stop offset="100%" stopColor="#047857" />
-        </linearGradient>
-        <linearGradient id="pwLoopGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#34d399" />
-          <stop offset="50%" stopColor="#10b981" />
-          <stop offset="100%" stopColor="#059669" />
-        </linearGradient>
-        <linearGradient id="pwArrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#6ee7b7" />
-          <stop offset="50%" stopColor="#34d399" />
-          <stop offset="100%" stopColor="#10b981" />
-        </linearGradient>
-      </defs>
-
-      {/* Vertical P Stem */}
-      <rect
-        x="70"
-        y="85"
-        width="22"
-        height="85"
-        rx="5"
-        fill="url(#pwStemGrad)"
-      />
-
-      {/* Main P Ring / Loop */}
-      <path
-        d="M 70 52 C 70 28, 148 28, 148 80 C 148 128, 70 128, 70 128"
-        fill="none"
-        stroke="url(#pwLoopGrad)"
-        strokeWidth="24"
-        strokeLinecap="round"
-      />
-
-      {/* Primary Upward Sweeping Growth Arrow */}
-      <path
-        d="M 40 122 C 40 82, 85 65, 134 80"
-        fill="none"
-        stroke="url(#pwArrowGrad)"
-        strokeWidth="16"
-        strokeLinecap="round"
-      />
-      <path d="M 122 62 L 152 78 L 128 98 Z" fill="url(#pwArrowGrad)" />
-
-      {/* Secondary Upper Growth Arrow Accent */}
-      <path
-        d="M 126 70 L 162 38"
-        fill="none"
-        stroke="url(#pwArrowGrad)"
-        strokeWidth="16"
-        strokeLinecap="round"
-      />
-      <path d="M 144 30 L 174 28 L 165 58 Z" fill="url(#pwArrowGrad)" />
-    </svg>
-  );
-}
-
-// Reusable Official PayWaka Receipt Card Component matching preview image 1:1
-function ReceiptCard({
-  amount,
-  bankName,
-  accountNumber,
-  accountHolder,
+/**
+ * Re-exported alias for backward compatibility.
+ */
+export function PaymentProcessorFeeReceiptCard({
+  fee,
   initialRef,
-  narration,
   txnDate,
-  cardRef,
-  id = "paywaka-receipt-card",
+  accountHolder,
+  destination,
+  isP2P = false,
 }) {
-  const formatAmount = (val) => {
-    const num = Number(val);
-    return isNaN(num)
-      ? "0.00"
-      : num.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-  };
-
   return (
-    <div
-      ref={cardRef}
-      id={id}
-      className="bg-background border border-[#0d223a] text-foreground p-6 sm:p-7 rounded-3xl relative overflow-hidden shadow-2xl max-w-md w-full mx-auto"
-      style={{
-        backgroundColor: "#060d1a",
-        borderColor: "#0d223a",
-        color: "#ffffff",
-        borderRadius: "24px",
-        position: "relative",
-        overflow: "hidden",
+    <ProcessorFeeSlipCard
+      transaction={{
+        fee,
+        tx_ref: initialRef,
+        reference: initialRef,
+        created_at: txnDate,
+        recipientName: accountHolder,
+        bankName: destination,
+        isP2P,
       }}
-    >
-      {/* ------------------------------------------------------------- */}
-      {/* WATERMARKS: Logo Watermark + PayWaka Word Watermark           */}
-      {/* ------------------------------------------------------------- */}
-      <div className="absolute inset-0 pointer-events-none select-none flex flex-col items-center justify-center overflow-hidden z-0">
-        {/* PayWaka Logo Watermark */}
-        <img
-          src="/logo.png"
-          className="w-64 h-64 sm:w-72 sm:h-72 text-emerald-500 opacity-[0.10] transform -rotate-12 translate-y-3"
-        />
-        {/* PayWaka Word Watermark */}
-        <span
-          className="absolute text-emerald-500/10 text-4xl sm:text-5xl font-black uppercase tracking-[0.25em] transform -rotate-[22deg] whitespace-nowrap"
-          style={{ color: "rgba(16, 185, 129, 0.08)" }}
-        >
-          PAYWAKA
-        </span>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* HEADER: LOGO + TITLE + STATUS BADGE                           */}
-      {/* ------------------------------------------------------------- */}
-      <div className="flex items-center justify-between pb-4 border-b border-[#12253d] relative z-10">
-        <div className="flex items-center gap-3">
-          <img src="/logo.png" className="w-12 h-12 shrink-0" />
-          <div className="flex flex-col text-left">
-            <span className="text-emerald-400 font-black text-lg tracking-wider leading-none">
-              PAYWAKA
-            </span>
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
-              NIBSS INSTANT DIRECT CREDIT
-            </span>
-          </div>
-        </div>
-
-        <div
-          className="bg-emerald-950/70 border border-emerald-500/40 text-emerald-400 text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider"
-          style={{
-            backgroundColor: "rgba(4, 40, 28, 0.7)",
-            borderColor: "rgba(16, 185, 129, 0.4)",
-            color: "#34d399",
-          }}
-        >
-          SUCCESSFUL
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* HERO AMOUNT BOX                                               */}
-      {/* ------------------------------------------------------------- */}
-      <div
-        className="my-4 p-4 sm:p-5 bg-[#030813] border border-[#0e1f33] rounded-2xl text-center relative z-10"
-        style={{ backgroundColor: "#030813", borderColor: "#0e1f33" }}
-      >
-        <span className="text-[10px] sm:text-[11px] font-extrabold text-muted-foreground uppercase tracking-widest block">
-          AMOUNT TRANSFERRED
-        </span>
-        <div
-          className="text-3xl sm:text-4xl font-black text-emerald-400 font-display mt-1 tracking-tight"
-          style={{ color: "#10b981" }}
-        >
-          ₦{formatAmount(amount)}
-        </div>
-        <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-1">
-          Zero Transaction Charges Applied
-        </span>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* TRANSACTION DETAILS LIST                                     */}
-      {/* ------------------------------------------------------------- */}
-      <div className="space-y-2.5 relative z-10 text-xs sm:text-sm">
-        <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-muted-foreground font-medium">Beneficiary Name:</span>
-          <span className="font-bold text-foreground text-right">
-            {accountHolder}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-muted-foreground font-medium">Destination Bank:</span>
-          <span className="font-bold text-foreground text-right">{bankName}</span>
-        </div>
-
-        <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-muted-foreground font-medium">Account Number:</span>
-          <span className="font-mono font-bold text-foreground text-right">
-            {accountNumber}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-muted-foreground font-medium">Reference Number:</span>
-          <span className="font-mono font-bold text-foreground text-right">
-            {initialRef}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-muted-foreground font-medium">Source Account:</span>
-          <span className="font-semibold text-foreground text-right">
-            PayWaka Settlement Vault
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center py-1.5 border-b border-[#0f1d30]">
-          <span className="text-muted-foreground font-medium">Narration:</span>
-          <span className="text-foreground text-right text-xs max-w-[200px] truncate">
-            {narration}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center py-1.5">
-          <span className="text-muted-foreground font-medium">Timestamp:</span>
-          <span className="font-mono text-foreground text-right text-xs">
-            {txnDate}
-          </span>
-        </div>
-      </div>
-
-      {/* ------------------------------------------------------------- */}
-      {/* FOOTER: NIBSS VERIFIED + SYSTEM RECEIPT                      */}
-      {/* ------------------------------------------------------------- */}
-      <div className="mt-4 pt-3 border-t border-[#0f1d30] flex items-center justify-between text-xs relative z-10">
-        <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
-          <ShieldCheck className="h-4 w-4" />
-          <span>NIBSS Verified</span>
-        </div>
-        <span className="text-muted-foreground text-[11px]">
-          Automated System Receipt
-        </span>
-      </div>
-    </div>
+    />
   );
 }
 
@@ -283,45 +59,55 @@ export default function WithdrawalStatePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const user = useSelector((state) => state.user.user) || {};
-  const receiptRef = useRef(null);
 
-  // Extract navigation parameters or use realistic defaults
   const passedData = location.state || {};
-  const amount = passedData.amount || 25000;
-  const bankName =
-    passedData.bankName || "Wema Bank / Paywaka";
-  const accountNumber = passedData.accountNumber || "500000wqj";
+  const amount = Number(passedData.amount || 0);
+  const bankName = passedData.bankName || "Destination Bank";
+  const accountNumber = passedData.accountNumber || "";
   const accountHolder =
     passedData.accountHolder ||
-    user.userName ||
-    user.firstName ||
-    "Divine Anyanechi";
-  const initialRef =
-    passedData.reference ||
-    `PWK-WD-${Math.floor(10000000 + Math.random() * 90000000)}`;
-  const narration =
-    passedData.narration || `Withdrawal to ${bankName} - ${accountNumber}`;
+    passedData.recipientName ||
+    "Beneficiary";
+  const initialRef = passedData.reference || "";
+  const initialNarration = passedData.narration || initialRef;
 
+  const isP2P = Boolean(
+    passedData.isP2P ||
+      bankName?.toLowerCase().includes("paywaka") ||
+      initialRef.toLowerCase().startsWith("pwkp2p") ||
+      initialRef.startsWith("PWK-P2P"),
+  );
+  const fee =
+    passedData.fee !== undefined
+      ? Number(passedData.fee)
+      : isP2P
+        ? 0
+        : amount <= 5000
+          ? 10
+          : amount <= 50000
+            ? 25
+            : 50;
 
-    const statusStepMap = {
-      NEW: { progress: 15, activeStep: 0 },
-      PENDING: { progress: 45, activeStep: 1 },
-      INITIATED: { progress: 75, activeStep: 2 },
-      SUCCESSFUL: { progress: 100, activeStep: 4 },
-      FAILED: { progress: 100, activeStep: 4 },
-      CANCELLED: { progress: 100, activeStep: 4 },
-    };
+  const { verifyWithdrawalStatus } = useCloudfunc();
+  const [liveTxDoc, setLiveTxDoc] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  // Transition state: 'pending' -> 'success'
-  const [status, setStatus] = useState("pending");
-   const [liveStatus, setLiveStatus] = useState("NEW"); // raw Flutterwave status
-   const [failureReason, setFailureReason] = useState(null);
-  const [progress, setProgress] = useState(15);
+  const statusStepMap = {
+    NEW: { progress: 20, activeStep: 0 },
+    PENDING: { progress: 50, activeStep: 1 },
+    INITIATED: { progress: 78, activeStep: 2 },
+    SUCCESSFUL: { progress: 100, activeStep: 4 },
+    COMPLETED: { progress: 100, activeStep: 4 },
+    FAILED: { progress: 100, activeStep: 4 },
+    CANCELLED: { progress: 100, activeStep: 4 },
+  };
+
+  const [status, setStatus] = useState(
+    passedData.gatewayStatus === "SUCCESSFUL" || isP2P ? "pending" : "pending",
+  );
+  const [failureReason, setFailureReason] = useState(null);
+  const [progress, setProgress] = useState(20);
   const [activeStep, setActiveStep] = useState(0);
-  const [copiedRef, setCopiedRef] = useState(false);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [downloadingType, setDownloadingType] = useState(null); // 'png' | 'pdf' | null
-  const [txnDate, setTxnDate] = useState("");
 
   const steps = [
     {
@@ -329,94 +115,50 @@ export default function WithdrawalStatePage() {
       desc: "Checking balance & account limits",
     },
     {
-      title: "Connecting NIBSS Settlement Node",
-      desc: "Securing interbank connection",
+      title: isP2P ? "Settling PayWaka Internal Ledger" : "Connecting NIBSS Settlement Node",
+      desc: isP2P ? "Routing instant zero-fee P2P transfer" : "Securing interbank settlement",
     },
     {
       title: "Debiting PayWaka Subaccount Vault",
-      desc: "Authorizing instant wallet ledger update",
+      desc: "Authorizing atomic wallet ledger update",
     },
     {
-      title: "Finalizing Bank Direct Deposit",
-      desc: "Receiving electronic acknowledgment",
+      title: "Finalizing Transfer Acknowledgment",
+      desc: "Confirming settlement receipt",
     },
   ];
 
-  // Simulation timer for transition from Pending to Success
-  // useEffect(() => {
-  //   const formattedNow = new Date().toLocaleString("en-NG", {
-  //     dateStyle: "full",
-  //     timeStyle: "short",
-  //   });
-  //   setTxnDate(formattedNow);
-
-  //   if (status === "pending") {
-  //     setProgress(15);
-  //     setActiveStep(0);
-
-  //     const t1 = setTimeout(() => {
-  //       setProgress(45);
-  //       setActiveStep(1);
-  //     }, 900);
-
-  //     const t2 = setTimeout(() => {
-  //       setProgress(75);
-  //       setActiveStep(2);
-  //     }, 2000);
-
-  //     const t3 = setTimeout(() => {
-  //       setProgress(95);
-  //       setActiveStep(3);
-  //     }, 2900);
-
-  //     const t4 = setTimeout(() => {
-  //       setProgress(100);
-  //       setStatus("success");
-  //       toast.success("Withdrawal Completed Successfully!", {
-  //         description: `₦${Number(amount).toLocaleString()} sent to ${bankName}`,
-  //       });
-  //     }, 3700);
-
-  //     return () => {
-  //       clearTimeout(t1);
-  //       clearTimeout(t2);
-  //       clearTimeout(t3);
-  //       clearTimeout(t4);
-  //     };
-  //   }
-  // }, [status, amount, bankName]);
-
+  // Real-time Firestore listener on the active transaction document
   useEffect(() => {
-    const formattedNow = new Date().toLocaleString("en-NG", {
-      dateStyle: "full",
-      timeStyle: "short",
-    });
-    setTxnDate(formattedNow);
-
     if (!initialRef || !user?.uid) return;
 
     const unsub = onSnapshot(
       doc(db, "users", user.uid, "Transactions", initialRef),
       (snap) => {
         if (!snap.exists()) return;
-        const data = snap.data();
-        const incoming = data.status;
+        const data = { id: snap.id, ...snap.data() };
+        setLiveTxDoc(data);
 
-        setLiveStatus(incoming);
-
-        const mapped = statusStepMap[incoming] ?? statusStepMap.NEW;
+        const incomingUpper = String(data.status || "PENDING").toUpperCase();
+        const mapped = statusStepMap[incomingUpper] ?? statusStepMap.PENDING;
         setProgress(mapped.progress);
         setActiveStep(mapped.activeStep);
 
-        if (incoming === "SUCCESSFUL") {
-          setStatus("success");
-          toast.success("Withdrawal Completed Successfully!", {
-            description: `₦${Number(amount).toLocaleString()} sent to ${bankName}`,
+        if (incomingUpper === "SUCCESSFUL" || incomingUpper === "COMPLETED") {
+          setStatus((prev) => {
+            if (prev !== "success") {
+              toast.success("Transfer Completed Successfully!", {
+                description: `₦${Number(data.amount || amount).toLocaleString()} sent to ${data.recipientName || accountHolder}`,
+              });
+            }
+            return "success";
           });
-        } else if (incoming === "FAILED" || incoming === "CANCELLED") {
+        } else if (incomingUpper === "FAILED" || incomingUpper === "CANCELLED") {
           setStatus("failed");
           setFailureReason(
-            data.failureReason?.message ?? "Withdrawal could not be completed",
+            typeof data.failureReason === "string"
+              ? data.failureReason
+              : data.failureReason?.message || "Transfer could not be completed",
           );
         } else {
           setStatus("pending");
@@ -428,319 +170,293 @@ export default function WithdrawalStatePage() {
     );
 
     return () => unsub();
-  }, [initialRef, user?.uid, amount, bankName]);
+  }, [initialRef, user?.uid]);
 
-  const handleReplay = () => {
-    setStatus("pending");
-  };
+  // Automatic Background Settlement Poller while pending (guarantees UI never freezes on Step 2 if webhook/ngrok is delayed)
+  useEffect(() => {
+    if (status !== "pending" || !initialRef || !user?.uid || isP2P) return;
 
-  const handleCopyRef = () => {
-    navigator.clipboard.writeText(initialRef);
-    setCopiedRef(true);
-    toast.success("Transaction reference copied to clipboard!");
-    setTimeout(() => setCopiedRef(false), 2000);
-  };
+    let cancelled = false;
+    let pollCount = 0;
+    const maxPolls = 12;
 
-  const handleShare = () => {
-    const text = `PayWaka Withdrawal Receipt\nAmount: ₦${Number(amount).toLocaleString()}\nBank: ${bankName} (${accountNumber})\nRef: ${initialRef}\nStatus: SUCCESSFUL`;
-    if (navigator.share) {
-      navigator.share({ title: "PayWaka Receipt", text }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(text);
-      toast.success("Transaction summary copied to clipboard!");
-    }
-  };
-
-  const handleOpenReceiptModal = () => {
-    setShowReceiptModal(true);
-  };
-
-  // Capture DOM receipt element using html2canvas with oklab/oklch sanitizer for exact visual match
-  const captureReceiptCanvas = async () => {
-    const targetEl =
-      receiptRef.current ||
-      document.getElementById("paywaka-receipt-card") ||
-      document.getElementById("paywaka-receipt-card-offscreen");
-
-    if (!targetEl) throw new Error("Receipt card DOM element not found");
-
-    return await html2canvas(targetEl, {
-      scale: 3, // High DPI capture for crisp PNG & PDF export
-      backgroundColor: "#060d1a",
-      useCORS: true,
-      logging: false,
-      onclone: (clonedDoc, clonedElement) => {
-        // Clean out oklab and oklch declarations in cloned stylesheets to prevent html2canvas CSS parsing errors
-        const styleElements = clonedDoc.querySelectorAll("style");
-        styleElements.forEach((s) => {
-          if (s.textContent) {
-            s.textContent = s.textContent
-              .replace(/oklab\([^)]+\)/gi, "rgba(16, 185, 129, 0.2)")
-              .replace(/oklch\([^)]+\)/gi, "rgba(16, 185, 129, 0.2)");
-          }
-        });
-
-        // Clean inline styles
-        const allNodes = clonedDoc.querySelectorAll("*");
-        allNodes.forEach((node) => {
-          const styleAttr = node.getAttribute("style");
-          if (
-            styleAttr &&
-            (styleAttr.includes("oklab") || styleAttr.includes("oklch"))
-          ) {
-            node.setAttribute(
-              "style",
-              styleAttr
-                .replace(/oklab\([^)]+\)/gi, "#10b981")
-                .replace(/oklch\([^)]+\)/gi, "#10b981"),
-            );
-          }
-        });
-
-        if (clonedElement) {
-          clonedElement.style.backgroundColor = "#060d1a";
-          clonedElement.style.color = "#ffffff";
+    const runPoll = async () => {
+      if (cancelled || pollCount >= maxPolls) return;
+      pollCount += 1;
+      try {
+        const res = await verifyWithdrawalStatus({ reference: initialRef });
+        const gwStatus = String(
+          res?.status || res?.data?.status || "",
+        ).toUpperCase();
+        if (!cancelled && (gwStatus === "SUCCESSFUL" || gwStatus === "COMPLETED")) {
+          setProgress(100);
+          setActiveStep(4);
+          setStatus("success");
+        } else if (!cancelled && (gwStatus === "FAILED" || gwStatus === "CANCELLED")) {
+          setStatus("failed");
+          setFailureReason(
+            res?.message ||
+              res?.data?.complete_message ||
+              "Transfer was declined by destination bank.",
+          );
         }
-      },
-    });
-  };
+      } catch (_) {
+        // Silent background retry; user also has manual button below
+      }
+    };
 
-  // Real PNG Image Download Handler
-  const downloadAsImage = async () => {
+    const initialTimer = setTimeout(runPoll, 4000);
+    const interval = setInterval(runPoll, 7000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [status, initialRef, user?.uid, isP2P]);
+
+  const handleVerifyStatusNow = async () => {
+    if (!initialRef || isVerifying) return;
     try {
-      setDownloadingType("png");
-      toast.info("Generating high-resolution PNG image...");
-
-      const canvas = await captureReceiptCanvas();
-      const imgData = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.download = `PayWaka-Receipt-${initialRef}.png`;
-      link.href = imgData;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      toast.success("Receipt image downloaded successfully!");
+      setIsVerifying(true);
+      toast.info("Querying gateway settlement status...");
+      const res = await verifyWithdrawalStatus({ reference: initialRef });
+      const gwStatus = String(res?.status || res?.data?.status || "").toUpperCase();
+      if (gwStatus === "SUCCESSFUL" || gwStatus === "COMPLETED") {
+        setProgress(100);
+        setActiveStep(4);
+        setStatus("success");
+        toast.success("Transfer verified as SUCCESSFUL!");
+      } else if (gwStatus === "FAILED" || gwStatus === "CANCELLED") {
+        setStatus("failed");
+        setFailureReason(
+          res?.data?.complete_message ||
+            res?.message ||
+            "Transfer was declined by beneficiary bank.",
+        );
+        toast.error("Transfer failed. Your funds have been refunded to your wallet.");
+      } else {
+        toast.info(
+          res?.message || "Transfer is still processing at interbank node. Please hold on.",
+        );
+      }
     } catch (err) {
-      console.error("Image export error:", err);
-      toast.error("Failed to export receipt image. Please try again.");
+      console.error("Status verification error:", err);
+      toast.error(err.message || "Failed to reach settlement gateway.");
     } finally {
-      setDownloadingType(null);
+      setIsVerifying(false);
     }
   };
 
-  // Real PDF Download Handler
-  const downloadAsPDF = async () => {
-    try {
-      setDownloadingType("pdf");
-      toast.info("Compiling official PDF receipt...");
+  // Merge passed route state & live Firestore transaction doc cleanly
+  const senderDisplayName =
+    liveTxDoc?.senderName ||
+    passedData.senderName ||
+    `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
+    user.userName ||
+    "PayWaka User";
 
-      const canvas = await captureReceiptCanvas();
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; // 10mm margins
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.setFillColor(6, 13, 26);
-      pdf.rect(
-        0,
-        0,
-        pdf.internal.pageSize.getWidth(),
-        pdf.internal.pageSize.getHeight(),
-        "F",
-      );
-
-      pdf.addImage(imgData, "PNG", 10, 15, pdfWidth, pdfHeight);
-      pdf.save(`PayWaka-Receipt-${initialRef}.pdf`);
-
-      toast.success("Official PDF receipt downloaded!");
-    } catch (err) {
-      console.error("PDF export error:", err);
-      toast.error("Failed to export PDF receipt. Please try again.");
-    } finally {
-      setDownloadingType(null);
-    }
+  const mergedReceiptTx = {
+    tx_ref: initialRef,
+    reference: initialRef,
+    amount,
+    fee,
+    bankName,
+    recipientBankName: bankName,
+    accountNumber,
+    recipientAccountNumber: accountNumber,
+    accountHolder,
+    recipientName: accountHolder,
+    senderName: senderDisplayName,
+    recipientUserName: passedData.recipientUserName || liveTxDoc?.recipientUserName || "",
+    recipientBarterId: isP2P ? accountNumber : liveTxDoc?.recipientBarterId || "",
+    senderBarterId: liveTxDoc?.senderBarterId || user.barter_id || user.barterID || "",
+    narration: liveTxDoc?.narration || initialNarration,
+    isP2P,
+    type: "outflow",
+    category: isP2P ? "Transfer" : "Withdrawal",
+    status: status === "success" ? "SUCCESSFUL" : status === "failed" ? "FAILED" : "PENDING",
+    createdAt: liveTxDoc?.createdAt || new Date(),
+    ...(liveTxDoc || {}),
   };
 
-  const formatAmount = (val) => {
-    const num = Number(val);
-    return isNaN(num)
-      ? "0.00"
-      : num.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-  };
+  const displayTitle = getTransactionDisplayTitle(mergedReceiptTx);
 
   return (
     <DashboardLayout>
-      {/* Off-screen target receipt container for DOM capture matching preview 1:1 */}
-      <div
-        style={{
-          position: "fixed",
-          top: 0,
-          left: "-9999px",
-          width: "450px",
-          pointerEvents: "none",
-          opacity: 0,
-          zIndex: -1,
-        }}
-      >
-        <ReceiptCard
-          cardRef={receiptRef}
-          id="paywaka-receipt-card-offscreen"
-          amount={amount}
-          bankName={bankName}
-          accountNumber={accountNumber}
-          accountHolder={accountHolder}
-          initialRef={initialRef}
-          narration={narration}
-          txnDate={txnDate}
-        />
-      </div>
+      <div className="max-w-5xl mx-auto space-y-4">
+        {/* Top Action & Channel Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link
+              to="/wallet"
+              className="pw-pressable inline-flex items-center gap-1.5 min-h-9 px-3 rounded-pill bg-card/80 border border-border text-xs font-bold text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              <span>Wallet</span>
+            </Link>
 
-      <div className="max-w-2xl mx-auto py-4 px-2 sm:px-4 space-y-6">
-        {/* Top Header Navigation */}
-        <div className="flex items-center justify-between">
-          <Link
-            to="/wallet"
-            className="flex items-center gap-2 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors bg-card/40 border border-border px-3.5 py-2 rounded-xl"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            <span>Back to Wallet</span>
-          </Link>
+            {status === "success" && (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="pw-chip-brand text-[10px]">
+                  <CheckCircle2 className="h-3 w-3 shrink-0" />
+                  <span>Completed</span>
+                </span>
+                <span className="text-xs font-bold text-foreground truncate hidden sm:inline" title={displayTitle}>
+                  ₦{formatNairaAmount(mergedReceiptTx.amount)} settled to {accountHolder} ({bankName})
+                </span>
+              </div>
+            )}
+          </div>
 
-          <Badge className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-[10px] uppercase font-bold tracking-wider px-3 py-1">
-            <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-            NIBSS Instant Transfer
-          </Badge>
+          <div className="flex items-center gap-2 shrink-0">
+            {status === "success" && (
+              <Button
+                type="button"
+                onClick={() => navigate("/wallet")}
+                variant="outline"
+                size="sm"
+                className="h-9 px-3 text-xs font-bold rounded-pill"
+              >
+                New Transfer
+              </Button>
+            )}
+            <span className="pw-chip-brand text-[10px] uppercase tracking-wider">
+              <ShieldCheck className="h-3 w-3 shrink-0" />
+              <span>{isP2P ? "PayWaka P2P" : "NIBSS Instant"}</span>
+            </span>
+          </div>
         </div>
 
-        {/* Main Card Wrapper */}
-        <Card className="bg-card/60 border-border shadow-2xl rounded-3xl overflow-hidden relative border">
-          {/* Subtle Ambient Glowing Background elements */}
-          <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
-
-          <CardContent className="p-6 sm:p-8 relative">
-            <AnimatePresence mode="wait">
-              {/* ============================================================ */}
-              {/* PHASE 1: PENDING / PROCESSING VIEW                            */}
-              {/* ============================================================ */}
-              {status === "pending" && (
-                <motion.div
-                  key="pending-state"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex flex-col items-center text-center py-6 space-y-6"
-                >
-                  {/* Glowing Radar & Spinner Header */}
-                  <div className="relative w-28 h-28 flex items-center justify-center">
-                    {/* Animated Pulsing Rings */}
-                    <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping opacity-30" />
-                    <div className="absolute -inset-3 rounded-full border border-amber-500/30 animate-pulse" />
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500/10 via-muted to-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-2xl relative">
-                      <Clock
-                        className="h-10 w-10 text-amber-400 animate-spin"
-                        style={{ animationDuration: "6s" }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Status Title & Subtitle */}
-                  <div>
-                    <Badge className="bg-amber-500/10 border-amber-500/30 text-amber-400 text-xs font-bold uppercase tracking-wider px-3 py-1 mb-3">
-                      <Clock className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      Transaction Processing
-                    </Badge>
-                    <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
-                      Processing Withdrawal
-                    </h2>
-                    <p className="text-muted-foreground text-xs sm:text-sm mt-1 max-w-md mx-auto">
-                      Connecting to NIBSS Direct Credit engine. Transferring
-                      funds to{" "}
-                      <span className="text-foreground font-semibold">
-                        {bankName}
+        <AnimatePresence mode="wait">
+          {/* ============================================================ */}
+          {/* PHASE 1: PENDING / PROCESSING VIEW                            */}
+          {/* ============================================================ */}
+          {status === "pending" && (
+            <motion.div
+              key="pending-state"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+              className="max-w-[440px] mx-auto w-full"
+            >
+              <div className="pw-glass-hero">
+                <div className="h-1.5 w-full bg-brand-strip shrink-0" />
+                <div className="p-4 sm:p-5 space-y-4">
+                  {/* Compact Emblem + Status */}
+                  <div className="flex flex-col items-center text-center space-y-2.5 pt-1">
+                    <div className="relative">
+                      <div className="pw-tile-gold h-14 w-14 rounded-2xl">
+                        <Clock
+                          className="h-7 w-7 animate-spin"
+                          style={{ animationDuration: "6s" }}
+                        />
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-60" />
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-warning border-2 border-card" />
                       </span>
-                      .
-                    </p>
-                  </div>
+                    </div>
 
-                  {/* Highlighted Pending Amount */}
-                  <div className="bg-muted/60 border border-border p-4 rounded-2xl w-full max-w-md">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                      Transfer Amount
+                    <span className="pw-pill-gold text-[10px] uppercase tracking-wider">
+                      Processing Settlement
                     </span>
-                    <div className="text-3xl font-black text-amber-400 font-display mt-0.5">
-                      ₦{formatAmount(amount)}
+
+                    <div className="space-y-1 max-w-full">
+                      <h1 className="text-base sm:text-lg font-extrabold text-foreground tracking-tight leading-snug break-words">
+                        {displayTitle}
+                      </h1>
+                      <p className="text-xs text-muted-foreground">
+                        Routing funds securely to{" "}
+                        <span className="font-semibold text-foreground">{bankName}</span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Smooth Animated Progress Bar */}
-                  <div className="w-full max-w-md space-y-2">
-                    <div className="flex justify-between items-center text-xs text-muted-foreground font-medium">
-                      <span>Settlement Progress</span>
-                      <span className="font-mono font-bold text-amber-400">
+                  {/* Amount & Destination Panel */}
+                  <div className="pw-panel p-3.5 space-y-2.5">
+                    <div className="text-center space-y-0.5">
+                      <span className="pw-label block">TRANSFER AMOUNT</span>
+                      <div className="pw-num text-2xl sm:text-[26px] font-black text-warning tracking-tight">
+                        ₦{formatNairaAmount(mergedReceiptTx.amount)}
+                      </div>
+                    </div>
+                    <div className="pt-2.5 border-t border-border/70 flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground shrink-0">Beneficiary</span>
+                      <span className="font-bold text-foreground text-right truncate">
+                        {accountHolder}
+                      </span>
+                    </div>
+                    {accountNumber && (
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground shrink-0">
+                          {isP2P ? "Barter ID" : "Account No."}
+                        </span>
+                        <span className="pw-code font-bold text-foreground text-right">
+                          {accountNumber}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Settlement Progress Track */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-muted-foreground font-medium">
+                        Settlement Progress
+                      </span>
+                      <span className="pw-num font-bold text-warning">
                         {progress}%
                       </span>
                     </div>
-                    <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden border border-border">
+                    <div className="w-full h-2 bg-muted rounded-pill overflow-hidden border border-border">
                       <motion.div
-                        className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 rounded-full"
-                        initial={{ width: "10%" }}
+                        className="h-full bg-gradient-to-r from-warning to-brand-400 rounded-pill"
+                        initial={{ width: "15%" }}
                         animate={{ width: `${progress}%` }}
                         transition={{ duration: 0.5, ease: "easeOut" }}
                       />
                     </div>
                   </div>
 
-                  {/* Real-Time Processing Checklist */}
-                  <div className="w-full max-w-md bg-muted/30 border border-border rounded-2xl p-4 text-left space-y-3">
+                  {/* Compact Stepper Checklist */}
+                  <div className="pw-panel p-3.5 space-y-3">
                     {steps.map((step, idx) => {
                       const isDone = idx < activeStep;
                       const isCurrent = idx === activeStep;
                       return (
-                        <div
-                          key={idx}
-                          className="flex items-start gap-3 text-xs"
-                        >
+                        <div key={idx} className="flex items-start gap-2.5 text-xs">
                           <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                            className={`w-[22px] h-[22px] rounded-full flex items-center justify-center shrink-0 mt-0.5 text-[11px] font-bold transition-all ${
                               isDone
-                                ? "bg-emerald-500 text-black font-bold"
+                                ? "bg-brand-500 text-brand-foreground"
                                 : isCurrent
-                                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/50"
+                                  ? "bg-warning/15 text-warning border border-warning/40"
                                   : "bg-muted text-muted-foreground border border-border"
                             }`}
                           >
                             {isDone ? (
                               <Check className="h-3 w-3 stroke-[3]" />
                             ) : isCurrent ? (
-                              <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                              <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
                             ) : (
                               <span>{idx + 1}</span>
                             )}
                           </div>
-                          <div className="min-w-0 flex-1">
+                          <div className="min-w-0 flex-1 space-y-0.5">
                             <p
-                              className={`font-semibold ${
+                              className={`text-xs leading-snug ${
                                 isDone
-                                  ? "text-foreground line-through text-muted-foreground"
+                                  ? "text-muted-foreground line-through font-medium"
                                   : isCurrent
                                     ? "text-foreground font-bold"
-                                    : "text-muted-foreground"
+                                    : "text-muted-foreground font-medium"
                               }`}
                             >
                               {step.title}
                             </p>
-                            <p className="text-[10px] text-muted-foreground truncate">
+                            <p className="text-[11px] text-muted-foreground leading-snug">
                               {step.desc}
                             </p>
                           </div>
@@ -749,360 +465,93 @@ export default function WithdrawalStatePage() {
                     })}
                   </div>
 
-                  {/* Action Helper */}
-                  <p className="text-[11px] text-muted-foreground animate-pulse">
-                    Please hold on while we complete instant bank
-                    verification...
-                  </p>
-                </motion.div>
-              )}
-
-              {/* ============================================================ */}
-              {/* PHASE 2: SUCCESS / COMPLETED VIEW                            */}
-              {/* ============================================================ */}
-              {status === "success" && (
-                <motion.div
-                  key="success-state"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.4, type: "spring", stiffness: 200 }}
-                  className="flex flex-col items-center text-center space-y-6"
-                >
-                  {/* Celebrating Animated Success Ring */}
-                  <div className="relative w-24 h-24 flex items-center justify-center">
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{
-                        delay: 0.1,
-                        type: "spring",
-                        stiffness: 260,
-                        damping: 20,
-                      }}
-                      className="w-20 h-20 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-2xl shadow-emerald-500/20 flex items-center justify-center"
+                  {/* Action Controls */}
+                  <div className="space-y-2 pt-0.5">
+                    <Button
+                      type="button"
+                      onClick={handleVerifyStatusNow}
+                      disabled={isVerifying}
+                      variant="outline"
+                      className="w-full h-10 text-xs font-bold border-warning/35 text-warning hover:bg-warning/10"
                     >
-                      <div className="w-full h-full rounded-full bg-background flex items-center justify-center">
-                        <CheckCircle2 className="h-11 w-11 text-emerald-400" />
-                      </div>
-                    </motion.div>
-                    <div className="absolute -top-1 -right-1">
-                      <Sparkles className="h-6 w-6 text-yellow-400 animate-bounce" />
-                    </div>
-                  </div>
-
-                  {/* Header Titles */}
-                  <div>
-                    <Badge className="bg-emerald-500/15 border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider px-3.5 py-1 mb-2">
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                      Transfer Successful
-                    </Badge>
-                    <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
-                      Withdrawal Complete!
-                    </h2>
-                    <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-                      Funds have been credited directly to destination account.
-                    </p>
-                  </div>
-
-                  {/* Main Hero Amount Badge */}
-                  <div className="bg-gradient-to-br from-emerald-950/60 via-muted/80 to-card border border-emerald-500/30 p-5 rounded-3xl w-full max-w-md relative overflow-hidden shadow-xl">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/80">
-                      Settled Amount
-                    </span>
-                    <div className="text-3xl sm:text-4xl font-black text-foreground font-display mt-1 tracking-tight">
-                      ₦{formatAmount(amount)}
-                    </div>
-                    <div className="flex items-center justify-center gap-2 mt-2 text-[11px] text-muted-foreground">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>Zero Charge Instant Settlement</span>
-                    </div>
-                  </div>
-
-                  {/* Detailed Transaction Breakdown Card */}
-                  <div className="w-full max-w-md bg-card/80 border border-border rounded-2xl p-4 sm:p-5 text-left space-y-3.5">
-                    <div className="flex items-center justify-between pb-3 border-b border-border">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Transaction Reference
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-foreground">
-                          {initialRef}
-                        </span>
-                        <button
-                          onClick={handleCopyRef}
-                          className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                          title="Copy reference"
-                        >
-                          {copiedRef ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-400" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Recipient Bank
-                      </span>
-                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5 text-blue-400" />
-                        {bankName}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Account Number
-                      </span>
-                      <span className="text-xs font-mono font-bold text-foreground">
-                        {accountNumber}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Account Name
-                      </span>
-                      <span className="text-xs font-bold text-foreground">
-                        {accountHolder}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Source
-                      </span>
-                      <span className="text-xs font-semibold text-foreground flex items-center gap-1">
-                        <Wallet className="h-3.5 w-3.5 text-emerald-400" />
-                        PayWaka Subaccount Vault
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Fee
-                      </span>
-                      <span className="text-xs font-bold text-emerald-400">
-                        ₦0.00 (Free)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-border">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Timestamp
-                      </span>
-                      <span className="text-[11px] font-mono text-muted-foreground">
-                        {txnDate}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Primary & Secondary Action Buttons */}
-                  <div className="w-full max-w-md space-y-3 pt-2">
-                    {/* Quick Direct Export Options */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button
-                        onClick={downloadAsImage}
-                        disabled={downloadingType !== null}
-                        className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs h-11 rounded-xl shadow-lg shadow-emerald-500/10 transition-transform active:scale-95"
-                      >
-                        {downloadingType === "png" ? (
-                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                        ) : (
-                          <ImageIcon className="h-4 w-4 mr-1.5" />
-                        )}
-                        Save as PNG Image
-                      </Button>
-
-                      <Button
-                        onClick={downloadAsPDF}
-                        disabled={downloadingType !== null}
-                        className="bg-blue-600 hover:bg-blue-500 text-foreground font-extrabold text-xs h-11 rounded-xl shadow-lg shadow-blue-500/10 transition-transform active:scale-95"
-                      >
-                        {downloadingType === "pdf" ? (
-                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                        ) : (
-                          <FileType className="h-4 w-4 mr-1.5" />
-                        )}
-                        Save as PDF
-                      </Button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button
-                        onClick={handleOpenReceiptModal}
-                        variant="outline"
-                        className="border-border text-foreground hover:text-foreground bg-muted/60 text-xs h-10 rounded-xl"
-                      >
-                        <FileText className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
-                        Preview Digital Slip
-                      </Button>
-
-                      <Button
-                        onClick={handleShare}
-                        variant="outline"
-                        className="border-border text-foreground hover:text-foreground bg-muted/50 text-xs h-10 rounded-xl"
-                      >
-                        <Share2 className="h-3.5 w-3.5 mr-1.5 text-blue-400" />
-                        Share Details
-                      </Button>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Link to="/wallet" className="flex-1">
-                        <Button
-                          variant="ghost"
-                          className="w-full text-muted-foreground hover:text-foreground hover:bg-muted text-xs h-10 rounded-xl"
-                        >
-                          Return to Wallet Overview
-                        </Button>
-                      </Link>
-
-                      <Button
-                        onClick={handleReplay}
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-amber-400 hover:bg-muted h-10 w-10 rounded-xl shrink-0"
-                        title="Replay Pending to Success Transition"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-              {/* ============================================================ */}
-              {/* PHASE 2: FAILED / FAILED PAYMENT VIEW                            */}
-              {/* ============================================================ */}
-              {status === "failed" && (
-                <motion.div
-                  key="failed-state"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex flex-col items-center text-center py-6 space-y-6"
-                >
-                  <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
-                    <AlertCircle className="h-10 w-10 text-red-400" />
-                  </div>
-                  <div>
-                    <Badge className="bg-red-500/10 border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wider px-3 py-1 mb-3">
-                      Transfer Failed
-                    </Badge>
-                    <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
-                      Withdrawal Failed
-                    </h2>
-                    <p className="text-muted-foreground text-xs sm:text-sm mt-1 max-w-md mx-auto">
-                      {failureReason}
-                    </p>
-                    <p className="text-muted-foreground text-[11px] mt-2">
-                      Your balance has been refunded.
-                    </p>
-                  </div>
-                  <Link to="/wallet">
-                    <Button className="bg-muted hover:bg-muted text-foreground text-xs h-10 rounded-xl px-6">
-                      Return to Wallet
+                      {isVerifying ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      <span>Verify Status Now</span>
                     </Button>
-                  </Link>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </CardContent>
-        </Card>
+                    <p className="text-[11px] text-center text-muted-foreground">
+                      Auto-checking interbank settlement every few seconds
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ============================================================ */}
+          {/* PHASE 2: SUCCESSFUL SETTLEMENT + AT-A-GLANCE RECEIPT UI       */}
+          {/* ============================================================ */}
+          {status === "success" && (
+            <motion.div
+              key="success-state"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <PaywakaReceiptView
+                transaction={mergedReceiptTx}
+                mode="page"
+              />
+            </motion.div>
+          )}
+
+          {/* ============================================================ */}
+          {/* PHASE 3: FAILED / REFUNDED VIEW                              */}
+          {/* ============================================================ */}
+          {status === "failed" && (
+            <motion.div
+              key="failed-state"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+              className="max-w-[440px] mx-auto w-full"
+            >
+              <div className="pw-glass-hero">
+                <div className="h-1.5 w-full bg-destructive shrink-0" />
+                <div className="p-5 sm:p-6 flex flex-col items-center text-center space-y-4">
+                  <div className="pw-tile-ruby h-14 w-14 rounded-2xl">
+                    <AlertCircle className="h-7 w-7" />
+                  </div>
+
+                  <span className="inline-flex items-center gap-1 rounded-pill border border-destructive/30 bg-destructive/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-destructive">
+                    Transfer Failed
+                  </span>
+
+                  <div className="space-y-1.5">
+                    <h1 className="text-lg font-extrabold text-foreground tracking-tight">
+                      Withdrawal Failed
+                    </h1>
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                      {failureReason || "Transfer could not be completed."}
+                    </p>
+                  </div>
+
+                  <div className="w-full pw-panel border-brand-400/25 bg-brand-tint p-3 text-xs font-semibold text-brand-400">
+                    Your wallet balance has been refunded automatically.
+                  </div>
+
+                  <Button asChild className="w-full h-11 text-sm">
+                    <Link to="/wallet">Return to Wallet</Link>
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-
-      {/* ============================================================ */}
-      {/* DIGITAL RECEIPT PREVIEW MODAL                                */}
-      {/* ============================================================ */}
-      {showReceiptModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="bg-[#091222] border border-border w-full max-w-md rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl relative my-auto"
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
-                  ₦
-                </div>
-                <div>
-                  <h3 className="font-bold text-foreground text-base">
-                    PayWaka Official Receipt
-                  </h3>
-                  <p className="text-[10px] text-muted-foreground">
-                    Electronic Transfer Acknowledgment
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowReceiptModal(false)}
-                className="text-muted-foreground hover:text-foreground text-sm font-bold p-1 rounded-lg hover:bg-muted transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Modal Receipt Preview Card (Uses identical ReceiptCard component) */}
-            <ReceiptCard
-              amount={amount}
-              bankName={bankName}
-              accountNumber={accountNumber}
-              accountHolder={accountHolder}
-              initialRef={initialRef}
-              narration={narration}
-              txnDate={txnDate}
-            />
-
-            {/* Modal Download Action Options */}
-            <div className="space-y-2.5 pt-1">
-              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block text-center">
-                Choose Export Format
-              </span>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  onClick={downloadAsImage}
-                  disabled={downloadingType !== null}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold h-11 text-xs rounded-xl transition-all"
-                >
-                  {downloadingType === "png" ? (
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <ImageIcon className="h-4 w-4 mr-1.5" />
-                  )}
-                  Save as PNG
-                </Button>
-
-                <Button
-                  onClick={downloadAsPDF}
-                  disabled={downloadingType !== null}
-                  className="bg-blue-600 hover:bg-blue-500 text-foreground font-extrabold h-11 text-xs rounded-xl transition-all"
-                >
-                  {downloadingType === "pdf" ? (
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <FileType className="h-4 w-4 mr-1.5" />
-                  )}
-                  Save as PDF
-                </Button>
-              </div>
-
-              <Button
-                onClick={() => setShowReceiptModal(false)}
-                variant="outline"
-                className="w-full border-border text-muted-foreground hover:text-foreground h-10 text-xs rounded-xl mt-1"
-              >
-                Close Preview
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      )}
     </DashboardLayout>
   );
 }

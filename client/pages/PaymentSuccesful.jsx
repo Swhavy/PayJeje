@@ -2,25 +2,29 @@
 //https://p8q0dhvs-8080.uks1.devtunnels.ms/PaymentSuccesful?status=successful&tx_ref=PayWaka-PjWKXJWGeXdr7B1lYhT0sFcLwgF3-1756903541631&transaction_id=9612651
 
 import React, { useEffect, useState } from "react";
+import ModalPortal from "@/components/ui/ModalPortal";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  ReceiptAmount,
+  ReceiptAnimatedCheck,
+  ReceiptCashbackChip,
+  ReceiptCopyButton,
+  ReceiptPerforation,
+  ReceiptRow,
+  ReceiptRows,
+  ReceiptStatusPill,
+  ReceiptStrip,
+  ReceiptWordmark,
+} from "@/components/receipts/ReceiptParts";
 import { Button } from "@/components/ui/button";
-import { CheckCircle } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import useClientWebHook from "@/components/useClientWebHook";
-import { connectFunctionsEmulator, httpsCallable } from "firebase/functions";
+import { httpsCallable } from "firebase/functions";
 import { functions } from "@/firebaseConfig";
 import { toast } from "sonner";
 import { useSpinner } from "@/components/SpinnerProvider";
 import ErrorFeedback from "@/components/Alert";
+import { formatNaira } from "@/lib/format";
 
 
 export default function PaymentSuccesful({ onClose }) {
@@ -181,109 +185,113 @@ console.log("verify: ", res)
     }
   }, [paymentState.payout]);
 
+  const targetLabel =
+    paymentInfo.productName == "Airtime" || paymentInfo.productName == "Data"
+      ? "Mobile Number"
+      : paymentInfo.productName == "cable"
+        ? "Decoder Number"
+        : "Meter Number";
+
+  const productLabel =
+    paymentInfo.productName == "Airtime"
+      ? "Airtime"
+      : paymentInfo.productName == "Data"
+        ? "Data Plan"
+        : paymentInfo.productName == "cable"
+          ? "Cable TV"
+          : "Electricity";
+
   return (
     <>
-      {paymentState.VerifyPay ? (
-        <Dialog
-          open={true}
-          onOpenChange={onClose}
-          className="absolute -top-[200%] inset-0 m-auto"
+      {paymentState.VerifyPay && (
+        <ModalPortal
+          isOpen={true}
+          onClose={() => onClose?.()}
+          variant="sheet"
+          maxWidthClass="max-w-[388px]"
+          noPadding
+          ariaLabel="Payment Successful Receipt"
         >
-          <DialogContent className="p-6 rounded-lg shadow-xl text-center aspect-[2/2] inset-0 m-auto overflow-y-auto lg:w-[40vw] cursor-default">
-            <DialogHeader className="flex flex-col items-center space-y-4">
-              <CheckCircle className="h-16 w-16 text-green-500" />
-              <DialogTitle className="text-3xl font-bold text-foreground">
-                Purchase Successful!
-              </DialogTitle>
-              <DialogDescription className="text-muted-foreground text-base">
-                {`  Your ${
-                  paymentInfo.productName == "Airtime"
-                    ? "Airtime"
-                    : paymentInfo.productName == "Data"
-                      ? "Data Plan"
-                      : paymentInfo.productName == "cable"
-                        ? "Cable"
-                        : "Electricity bill"
-                } purchase has been completed`}{" "}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-3 py-4 text-foreground text-left">
-              <div className="flex justify-between items-center">
-                <span className="text-base font-medium text-muted-foreground">
-                  Network
-                </span>
-                <span className="text-base font-semibold">
-                  {paymentInfo?.network || "N/A"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-base font-medium text-muted-foreground">
-                  Amount
-                </span>
-                <span className="text-base font-semibold">
-                  {paymentInfo?.price || "N/A"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-base font-medium text-muted-foreground">
-                  {paymentInfo.productName == "Airtime" ||
-                  paymentInfo.productName == "Data"
-                    ? "Mobile Number"
-                    : paymentInfo.productName == "cable"
-                      ? "Decoder Number"
-                      : "Meter Number"}
-                </span>
-                <span className="text-base font-semibold">
-                  {paymentInfo?.customerID || "N/A"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-base font-medium text-muted-foreground">
-                  Transaction ID
-                </span>
-                <span
-                  className="text-base font-semibold text-green-600 min-w-[50px] w-28 max-w-[120px] truncate"
-                  title={rawTx_Ref}
-                >
-                  {rawTx_Ref || "N/A"}
-                </span>
-              </div>
-
-              {paymentInfo?.bonusToEarn && (
-                <>
-                  <Separator className="my-2" />
-                  <div className="flex justify-between items-center">
-                    <span className="text-base font-medium text-muted-foreground">
-                      Bonus Earned
-                    </span>
-                    <span className="text-base font-semibold text-green-500">
-                      {paymentInfo?.bonusToEarn || "N/A"}
-                    </span>
-                  </div>
-                </>
-              )}
+          <ReceiptStrip />
+          <div className="p-5 sm:p-6 space-y-5">
+            <div className="flex items-center justify-between gap-2">
+              <ReceiptWordmark />
+              <ReceiptStatusPill variant="success" label="SUCCESSFUL" />
             </div>
 
-            <DialogFooter className="mt-6 flex flex-col gap-2">
-              <Button
-                className="w-full bg-green-600 hover:bg-green-700 text-foreground text-lg font-semibold py-3"
-                onClick={onClose}
-              >
-                <Link to="/dashboard">Done</Link>
+            <div className="flex flex-col items-center text-center pt-1 pb-2 gap-3">
+              <ReceiptAnimatedCheck />
+              <div>
+                <h2 id="redirect-payment-success-title" className="text-card-title text-foreground">
+                  Purchase Successful
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Your {productLabel} purchase has been completed
+                </p>
+              </div>
+              <ReceiptAmount
+                amount={paymentInfo?.price}
+                label="AMOUNT PAID"
+                size="md"
+              />
+            </div>
+
+            <ReceiptRows>
+              <ReceiptRow label="Product" value={productLabel} />
+              <ReceiptRow label="Network" value={paymentInfo?.network || "N/A"} />
+              <ReceiptRow
+                label={targetLabel}
+                value={paymentInfo?.customerID || "N/A"}
+                mono
+              />
+            </ReceiptRows>
+
+            <ReceiptPerforation />
+
+            <div className="pw-panel p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Reference
+                </span>
+                <div className="flex items-center gap-1 min-w-0">
+                  <span
+                    className="pw-num text-xs font-semibold text-foreground truncate max-w-[180px]"
+                    title={rawTx_Ref || ""}
+                  >
+                    {rawTx_Ref || "N/A"}
+                  </span>
+                  {rawTx_Ref && (
+                    <ReceiptCopyButton
+                      value={rawTx_Ref}
+                      label="Copy reference"
+                    />
+                  )}
+                </div>
+              </div>
+              {paymentInfo?.bonusToEarn ? (
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Reward Earned
+                  </span>
+                  <ReceiptCashbackChip
+                    label={`+${formatNaira(paymentInfo.bonusToEarn)} bonus`}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <Button className="w-full" asChild>
+                <Link to="/dashboard" onClick={() => onClose?.()}>
+                  Done
+                </Link>
               </Button>
-              <Button
-                variant="outline"
-                className="w-full text-lg font-semibold py-3"
-                asChild
-              >
-                <Link to="/Transactions">View Transactions</Link>
+              <Button variant="ghost" size="sm" className="w-full text-brand-400" asChild>
+                <Link to="/billhistory">View history</Link>
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ) : (
-        "false"
+            </div>
+          </div>
+        </ModalPortal>
       )}
       {error && <ErrorFeedback message={error} />}
     </>

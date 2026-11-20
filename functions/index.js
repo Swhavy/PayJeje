@@ -36,6 +36,12 @@ import util from "node:util";
 //import { setDoc } from 'firebase/firestore'
 
 import { EXCEL_COMPETITOR_PRICES } from "./excelPricingData.js";
+import { createCashbackService } from "./cashbackService.js";
+import {
+  computeBillPricingAndEarnings,
+  mergeBillPricingConfig,
+  DEFAULT_BILL_PRICING_CONFIG,
+} from "./billPricingEngine.js";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -58,6 +64,7 @@ const db = admin.firestore();
 //const FLW_SECRET_KEY = defineSecret("FLW_SECRET_KEY");
 const FLW_SECRET_KEY = new EnvVar("FLW_MSECRET_KEY");
 const FLW_WEBHOOK_HASH = new EnvVar("FLW_WEBHOOK_HASH");
+const FLW_MERCHANT_ID = new EnvVar("FLW_MERCHANT_ID", { fallback: "100381242" });
 //const FLW_WEBHOOK_HASH = defineSecret("FLW_WEBHOOK_HASH");
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 export const PIN_PEPPER_SECRETS = {
@@ -67,35 +74,145 @@ export const PIN_PEPPER_SECRETS = {
 export const PIN_PEPPER_SECRET = PIN_PEPPER_SECRETS[1];
 const ALL_PIN_SECRETS = Object.values(PIN_PEPPER_SECRETS);
 
+export function getFlutterwaveMerchantId() {
+  return FLW_MERCHANT_ID.value();
+}
+
+/**
+ * Monetary & Fee Helpers (Integer Kobo Arithmetic Standard)
+ */
+export function toKobo(naira) {
+  return Math.round(Number(naira || 0) * 100);
+}
+
+export function toNairaNumber(kobo) {
+  return Number((Number(kobo || 0) / 100).toFixed(2));
+}
+
+export function assertWholeNairaKobo(kobo) {
+  if (typeof kobo !== "number" || isNaN(kobo) || kobo <= 0) {
+    throw new HttpsError("invalid-argument", "Transfer amount must be a positive number.");
+  }
+  if (kobo % 100 !== 0) {
+    throw new HttpsError("invalid-argument", "Transfer amount must be in whole Naira (no fractional kobo).");
+  }
+}
+
+/**
+ * Approved Tiered External Transfer Fee Schedule:
+ * - Amount <= ₦5,000 (500,000 kobo) -> ₦10 (1,000 kobo)
+ * - Amount ₦5,001 - ₦50,000 (500,100 - 5,000,000 kobo) -> ₦25 (2,500 kobo)
+ * - Amount > ₦50,000 (> 5,000,000 kobo) -> ₦50 (5,000 kobo)
+ */
+export function calculateExternalTransferFeeKobo(amountKobo) {
+  if (amountKobo <= 500000) {
+    return 1000;
+  } else if (amountKobo <= 5000000) {
+    return 2500;
+  } else {
+    return 5000;
+  }
+}
+
+/**
+ * Generates uniform PayWaka references without dashes or underscores:
+ * - default: pwk{YYYYMMDD}{10 random digits}
+ * - p2p:     pwkp2p{YYYYMMDD}{10 random digits}
+ * - fee:     pwkfee{YYYYMMDD}{10 random digits}
+ */
+export function generatePaywakaRef(type = "default") {
+  const now = new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(now.getUTCDate()).padStart(2, "0");
+  const dateStr = `${yyyy}${mm}${dd}`;
+  const rand10 = String(crypto.randomInt(1000000000, 9999999999));
+
+  const kind = String(type || "default").toLowerCase();
+  if (kind === "p2p") return `pwkp2p${dateStr}${rand10}`;
+  if (kind === "fee") return `pwkfee${dateStr}${rand10}`;
+  if (kind === "cashback") return `pwkcb${dateStr}${rand10}`;
+  return `pwk${dateStr}${rand10}`;
+}
+
+function stripUndefined(obj) {
+  const clean = {};
+  for (const [key, val] of Object.entries(obj || {})) {
+    if (val !== undefined) {
+      clean[key] = val;
+    }
+  }
+  return clean;
+}
+
+/**
+ * Persists a normalized upper-level transaction record in both `Transactions/{txRef}`
+ * and `transactions/{txRef}` for fast O(1) conflict resolution, dispute lookup, and auditing.
+ */
+export async function writeUpperLevelTransaction(txRef, data = {}, firestoreTx = null) {
+  if (!txRef) return;
+  const participantSet = new Set(
+    [
+      data.userId,
+      data.uid,
+      data.senderUid,
+      data.recipientUid,
+      ...(Array.isArray(data.participantUids) ? data.participantUids : []),
+    ].filter(Boolean),
+  );
+
+  const upperPayload = stripUndefined({
+    ...data,
+    tx_ref: data.tx_ref || txRef,
+    reference: data.reference || txRef,
+    userId: data.userId || data.uid || data.senderUid || data.recipientUid || null,
+    uid: data.uid || data.userId || data.senderUid || data.recipientUid || null,
+    participantUids: Array.from(participantSet),
+    sessionId: data.sessionId || null,
+    isP2P: Boolean(data.isP2P),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const capRef = db.collection("Transactions").doc(txRef);
+  const lowRef = db.collection("transactions").doc(txRef);
+
+  if (firestoreTx) {
+    firestoreTx.set(capRef, upperPayload, { merge: true });
+    firestoreTx.set(lowRef, upperPayload, { merge: true });
+  } else {
+    await Promise.all([
+      capRef.set(upperPayload, { merge: true }),
+      lowRef.set(upperPayload, { merge: true }),
+    ]);
+  }
+}
+
 export const flutterwaveWebhook = onRequest(async (req, res) => {
   const payload = req.body;
-  // if (payload.data.status == "fail") {
-  //   return logger.error(
-  //     "webhook event payment returned with a failed payload state:",
-  //     payload,
-  //   );
-  // }
   logger.info("Received webhook payload:", payload);
+
   const flwHash = FLW_WEBHOOK_HASH.value();
-  const receivedHash = req.headers["verif-hash"];
-  if (!receivedHash || receivedHash !== flwHash) {
-    return res.status(401).send("says it is Unauthorized");
+  const receivedHash = req.headers["verif-hash"] || "";
+  const bufA = Buffer.from(String(flwHash));
+  const bufB = Buffer.from(String(receivedHash));
+  if (bufA.length === 0 || bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+    return res.status(401).send("Unauthorized");
   }
 
   const transactionData = payload.data || {};
-  console.log("transaction occured: ", payload);
-  const rawTxRef = transactionData["tx_ref"] || transactionData["reference"];
-  const tx_ref = String(rawTxRef);
+  const rawIncomingRef = transactionData.tx_ref || transactionData.reference || "";
+  const incomingRef = String(rawIncomingRef).trim();
 
   const isInboundTransfer =
     payload.event === "transfer.completed" &&
-    payload.data?.debit_currency === "PSA" &&
-    payload.data?.narration === "WALLET FUNDING";
+    transactionData.debit_currency === "PSA" &&
+    String(transactionData.narration || "").trim().toUpperCase() === "WALLET FUNDING";
 
   let userID = null;
+  let transferRefMeta = null;
 
-  if (isInboundTransfer) {
-    // Strictly identify the receiving user by their dedicated Virtual Account Number (users.accountNumber)
+  if (isInboundTransfer || payload.event === "charge.completed") {
+    // 1. Inbound Deposit / Charge: Identify receiving user by their dedicated Virtual Account Number
     const acctNum =
       transactionData.account_number ||
       transactionData.account?.account_number ||
@@ -111,15 +228,34 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
         userID = acctQuery.docs[0].id;
       }
     }
-  } else {
-    // For Outbound Transfers (Withdrawals): we control the tx_ref format (PWK-UID-TIMESTAMP)
-    if (tx_ref.includes("-")) {
-      const tx_refParts = tx_ref.split("-");
-      const candidateUid = tx_refParts[1];
-      if (candidateUid) {
-        const checkUser = await db.collection("users").doc(candidateUid).get();
-        if (checkUser.exists) {
-          userID = candidateUid;
+  }
+
+  // 2. Outbound / Reference Lookup (also serves as fallback if account_number lookup misses)
+  if (!userID && incomingRef) {
+    const refSnap = await db.collection("transfer_references").doc(incomingRef).get();
+    if (refSnap.exists) {
+      transferRefMeta = refSnap.data();
+      userID = transferRefMeta.uid || transferRefMeta.senderUid || null;
+    }
+
+    if (!userID) {
+      const upperSnap = await db.collection("Transactions").doc(incomingRef).get();
+      if (upperSnap.exists) {
+        const uData = upperSnap.data() || {};
+        userID = uData.uid || uData.userId || uData.senderUid || null;
+      }
+    }
+
+    // Legacy Fallback for older dashed references (PWK-UID-TIMESTAMP)
+    if (!userID && incomingRef.includes("-")) {
+      const parts = incomingRef.split("-");
+      for (const candidate of [parts[1], parts[2]]) {
+        if (candidate && !["WD", "P2P", "DEP", "FEE", "SWEEP"].includes(candidate)) {
+          const checkUser = await db.collection("users").doc(candidate).get();
+          if (checkUser.exists) {
+            userID = candidate;
+            break;
+          }
         }
       }
     }
@@ -130,16 +266,16 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
     if (payload.event == "bvn.completed") {
       if (!userID) {
         logger.error(
-          `BVN completed webhook received but userID could not be resolved. tx_ref=${tx_ref}`,
+          `BVN completed webhook received but userID could not be resolved. incomingRef=${incomingRef}`,
         );
         return res.status(200).send("User not found");
       }
-      let q = await db
+      const q = await db
         .collection("users")
         .where("nameOnCard", "==", transactionData["bvn_data"]?.["nameOnCard"])
         .limit(1)
         .get();
-      if (!q.empty) res.status(200).send("success");
+      if (!q.empty) return res.status(200).send("success");
       const { data } = payload;
       await db
         .collection("users")
@@ -166,36 +302,45 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
           },
           { merge: true },
         );
+      return res.status(200).send("success");
     }
 
-    // Inbound Payments / Card Charges
+    // Inbound Payments / Card & Virtual Account Charges
     else if (payload.event == "charge.completed") {
       if (!userID) {
         logger.error(
-          `❌ [Webhook Error]: Could not resolve userID for charge.completed with tx_ref=${tx_ref}, account_number=${transactionData?.account_number}`,
+          `❌ [Webhook Error]: Could not resolve userID for charge.completed with incomingRef=${incomingRef}, account_number=${transactionData?.account_number}`,
           transactionData,
         );
         return res.status(200).send("User not found for charge");
       }
 
-      const isSuccessful =
-        String(transactionData.status || "").toLowerCase() === "successful";
+      const rawDepositRef = String(
+        transactionData.reference || transactionData.flw_ref || transactionData.tx_ref || transactionData.id || "",
+      ).trim();
+      const sessionId =
+        rawDepositRef.replace(/^PSA_/i, "").trim() ||
+        String(transactionData.id || Date.now());
+
+      const incomingStatus = String(transactionData.status || "").toUpperCase();
+      const isSuccessful = incomingStatus === "SUCCESSFUL";
       const creditAmount = Number(
         transactionData.amount ||
         transactionData.charged_amount ||
         transactionData.settlement_amount ||
         0,
       );
-      const userRef = db.collection("users").doc(userID);
-      const txDocRef = userRef.collection("Transactions").doc(tx_ref);
 
       const senderName =
-        transactionData.fullname ||
-        transactionData.customer?.name ||
-        transactionData.meta?.sender_name ||
-        "External Bank Transfer";
-      const senderAccountNumber =
-        transactionData.meta?.sender_account_number || "";
+        String(
+          transactionData.meta?.sender_name ||
+          transactionData.customer?.name ||
+          transactionData.fullname ||
+          "External Sender",
+        )
+          .replace(/^PAYOUTSUB\s+/i, "")
+          .trim() || "External Sender";
+      const senderAccountNumber = transactionData.meta?.sender_account_number || "";
       const senderBankCode = transactionData.meta?.sender_bank_code || "";
       const recipientAccountNumber =
         transactionData.account_number ||
@@ -205,258 +350,598 @@ export const flutterwaveWebhook = onRequest(async (req, res) => {
 
       try {
         await db.runTransaction(async (t) => {
-          const userDoc = await t.get(userRef);
+          const userRef = db.collection("users").doc(userID);
+          const sessionLockRef = db.collection("deposit_sessions").doc(sessionId);
+          const [userDoc, sessionSnap] = await Promise.all([
+            t.get(userRef),
+            t.get(sessionLockRef),
+          ]);
+
           if (!userDoc.exists) {
             throw new Error(`User ${userID} does not exist`);
           }
+
+          const paywakaRef =
+            sessionSnap.exists && sessionSnap.data()?.tx_ref
+              ? sessionSnap.data().tx_ref
+              : generatePaywakaRef("default");
+
+          const txDocRef = userRef.collection("Transactions").doc(paywakaRef);
           const existingTx = await t.get(txDocRef);
-          if (existingTx.exists && existingTx.data()?.status === "successful") {
+
+          const alreadyDone =
+            (sessionSnap.exists &&
+              ["SUCCESSFUL", "successful"].includes(sessionSnap.data()?.status)) ||
+            (existingTx.exists &&
+              ["SUCCESSFUL", "successful", "completed"].includes(
+                String(existingTx.data()?.status || ""),
+              ));
+
+          if (alreadyDone) {
             logger.info(
-              `⚡ [Idempotent Webhook]: Transaction ${tx_ref} was already processed for user ${userID}`,
+              `⚡ [Idempotent Deposit Webhook]: sessionId=${sessionId} (tx_ref=${paywakaRef}) already processed for user ${userID}`,
             );
             return;
           }
 
+          const uData = userDoc.data() || {};
+          const recipientName =
+            `${uData.firstName || ""} ${uData.lastName || ""}`.trim() ||
+            uData.userName ||
+            "PayWaka User";
+
           if (isSuccessful && creditAmount > 0) {
             t.update(userRef, {
               walletBalance: admin.firestore.FieldValue.increment(creditAmount),
+              walletBalanceKobo: admin.firestore.FieldValue.increment(toKobo(creditAmount)),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             logger.info(
-              `💰 [Wallet Credited]: Added ₦${creditAmount} to user ${userID}'s wallet balance via inbound charge!`,
+              `💰 [Wallet Credited]: Added ₦${creditAmount} to user ${userID}'s wallet via charge.completed! (ref=${paywakaRef}, sessionId=${sessionId})`,
             );
           }
 
+          const isoNow =
+            transactionData.created_at || transactionData.createdAt || new Date().toISOString();
+          const createdTimestamp =
+            transactionData.created_at || transactionData.createdAt
+              ? admin.firestore.Timestamp.fromDate(
+                new Date(transactionData.created_at || transactionData.createdAt),
+              )
+              : admin.firestore.FieldValue.serverTimestamp();
+
+          const depositTxPayload = stripUndefined({
+            ...transactionData,
+            tx_ref: paywakaRef,
+            reference: paywakaRef,
+            sessionId,
+            flw_ref: rawDepositRef,
+            flwTransferId: transactionData.id || null,
+            userId: userID,
+            uid: userID,
+            recipientUid: userID,
+            recipientName,
+            amount: creditAmount,
+            amountKobo: toKobo(creditAmount),
+            fee: Number(transactionData.fee || 0),
+            currency: transactionData.currency || "NGN",
+            type: "inflow",
+            category: "Wallet Funding",
+            transactionType: "deposit",
+            isP2P: false,
+            title: `Transfer from ${senderName}`,
+            senderName,
+            senderAccountNumber,
+            senderBankCode,
+            recipientAccountNumber,
+            recipientBankName,
+            narration: transactionData.narration || `Transfer from ${senderName}`,
+            status: isSuccessful ? "SUCCESSFUL" : incomingStatus || "FAILED",
+            created_at: isoNow,
+            createdAt: createdTimestamp,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
           t.set(
-            txDocRef,
+            sessionLockRef,
             {
-              ...transactionData,
-              tx_ref,
-              flw_ref:
-                transactionData.flw_ref || transactionData.reference || "",
+              sessionId,
+              rawFlwRef: rawDepositRef,
+              tx_ref: paywakaRef,
+              uid: userID,
               amount: creditAmount,
-              fee: Number(transactionData.fee || 0),
-              currency: transactionData.currency || "NGN",
-              type: "credit",
-              category: "Wallet Funding",
               senderName,
-              senderAccountNumber,
-              senderBankCode,
-              recipientAccountNumber,
-              recipientBankName,
-              narration:
-                transactionData.narration || `Transfer from ${senderName}`,
-              status: isSuccessful
-                ? "successful"
-                : transactionData.status || "failed",
-              createdAt:
-                transactionData.created_at || transactionData.createdAt
-                  ? admin.firestore.Timestamp.fromDate(
-                    new Date(
-                      transactionData.created_at || transactionData.createdAt,
-                    ),
-                  )
-                  : admin.firestore.FieldValue.serverTimestamp(),
+              status: isSuccessful ? "SUCCESSFUL" : incomingStatus || "FAILED",
+              createdAt: sessionSnap.exists
+                ? sessionSnap.data().createdAt
+                : admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
           );
+
+          t.set(
+            db.collection("transfer_references").doc(paywakaRef),
+            {
+              reference: paywakaRef,
+              tx_ref: paywakaRef,
+              sessionId,
+              rawFlwRef: rawDepositRef,
+              type: "DEPOSIT",
+              uid: userID,
+              amount: creditAmount,
+              status: isSuccessful ? "SUCCESSFUL" : incomingStatus || "FAILED",
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+
+          t.set(txDocRef, depositTxPayload, { merge: true });
+          await writeUpperLevelTransaction(paywakaRef, depositTxPayload, t);
         });
 
         logger.info(
-          `✅ [charge.completed processed successfully]: tx_ref=${tx_ref} for user ${userID}`,
+          `✅ [charge.completed processed]: sessionId=${sessionId} for user ${userID}`,
         );
         return res.status(200).send("success");
       } catch (err) {
-        logger.error(`❌ [charge.completed failed to process]:`, err);
+        logger.error("❌ [charge.completed failed to process]:", err);
         return res.status(200).send("success");
       }
     }
 
-    // Transfers (Inbound PSA Funding & Outbound Withdrawals)
+    // Transfers (Inbound PSA Funding, Outbound Withdrawals & P2P Guard)
     else if (payload.event == "transfer.completed") {
       if (!userID) {
         logger.error(
-          `❌ [Webhook Error]: Could not resolve userID for transfer.completed with tx_ref=${tx_ref}, account_number=${transactionData?.account_number}`,
+          `❌ [Webhook Error]: Could not resolve userID for transfer.completed with incomingRef=${incomingRef}, account_number=${transactionData?.account_number}`,
           transactionData,
         );
         return res.status(200).send("User not found for transfer");
       }
 
-      const isCredit =
-        payload.event === "transfer.completed" &&
-        transactionData.debit_currency === "PSA" &&
-        transactionData.narration === "WALLET FUNDING";
-      console.log(`${isCredit ? "💰 credit" : "💸 debit"} :` + transactionData);
+      // Guard 1: Protect P2P, Cashback-to-Wallet, and Sweep ledger records from being overwritten by Flutterwave's generic PSA webhook
+      const isP2PWebhook =
+        incomingRef.toLowerCase().startsWith("pwkp2p") ||
+        incomingRef.startsWith("PWK-P2P-") ||
+        transferRefMeta?.type === "P2P";
 
-      //for credits the tx_ref field is generated upon receiving the webhook
-      const tx_ref = isCredit
-        ? `PWK-${userID}-${Date.now()}`
-        : transactionData?.reference;
+      const isInternalCashbackOrSweepWebhook =
+        incomingRef.toLowerCase().startsWith("pwkcb") ||
+        incomingRef.toLowerCase().startsWith("pwksweep") ||
+        transferRefMeta?.type === "CASHBACK_TO_WALLET" ||
+        transferRefMeta?.type === "MERCHANT_SWEEP";
 
-      const txDocRef = db
-        .collection("users")
-        .doc(userID)
-        .collection("Transactions")
-        .doc(tx_ref);
-
-      const existingDoc = await txDocRef.get();
-      const incomingStatus = transactionData.status; // NEW | PENDING | INITIATED | SUCCESSFUL | FAILED | CANCELLED
-      const timedOutAndStillPending =
-        existingDoc.exists &&
-        existingDoc.data()?.failureReason === "Request timed out" &&
-        incomingStatus === "PENDING";
-
-      // 1. Idempotency Guard: skip if this exact status was already recorded
-      if (
-        (existingDoc.exists && existingDoc.data().status === incomingStatus) ||
-        timedOutAndStillPending
-      ) {
+      if (isInternalCashbackOrSweepWebhook) {
         logger.info(
-          "Duplicate webhook ignored, status unchanged:",
-          tx_ref,
-          incomingStatus,
+          `🛡️ [Internal Transfer Webhook Guard]: Preserving ledger for ${incomingRef} (${transferRefMeta?.type || "INTERNAL"}).`,
         );
         return res.status(200).send("success");
       }
 
+      if (isP2PWebhook) {
+        logger.info(
+          `🛡️ [P2P Webhook Guard]: Preserving clean PayWaka P2P sender/recipient records for ${incomingRef}.`,
+        );
+        const gatewayStatus = String(transactionData.status || "").toUpperCase();
+        await Promise.all([
+          db
+            .collection("transfer_references")
+            .doc(incomingRef)
+            .set(
+              {
+                flwWebhookId: transactionData.id || null,
+                flwWebhookStatus: gatewayStatus || null,
+                webhookReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            ),
+          writeUpperLevelTransaction(incomingRef, {
+            flwTransferId: transactionData.id || null,
+            flwWebhookStatus: gatewayStatus || null,
+            webhookReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }),
+        ]).catch((e) => logger.warn("P2P webhook metadata update skipped:", e.message));
+
+        return res.status(200).send("success");
+      }
+
+      const isCredit = isInboundTransfer;
+      const incomingStatus = String(transactionData.status || "").toUpperCase();
+      const numAmount = Number(transactionData.amount || 0);
       const isTerminalSuccess = incomingStatus === "SUCCESSFUL";
       const isTerminalFailure =
         incomingStatus === "FAILED" || incomingStatus === "CANCELLED";
-      const wasAlreadyTerminal =
-        existingDoc.exists &&
-        ["SUCCESSFUL", "FAILED", "CANCELLED"].includes(
-          existingDoc.data().status,
-        );
 
-      const numAmount = Number(transactionData.amount || 0);
-      const senderName =
-        transactionData.fullname ||
-        transactionData.meta?.sender_name ||
-        (isCredit ? "External Bank Transfer" : "PayWaka User");
-      const senderAccountNumber =
-        transactionData.meta?.sender_account_number || "";
-      const senderBankCode = transactionData.meta?.sender_bank_code || "";
-      const recipientAccountNumber = transactionData.account_number || "";
-      const recipientBankName =
-        transactionData.bank_name || (isCredit ? "Wema Bank PLC" : "Bank");
+      if (isCredit) {
+        // =================================================================
+        // INBOUND WALLET DEPOSIT: Strip "PSA_" into sessionId + Session Lock
+        // =================================================================
+        const rawDepositRef = String(
+          transactionData.reference ||
+          transactionData.flw_ref ||
+          transactionData.id ||
+          `${transactionData.account_number || "psa"}-${transactionData.created_at || ""}`,
+        ).trim();
+        const sessionId = rawDepositRef.replace(/^PSA_/i, "").trim();
 
-      try {
-        await db.runTransaction(async (t) => {
-          const userRef = db.collection("users").doc(userID);
-          const userSnap = await t.get(userRef);
+        const senderName =
+          String(
+            transactionData.meta?.sender_name ||
+            transactionData.fullname ||
+            "External Sender",
+          )
+            .replace(/^PAYOUTSUB\s+/i, "")
+            .trim() || "External Sender";
+        const senderAccountNumber = transactionData.meta?.sender_account_number || "";
+        const senderBankCode = transactionData.meta?.sender_bank_code || "";
+        const recipientAccountNumber = transactionData.account_number || "";
+        const recipientBankName = transactionData.bank_name || "Wema Bank PLC";
 
-          if (!userSnap.exists) {
-            throw new Error(`User ${userID} not found`);
-          }
+        try {
+          await db.runTransaction(async (t) => {
+            const userRef = db.collection("users").doc(userID);
+            const sessionLockRef = db.collection("deposit_sessions").doc(sessionId);
+            const [userSnap, sessionSnap] = await Promise.all([
+              t.get(userRef),
+              t.get(sessionLockRef),
+            ]);
 
-          // 2. Transition Guard: never touch balance if this tx already reached a terminal state before
-          if (!wasAlreadyTerminal) {
-            if (isTerminalSuccess) {
-              // Inbound transfer succeeded -> credit user's wallet
-              if (isCredit && numAmount > 0) {
-                t.update(userRef, {
-                  walletBalance:
-                    admin.firestore.FieldValue.increment(numAmount),
-                  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-                logger.info(
-                  `💰 [PSA Inbound Transfer]: Credited ₦${numAmount} to user ${userID}'s wallet!`,
-                );
-              }
-            } else if (isTerminalFailure && !isCredit && numAmount > 0) {
-              // Withdrawal failed/cancelled — refund the amount that was deducted upfront
+            if (!userSnap.exists) {
+              throw new Error(`User ${userID} not found`);
+            }
+
+            const paywakaRef =
+              sessionSnap.exists && sessionSnap.data()?.tx_ref
+                ? sessionSnap.data().tx_ref
+                : generatePaywakaRef("default");
+
+            const txDocRef = userRef.collection("Transactions").doc(paywakaRef);
+            const existingDoc = await t.get(txDocRef);
+
+            const wasAlreadyTerminal =
+              (sessionSnap.exists &&
+                ["SUCCESSFUL", "FAILED", "CANCELLED"].includes(
+                  String(sessionSnap.data()?.status || "").toUpperCase(),
+                )) ||
+              (existingDoc.exists &&
+                ["SUCCESSFUL", "FAILED", "CANCELLED"].includes(
+                  String(existingDoc.data()?.status || "").toUpperCase(),
+                ));
+
+            if (wasAlreadyTerminal) {
+              logger.info(
+                `⚡ [Idempotent PSA Deposit]: Duplicate webhook ignored for sessionId=${sessionId} (tx_ref=${paywakaRef})`,
+              );
+              return;
+            }
+
+            if (isTerminalSuccess && numAmount > 0) {
               t.update(userRef, {
                 walletBalance: admin.firestore.FieldValue.increment(numAmount),
+                walletBalanceKobo: admin.firestore.FieldValue.increment(toKobo(numAmount)),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
               });
               logger.info(
-                `🔄 [Withdrawal Refund]: Refunded ₦${numAmount} to user ${userID}'s wallet!`,
+                `💰 [PSA Inbound Transfer]: Credited ₦${numAmount} to user ${userID} (ref=${paywakaRef}, sessionId=${sessionId})`,
               );
             }
-          }
 
-          t.set(
-            txDocRef,
-            {
+            const uData = userSnap.data() || {};
+            const recipientName =
+              `${uData.firstName || ""} ${uData.lastName || ""}`.trim() ||
+              uData.userName ||
+              "PayWaka User";
+
+            const depositTxData = stripUndefined({
               ...transactionData,
-              tx_ref,
-              flw_ref:
-                transactionData.reference || transactionData.flw_ref || "",
+              tx_ref: paywakaRef,
+              reference: paywakaRef,
+              sessionId,
+              flw_ref: rawDepositRef,
+              flwTransferId: transactionData.id || null,
+              userId: userID,
+              uid: userID,
+              recipientUid: userID,
+              recipientName,
               amount: numAmount,
+              amountKobo: toKobo(numAmount),
               fee: Number(transactionData.fee || 0),
+              feeKobo: toKobo(Number(transactionData.fee || 0)),
               currency: transactionData.currency || "NGN",
-              type: isCredit ? "inflow" : "outflow",
-              category: isCredit ? "Wallet Funding" : "Withdrawal",
+              type: "inflow",
+              category: "Wallet Funding",
+              transactionType: "deposit",
+              isP2P: false,
+              title: `Transfer from ${senderName}`,
               senderName,
               senderAccountNumber,
               senderBankCode,
               recipientAccountNumber,
               recipientBankName,
+              narration: transactionData.narration || "WALLET FUNDING",
+              status: incomingStatus || "SUCCESSFUL",
+              created_at:
+                transactionData.created_at ||
+                transactionData.createdAt ||
+                new Date().toISOString(),
+              createdAt:
+                existingDoc.exists && existingDoc.data()?.createdAt
+                  ? existingDoc.data().createdAt
+                  : transactionData.created_at || transactionData.createdAt
+                    ? admin.firestore.Timestamp.fromDate(
+                      new Date(transactionData.created_at || transactionData.createdAt),
+                    )
+                    : admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            t.set(
+              sessionLockRef,
+              {
+                sessionId,
+                rawFlwRef: rawDepositRef,
+                tx_ref: paywakaRef,
+                uid: userID,
+                amount: numAmount,
+                senderName,
+                status: incomingStatus || "SUCCESSFUL",
+                createdAt: sessionSnap.exists
+                  ? sessionSnap.data().createdAt
+                  : admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+
+            t.set(
+              db.collection("transfer_references").doc(paywakaRef),
+              {
+                reference: paywakaRef,
+                tx_ref: paywakaRef,
+                sessionId,
+                rawFlwRef: rawDepositRef,
+                type: "DEPOSIT",
+                uid: userID,
+                amount: numAmount,
+                status: incomingStatus || "SUCCESSFUL",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+
+            t.set(txDocRef, depositTxData, { merge: true });
+            await writeUpperLevelTransaction(paywakaRef, depositTxData, t);
+          });
+
+          logger.info(
+            `✅ PSA deposit sessionId=${sessionId} processed cleanly for user ${userID}`,
+          );
+          return res.status(200).send("success");
+        } catch (err) {
+          logger.error("Failed to process inbound deposit transfer.completed:", err);
+          return res.status(200).send("success");
+        }
+      } else {
+        // =================================================================
+        // OUTBOUND WITHDRAWAL COMPLETION / FAILURE RECONCILIATION
+        // =================================================================
+        const resolvedTxRef = incomingRef || String(transactionData.id || "");
+        const txDocRef = db
+          .collection("users")
+          .doc(userID)
+          .collection("Transactions")
+          .doc(resolvedTxRef);
+
+        try {
+          await db.runTransaction(async (t) => {
+            const userRef = db.collection("users").doc(userID);
+            const [userSnap, existingDoc] = await Promise.all([
+              t.get(userRef),
+              t.get(txDocRef),
+            ]);
+
+            if (!userSnap.exists) {
+              throw new Error(`User ${userID} not found`);
+            }
+
+            const existingData = existingDoc.exists ? existingDoc.data() || {} : {};
+            const currentStatusUpper = String(existingData.status || "").toUpperCase();
+
+            if (
+              existingDoc.exists &&
+              (currentStatusUpper === incomingStatus ||
+                (existingData.failureReason === "Request timed out" &&
+                  incomingStatus === "PENDING"))
+            ) {
+              logger.info(
+                `Duplicate withdrawal webhook ignored, status unchanged: ${resolvedTxRef} (${incomingStatus})`,
+              );
+              return;
+            }
+
+            const wasAlreadyTerminal = [
+              "SUCCESSFUL",
+              "FAILED",
+              "CANCELLED",
+            ].includes(currentStatusUpper);
+
+            const resolvedFee =
+              existingData.fee !== undefined
+                ? Number(existingData.fee)
+                : Number(
+                  calculateExternalTransferFeeKobo(toKobo(numAmount)) / 100,
+                );
+
+            if (!wasAlreadyTerminal && isTerminalFailure && numAmount > 0) {
+              const totalRefundNaira = numAmount + resolvedFee;
+              const totalRefundKobo = toKobo(totalRefundNaira);
+
+              t.update(userRef, {
+                walletBalance: admin.firestore.FieldValue.increment(totalRefundNaira),
+                walletBalanceKobo: admin.firestore.FieldValue.increment(totalRefundKobo),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              logger.info(
+                `🔄 [Withdrawal Refund]: Refunded ₦${totalRefundNaira} (Principal ₦${numAmount} + Fee ₦${resolvedFee}) to user ${userID}'s wallet!`,
+              );
+
+              if (existingData.feeRef) {
+                t.set(
+                  userRef.collection("Transactions").doc(existingData.feeRef),
+                  {
+                    status: "FAILED",
+                    failureReason: "Parent transfer failed; fee refunded",
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  },
+                  { merge: true },
+                );
+                await writeUpperLevelTransaction(
+                  existingData.feeRef,
+                  {
+                    uid: userID,
+                    userId: userID,
+                    status: "FAILED",
+                    failureReason: "Parent transfer failed; fee refunded",
+                  },
+                  t,
+                );
+              }
+            }
+
+            if (isTerminalSuccess && existingData.feeRef) {
+              t.set(
+                userRef.collection("Transactions").doc(existingData.feeRef),
+                {
+                  status: "SUCCESSFUL",
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+              await writeUpperLevelTransaction(
+                existingData.feeRef,
+                {
+                  uid: userID,
+                  userId: userID,
+                  status: "SUCCESSFUL",
+                },
+                t,
+              );
+            }
+
+            const cleanFullname = String(transactionData.fullname || "")
+              .replace(/^PAYOUTSUB\s+/i, "")
+              .trim();
+            const recipientName =
+              existingData.recipientName ||
+              existingData.accountHolder ||
+              cleanFullname ||
+              transactionData.bank_name ||
+              "Beneficiary";
+            const recipientBankName =
+              existingData.recipientBankName ||
+              existingData.bankName ||
+              transactionData.bank_name ||
+              "Bank";
+            const recipientAccountNumber =
+              existingData.recipientAccountNumber ||
+              existingData.account_number ||
+              transactionData.account_number ||
+              "";
+
+            const withdrawalUpdateData = stripUndefined({
+              ...transactionData,
+              tx_ref: resolvedTxRef,
+              reference: resolvedTxRef,
+              flw_ref: transactionData.reference || transactionData.flw_ref || resolvedTxRef,
+              flwTransferId: transactionData.id || null,
+              userId: userID,
+              uid: userID,
+              senderUid: existingData.senderUid || userID,
+              senderName: existingData.senderName || "PayWaka User",
+              amount: existingData.amount ?? numAmount,
+              fee: resolvedFee,
+              currency: transactionData.currency || "NGN",
+              type: "outflow",
+              category: "Withdrawal",
+              transactionType: "withdrawal",
+              isP2P: false,
+              title: existingData.title || `Transfer to ${recipientName}`,
+              recipientName,
+              accountHolder: existingData.accountHolder || recipientName,
+              bankName: recipientBankName,
+              recipientBankName,
+              recipientAccountNumber,
               narration:
+                existingData.narration ||
                 transactionData.narration ||
-                (isCredit
-                  ? `Transfer from ${senderName}`
-                  : `Withdrawal to ${recipientBankName}`),
+                `Transfer to ${recipientName} | ${resolvedTxRef}`,
               status: incomingStatus,
               failureReason: isTerminalFailure
-                ? (transactionData.provider_response ?? null)
-                : existingDoc.exists
-                  ? (existingDoc.data().failureReason ?? null)
-                  : null,
-              createdAt: existingDoc.exists
-                ? existingDoc.data().createdAt
-                : transactionData.created_at || transactionData.createdAt
-                  ? admin.firestore.Timestamp.fromDate(
-                    new Date(
-                      transactionData.created_at || transactionData.createdAt,
-                    ),
-                  )
-                  : admin.firestore.FieldValue.serverTimestamp(),
+                ? (transactionData.complete_message || transactionData.provider_response || "Transfer declined")
+                : existingData.failureReason ?? null,
+              createdAt:
+                existingDoc.exists && existingData.createdAt
+                  ? existingData.createdAt
+                  : transactionData.created_at || transactionData.createdAt
+                    ? admin.firestore.Timestamp.fromDate(
+                      new Date(transactionData.created_at || transactionData.createdAt),
+                    )
+                    : admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
+            });
+
+            t.set(txDocRef, withdrawalUpdateData, { merge: true });
+            t.set(
+              db.collection("transfer_references").doc(resolvedTxRef),
+              {
+                status: incomingStatus,
+                flwData: transactionData,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            await writeUpperLevelTransaction(resolvedTxRef, withdrawalUpdateData, t);
+          });
+
+          logger.info(
+            `✅ Withdrawal ${resolvedTxRef} updated to status ${incomingStatus} for user ${userID}`,
           );
-        });
-
-        logger.info(
-          `transaction ${tx_ref} updated to status ${incomingStatus} for user ${userID}`,
-        );
-        return res.status(200).send("success");
-      } catch (err) {
-        logger.error("Failed to process transfer.completed:", err);
-        return res.status(200).send("success");
+          return res.status(200).send("success");
+        } catch (err) {
+          logger.error("Failed to process outbound withdrawal transfer.completed:", err);
+          return res.status(200).send("success");
+        }
       }
-    } // end of payments
+    }
 
-    //bills payment
+    // Bills payment
     else if (payload.event == "singlebillpayment.status") {
+      const billRef = incomingRef;
+      const billData = stripUndefined({
+        narration: "bill",
+        ...transactionData,
+        tx_ref: billRef,
+        reference: billRef,
+        userId: userID,
+        uid: userID,
+        createdAt: transactionData.createdAt
+          ? admin.firestore.Timestamp.fromDate(new Date(transactionData.createdAt))
+          : admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
       await db
         .collection("users")
         .doc(userID)
         .collection("Transactions")
-        .doc(tx_ref)
-        .set(
-          {
-            narration: "bill",
-            ...transactionData,
-            createdAt: admin.firestore.Timestamp.fromDate(
-              new Date(transactionData.createdAt),
-            ),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
+        .doc(billRef)
+        .set(billData, { merge: true });
+      await writeUpperLevelTransaction(billRef, billData);
       logger.info("bills payment completed:", transactionData);
-    } //end of bills payment
+    }
   }
 
-  res.status(200).send("success");
-  logger.info(
-    "Complete yeah, first cloud functions written yeah you all😊👌",
-    tx_ref,
-  );
-  return console.log("console data you all", tx_ref);
+  return res.status(200).send("success");
 });
 
 // const encryption = (BVN, key) => {
@@ -538,11 +1023,10 @@ export const createWallet = async (
   }
 
   const payload = {
-    account_name: `${firstName} ${lastName}`,
-    email,
-    country: country,
+    account_name: `${firstName} ${lastName}`.trim(),
+    email: email.trim().toLowerCase(),
+    country: country || "NG",
     mobilenumber: phonenumber,
-    bank_code: "035",
   };
   console.log("hey wallet dets", payload);
   // Retry configuration
@@ -674,7 +1158,12 @@ export const createWallet = async (
         await db.collection("users").doc(uid).update({
           accountReference: wallet?.data?.account_reference,
           barter_id: wallet?.data?.barter_id,
+          flw_psa_id: wallet?.data?.id || "",
+          psa_nuban: wallet?.data?.nuban || "",
+          psaStatus: "ACTIVE",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        await db.collection("failedWallets").doc(uid).delete().catch(() => { });
 
         return {
           status: "success",
@@ -817,6 +1306,28 @@ const createVirtualAccount = async (accountReference, uid) => {
   if (!accountReference)
     return logger.error("Missing required parameters for virtual account");
 
+  // Fast path: Check if user in Firestore already has an accountNumber and accountReference
+  try {
+    const userSnap = await db.collection("users").doc(uid).get();
+    if (userSnap.exists) {
+      const uData = userSnap.data();
+      if (uData.accountNumber && uData.accountReference) {
+        logger.info(`✅ User ${uid} already has active virtual account ${uData.accountNumber}`);
+        await db.collection("failedWallets").doc(uid).delete().catch(() => { });
+        return {
+          status: "success",
+          message: "Virtual account already active",
+          accountReference: uData.accountReference,
+          accountNumber: uData.accountNumber,
+          bankName: uData.bankName || "Wema Bank PLC",
+          bankCode: uData.bankCode || "035",
+        };
+      }
+    }
+  } catch (chkErr) {
+    logger.warn("Pre-check error in createVirtualAccount:", chkErr);
+  }
+
   // Retry configuration
   const MAX_RETRIES = 3;
   const BASE_DELAY = 1000; // 1 second
@@ -889,6 +1400,50 @@ const createVirtualAccount = async (accountReference, uid) => {
           errorText,
         );
 
+        // Fallback for PSA created with bank_code 035:
+        // Flutterwave will reject GET static-account if PSA was already assigned bank_code 035,
+        // because the PSA itself ALREADY possesses its own dedicated NUBAN!
+        if (errorText.includes("PSA bank code 035 is not available") || errorText.includes("bank code 035") || errorText.includes("035")) {
+          logger.info(`ℹ️ PSA ${accountReference} is bound to bank_code 035. Fetching dedicated PSA details...`);
+          try {
+            const psaRes = await fetch(
+              `https://api.flutterwave.com/v3/payout-subaccounts/${accountReference}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+                  Accept: "application/json",
+                },
+              }
+            );
+            const psaJson = await psaRes.json();
+            if (psaJson.status === "success" && psaJson.data?.nuban) {
+              const psaData = psaJson.data;
+              logger.info(`🎉 Successfully retrieved dedicated PSA NUBAN ${psaData.nuban} for user ${uid}!`);
+              await db.collection("users").doc(uid).update({
+                accountNumber: psaData.nuban,
+                bankName: psaData.bank_name || "Wema Bank PLC",
+                bankCode: psaData.bank_code || "035",
+                accountReference: psaData.account_reference,
+                barter_id: psaData.barter_id,
+                flw_psa_id: psaData.id || "",
+                psaStatus: psaData.status || "ACTIVE",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              await db.collection("failedWallets").doc(uid).delete().catch(() => { });
+              return {
+                status: "success",
+                message: "Virtual account resolved from dedicated PSA NUBAN",
+                accountReference: psaData.account_reference,
+                accountNumber: psaData.nuban,
+                bankName: psaData.bank_name || "Wema Bank PLC",
+                bankCode: psaData.bank_code || "035",
+              };
+            }
+          } catch (fetchErr) {
+            logger.error("Failed to query PSA details on 035 fallback:", fetchErr);
+          }
+        }
+
         // If it's a retryable error and we have retries left
         if (isRetryableError(null, res) && attempt < MAX_RETRIES) {
           const delay = calculateDelay(attempt);
@@ -912,15 +1467,19 @@ const createVirtualAccount = async (accountReference, uid) => {
 
         // Update database
         await db.collection("users").doc(uid).update({
-          accountNumber: wallet?.data?.static_account,
-          bankName: wallet?.data?.bank_name,
-          bankCode: wallet?.data?.bank_code,
+          accountNumber: wallet?.data?.static_account || wallet?.data?.nuban,
+          bankName: wallet?.data?.bank_name || "Wema Bank PLC",
+          bankCode: wallet?.data?.bank_code || "035",
+          accountReference: wallet?.data?.account_reference || accountReference,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        await db.collection("failedWallets").doc(uid).delete().catch(() => { });
 
         return {
           status: "success",
           message: "Virtual created successfully",
           accountReference: wallet?.data?.account_reference,
+          accountNumber: wallet?.data?.static_account || wallet?.data?.nuban,
           attempt: attempt + 1, // Include attempt info for monitoring
         };
       } else {
@@ -930,7 +1489,48 @@ const createVirtualAccount = async (accountReference, uid) => {
           errorMsg,
         );
 
-        // Check if this is a retryable API error (you may want to customize this based on Flutterwave's error codes)
+        if (errorMsg.includes("PSA bank code 035 is not available") || errorMsg.includes("bank code 035") || errorMsg.includes("035")) {
+          logger.info(`ℹ️ PSA ${accountReference} is bound to bank_code 035. Fetching dedicated PSA details...`);
+          try {
+            const psaRes = await fetch(
+              `https://api.flutterwave.com/v3/payout-subaccounts/${accountReference}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+                  Accept: "application/json",
+                },
+              }
+            );
+            const psaJson = await psaRes.json();
+            if (psaJson.status === "success" && psaJson.data?.nuban) {
+              const psaData = psaJson.data;
+              logger.info(`🎉 Successfully retrieved dedicated PSA NUBAN ${psaData.nuban} for user ${uid}!`);
+              await db.collection("users").doc(uid).update({
+                accountNumber: psaData.nuban,
+                bankName: psaData.bank_name || "Wema Bank PLC",
+                bankCode: psaData.bank_code || "035",
+                accountReference: psaData.account_reference,
+                barter_id: psaData.barter_id,
+                flw_psa_id: psaData.id || "",
+                psaStatus: psaData.status || "ACTIVE",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              await db.collection("failedWallets").doc(uid).delete().catch(() => { });
+              return {
+                status: "success",
+                message: "Virtual account resolved from dedicated PSA NUBAN",
+                accountReference: psaData.account_reference,
+                accountNumber: psaData.nuban,
+                bankName: psaData.bank_name || "Wema Bank PLC",
+                bankCode: psaData.bank_code || "035",
+              };
+            }
+          } catch (fetchErr) {
+            logger.error("Failed to query PSA details on 035 fallback:", fetchErr);
+          }
+        }
+
+        // Check if this is a retryable API error
         if (
           attempt < MAX_RETRIES &&
           (errorMsg.includes("timeout") ||
@@ -1133,26 +1733,26 @@ export const getWallets = async (email) => {
 
   const timeout = setTimeout(() => {
     controller.abort();
-  }, 5000); // 5 seconds timeout
+  }, 15000); // 15 seconds timeout
 
   try {
-    const res = await fetch(
-      "https://api.flutterwave.com/v3/payout-subaccounts",
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal, // Attached the abort signal
+    const url = email
+      ? `https://api.flutterwave.com/v3/payout-subaccounts?email=${encodeURIComponent(email.trim().toLowerCase())}`
+      : "https://api.flutterwave.com/v3/payout-subaccounts";
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+        "Content-Type": "application/json",
       },
-    );
+      signal: controller.signal, // Attached the abort signal
+    });
     clearTimeout(timeout); // Clear the timeout if the request completes in time
     const info = await res.json();
-    if (info.status === "success") {
+    if (info.status === "success" && Array.isArray(info.data)) {
       const data = info.data;
-      const userWallet = await data.find((usr) => usr.email === email);
+      const userWallet = data.find((usr) => usr.email?.toLowerCase() === email?.toLowerCase()) || data[0];
 
       if (!userWallet)
         return {
@@ -1165,6 +1765,9 @@ export const getWallets = async (email) => {
         accountReference: userWallet?.account_reference,
         barter_id: userWallet?.barter_id,
         accountNumber: userWallet?.nuban,
+        bankName: userWallet?.bank_name || "Wema Bank PLC",
+        bankCode: userWallet?.bank_code || "035",
+        flw_psa_id: userWallet?.id,
       };
     } else {
       return { status: "error", message: "API error, Failed to fetch Wallets" };
@@ -1185,7 +1788,7 @@ export const getWallets = async (email) => {
 //Wallet Balances
 
 export const fetchBalance = onCall(async (req, context) => {
-  const uid = req.auth.uid;
+  const uid = req.auth?.uid;
   const payload = req.data;
   if (!uid || !payload)
     return { status: "error", message: "Unauthorized request" };
@@ -1198,7 +1801,7 @@ export const fetchBalance = onCall(async (req, context) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => {
     controller.abort();
-  }, 5000); // 5 seconds timeout
+  }, 10000); // 10 seconds timeout
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -1216,15 +1819,19 @@ export const fetchBalance = onCall(async (req, context) => {
       response?.message == "Subaccount balance fetched"
     ) {
       logger.info("wallet fetched", response);
-      //insert to DB"
+      const balNaira = Number(response?.data?.available_balance || 0);
+      const balKobo = toKobo(balNaira);
+      // Synchronize both Naira and Kobo in DB
       await db.collection("users").doc(uid).update({
-        walletBalance: response?.data?.available_balance,
+        walletBalance: balNaira,
+        walletBalanceKobo: balKobo,
         lastBalanceCheck: admin.firestore.FieldValue.serverTimestamp(),
       });
       // return info to the clientside
       return {
         status: "success",
-        walletBalance: response?.data?.available_balance,
+        walletBalance: balNaira,
+        walletBalanceKobo: balKobo,
       };
     } else {
       logger.error(`unsuccessful wallet fetch because ${response.message}`);
@@ -1349,190 +1956,1078 @@ export const fetchBalance = onCall(async (req, context) => {
 //   }
 // });
 
-//new
-export const withdraw = onCall(async (req, context) => {
-  const uid = req.auth?.uid;
-  const payload = req.data;
-  if (!uid || !payload)
-    return { status: "error", message: "Unauthorized request" };
-
-  const { account_bank, account_number, amount, debit_subaccount } = payload;
-  if (!account_bank || !account_number || !amount || !debit_subaccount)
-    return { status: "error", message: "Missing some payloads" };
-
-  const numericAmount = Number(amount);
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0)
-    return { status: "error", message: "Invalid withdrawal amount" };
-
-  logger.info(`withdrawing to user's account ${account_number}`);
-
-  const reference = `PayWaka-${uid}-${Date.now()}`;
-  const walletRef = db.collection("users").doc(uid);
-
-  // Atomically check balance AND debit in one transaction
-  try {
-    await db.runTransaction(async (transaction) => {
-      const walletDoc = await transaction.get(walletRef);
-      if (!walletDoc.exists) {
-        throw new Error("USER_NOT_FOUND");
-      }
-
-      const currentBalance = walletDoc.data().walletBalance ?? 0;
-      if (currentBalance < numericAmount) {
-        throw new Error("INSUFFICIENT_BALANCE");
-      }
-
-      transaction.update(walletRef, {
-        walletBalance: admin.firestore.FieldValue.increment(-numericAmount),
-      });
-    });
-  } catch (error) {
-    if (error.message === "INSUFFICIENT_BALANCE") {
-      return {
-        status: "error",
-        message: "Insufficient wallet balance for withdrawal",
-      };
+// =========================================================================
+// WITHDRAWAL ENGINE (EXTERNAL BANK TRANSFERS WITH TIERED PROCESSOR FEE)
+// =========================================================================
+export const withdraw = onCall(
+  { cors: true, secrets: ALL_PIN_SECRETS },
+  async (req) => {
+    const uid = req.auth?.uid;
+    const payload = req.data;
+    if (!uid || !payload) {
+      throw new HttpsError("unauthenticated", "Authentication required for withdrawal.");
     }
-    if (error.message === "USER_NOT_FOUND") {
-      logger.error("Withdrawal attempted for unknown user:", uid);
-      return { status: "error", message: "Can't identify user in the DB" };
-    }
-    logger.error("Error debiting wallet:", error);
-    return { status: "error", message: "Sorry, an error occurred" };
-  }
 
-  // Balance is now debited. Record a pending transaction BEFORE calling Flutterwave,
-  // so there's a record even if the fetch never completes.
-  await db
-    .collection("users")
-    .doc(uid)
-    .collection("Transactions")
-    .doc(reference)
-    .set({
-      tx_ref: reference,
-      amount: numericAmount,
+    const {
       account_bank,
       account_number,
-      status: "pending",
-      transactionType: "withdrawal",
-      type: "outflow",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      amount,
+      debit_subaccount,
+      pin,
+      narration,
+      bankName,
+      accountHolder,
+    } = payload;
+    if (!account_bank || !account_number || !amount || !debit_subaccount) {
+      throw new HttpsError("invalid-argument", "Missing required transfer parameters.");
+    }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); //15secs Timeout;
+    // 1. PIN Security Verification
+    await verifyUserPinCore(uid, pin);
 
-  try {
-    const res = await fetch("https://api.flutterwave.com/v3/transfers", {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        account_bank,
-        account_number,
-        amount: numericAmount,
-        debit_subaccount,
-        narration: payload.narration,
-        currency: "NGN",
-        debit_currency: "NGN",
+    // 2. Monetary & Integer Kobo Validation
+    const amountKobo = toKobo(amount);
+    assertWholeNairaKobo(amountKobo);
+    const amountNaira = toNairaNumber(amountKobo);
+
+    const feeKobo = calculateExternalTransferFeeKobo(amountKobo);
+    const feeNaira = toNairaNumber(feeKobo);
+
+    const totalDebitKobo = amountKobo + feeKobo;
+    const totalDebitNaira = toNairaNumber(totalDebitKobo);
+
+    // 3. Uniform PayWaka References (no dashes/underscores)
+    const reference = generatePaywakaRef("default");
+    const feeRef = generatePaywakaRef("fee");
+
+    const userRef = db.collection("users").doc(uid);
+    const refLockDoc = db.collection("transfer_references").doc(reference);
+
+    // 4. Reserve Reference in transfer_references collection for idempotency & O(1) webhook lookup
+    try {
+      await refLockDoc.create({
         reference,
-      }),
-      signal: controller.signal,
+        type: "WITHDRAWAL",
+        uid,
+        senderUid: uid,
+        feeRef,
+        amountKobo,
+        feeKobo,
+        totalDebitKobo,
+        status: "RESERVED",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (e.code === 6 || e.message?.includes("already exists")) {
+        throw new HttpsError("already-exists", "This transfer reference is already being processed.");
+      }
+      throw e;
+    }
+
+    // 5. Pre-check live PSA balance from Flutterwave before debiting
+    try {
+      const flwSec = FLW_SECRET_KEY.value();
+      const psaBalRes = await fetch(
+        `https://api.flutterwave.com/v3/payout-subaccounts/${debit_subaccount}/balances?currency=NGN`,
+        {
+          headers: {
+            Authorization: `Bearer ${flwSec}`,
+            Accept: "application/json",
+          },
+        }
+      );
+      if (psaBalRes.ok) {
+        const psaBalData = await psaBalRes.json();
+        const availablePsaNaira = Number(psaBalData?.data?.available_balance || 0);
+        if (availablePsaNaira < totalDebitNaira) {
+          await refLockDoc.delete().catch(() => { });
+          throw new HttpsError(
+            "failed-precondition",
+            `Insufficient PSA wallet balance. Your Flutterwave PSA has ₦${availablePsaNaira.toLocaleString()}, but ₦${totalDebitNaira.toLocaleString()} (including ₦${feeNaira} fee) is required.`
+          );
+        }
+      }
+    } catch (psaErr) {
+      if (psaErr instanceof HttpsError) throw psaErr;
+      logger.warn("PSA live balance check bypassed/errored:", psaErr.message);
+    }
+
+    // 6. Atomic Firestore Debit of (amount + fee) & Capture Sender Name
+    let senderName = "PayWaka User";
+    try {
+      await db.runTransaction(async (t) => {
+        const userDoc = await t.get(userRef);
+        if (!userDoc.exists) throw new HttpsError("not-found", "User account not found.");
+        const uData = userDoc.data() || {};
+        senderName =
+          `${uData.firstName || ""} ${uData.lastName || ""}`.trim() ||
+          uData.displayName ||
+          uData.userName ||
+          "PayWaka User";
+
+        const currentBalKobo = uData.walletBalanceKobo ?? toKobo(uData.walletBalance || 0);
+        if (currentBalKobo < totalDebitKobo) {
+          throw new HttpsError(
+            "failed-precondition",
+            `Insufficient wallet balance. Total required: ₦${totalDebitNaira.toLocaleString()} (Amount: ₦${amountNaira.toLocaleString()} + Fee: ₦${feeNaira.toLocaleString()}).`
+          );
+        }
+        t.update(userRef, {
+          walletBalance: admin.firestore.FieldValue.increment(-totalDebitNaira),
+          walletBalanceKobo: admin.firestore.FieldValue.increment(-totalDebitKobo),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+    } catch (debitErr) {
+      await refLockDoc.delete().catch(() => { });
+      throw debitErr;
+    }
+
+    // 7. Write Initial Pending Transaction Documents (Main Tx + Fee Slip + Upper-Level Registry)
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const isoNow = new Date().toISOString();
+
+    const cleanRecipientName = String(accountHolder || "").trim();
+    const cleanBankName = String(bankName || "").trim();
+    const recipientDisplay = cleanRecipientName || cleanBankName || account_number;
+    const txTitle = `Transfer to ${recipientDisplay}`;
+
+    const cleanUserNarration = String(narration || "").trim();
+    const finalNarration = cleanUserNarration
+      ? (cleanUserNarration.includes(reference) ? cleanUserNarration : `${cleanUserNarration} | ${reference}`)
+      : `Transfer to ${recipientDisplay} | ${reference}`;
+
+    const mainTxDoc = userRef.collection("Transactions").doc(reference);
+    const feeTxDoc = userRef.collection("Transactions").doc(feeRef);
+
+    const initialTxData = stripUndefined({
+      tx_ref: reference,
+      reference,
+      feeRef,
+      userId: uid,
+      uid,
+      senderUid: uid,
+      senderName,
+      recipientName: cleanRecipientName || recipientDisplay,
+      accountHolder: cleanRecipientName || recipientDisplay,
+      bankName: cleanBankName || "Destination Bank",
+      recipientBankName: cleanBankName || "Destination Bank",
+      recipientAccountNumber: String(account_number),
+      amount: amountNaira,
+      amountKobo,
+      fee: feeNaira,
+      feeKobo,
+      totalDebit: totalDebitNaira,
+      totalDebitKobo,
+      account_bank,
+      account_number: String(account_number),
+      debit_subaccount,
+      title: txTitle,
+      narration: finalNarration,
+      type: "outflow",
+      category: "Withdrawal",
+      transactionType: "withdrawal",
+      isP2P: false,
+      status: "PENDING",
+      createdAt: now,
+      created_at: isoNow,
+      updatedAt: now,
     });
-    clearTimeout(timeout);
 
-    const response = await res.json();
+    const feeTxData = stripUndefined({
+      tx_ref: feeRef,
+      reference: feeRef,
+      parentTxRef: reference,
+      userId: uid,
+      uid,
+      senderUid: uid,
+      senderName,
+      recipientName: "Payment Processor Gateway",
+      title: "Payment Processor Fee",
+      amount: feeNaira,
+      amountKobo: feeKobo,
+      type: "outflow",
+      category: "Fee",
+      transactionType: "fee",
+      narration: `Payment Processor Fee | ${reference}`,
+      isProcessorFeeSlip: true,
+      isP2P: false,
+      status: "PENDING",
+      createdAt: now,
+      created_at: isoNow,
+      updatedAt: now,
+    });
 
-    if (
-      response?.status === "success" &&
-      response?.message === "Transfer Queued Successfully"
-    ) {
-      logger.info("withdrawal pending", response);
-      await db
-        .collection("users")
-        .doc(uid)
-        .collection("Transactions")
-        .doc(reference)
-        .set({ ...response.data, status: "pending" }, { merge: true });
+    await Promise.all([
+      mainTxDoc.set(initialTxData),
+      feeTxDoc.set(feeTxData),
+      writeUpperLevelTransaction(reference, initialTxData),
+      writeUpperLevelTransaction(feeRef, feeTxData),
+    ]);
+
+    // 8. Call Flutterwave Transfers API with clean amount and reference in narration
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout
+
+    try {
+      const flwRes = await fetch("https://api.flutterwave.com/v3/transfers", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          account_bank,
+          account_number,
+          amount: amountNaira,
+          debit_subaccount,
+          narration: finalNarration,
+          currency: "NGN",
+          debit_currency: "NGN",
+          reference,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const response = await flwRes.json();
+      logger.info(`Withdrawal response for ${reference}:`, response);
+
+      const flwRawStatus = String(response?.data?.status || "").toUpperCase();
+      const isQueued =
+        response?.status === "success" &&
+        (response?.message === "Transfer Queued Successfully" ||
+          flwRawStatus === "NEW" ||
+          flwRawStatus === "PENDING" ||
+          flwRawStatus === "SUCCESSFUL");
+
+      if (isQueued) {
+        const resolvedInitialStatus = flwRawStatus === "SUCCESSFUL" ? "SUCCESSFUL" : "PENDING";
+        const flwPatch = stripUndefined({
+          ...response.data,
+          tx_ref: reference,
+          reference,
+          flwTransferId: response?.data?.id || null,
+          recipientName: initialTxData.recipientName,
+          accountHolder: initialTxData.accountHolder,
+          bankName: initialTxData.bankName,
+          recipientBankName: initialTxData.recipientBankName,
+          title: initialTxData.title,
+          narration: finalNarration,
+          fee: feeNaira,
+          status: resolvedInitialStatus,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        await Promise.all([
+          mainTxDoc.set(flwPatch, { merge: true }),
+          feeTxDoc.set({ status: "SUCCESSFUL", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+          refLockDoc.set({ status: resolvedInitialStatus, flwData: response.data }, { merge: true }),
+          writeUpperLevelTransaction(reference, { ...initialTxData, ...flwPatch }),
+          writeUpperLevelTransaction(feeRef, { ...feeTxData, status: "SUCCESSFUL" }),
+        ]);
+
+        return {
+          status: "success",
+          gatewayStatus: resolvedInitialStatus,
+          message: "Transfer Queued Successfully",
+          reference,
+          feeRef,
+          narration: finalNarration,
+          title: txTitle,
+          amount: amountNaira,
+          fee: feeNaira,
+          totalDebit: totalDebitNaira,
+        };
+      }
+
+      // If Flutterwave rejected outright -> refund immediately
+      logger.error(`Flutterwave outright rejected transfer ${reference}:`, response);
+      await userRef.update({
+        walletBalance: admin.firestore.FieldValue.increment(totalDebitNaira),
+        walletBalanceKobo: admin.firestore.FieldValue.increment(totalDebitKobo),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      const failureReason = response?.message || "Transfer was declined by payment processor";
+      await Promise.all([
+        mainTxDoc.set({ status: "FAILED", failureReason, refunded: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+        feeTxDoc.set({ status: "FAILED", failureReason, refunded: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }),
+        refLockDoc.set({ status: "FAILED", failureReason }, { merge: true }),
+        writeUpperLevelTransaction(reference, { ...initialTxData, status: "FAILED", failureReason, refunded: true }),
+        writeUpperLevelTransaction(feeRef, { ...feeTxData, status: "FAILED", failureReason, refunded: true }),
+      ]);
 
       return {
-        status: "success",
-        message: "Transfer Pending",
-        reference: reference,
+        status: "error",
+        message: failureReason,
+        refunded: true,
+      };
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr.name === "AbortError") {
+        logger.warn(`Transfer ${reference} timed out. Leaving in PENDING for webhook / reconciliation.`);
+        await Promise.all([
+          mainTxDoc.set({ failureReason: "Request timed out, awaiting webhook confirmation" }, { merge: true }),
+          writeUpperLevelTransaction(reference, { ...initialTxData, failureReason: "Request timed out, awaiting webhook confirmation" }),
+        ]);
+        return {
+          status: "pending",
+          message: "Transfer initiated but gateway response timed out. Please check status shortly.",
+          reference,
+          feeRef,
+          narration: finalNarration,
+        };
+      }
+
+      // Unexpected error before submission: refund safely
+      logger.error(`Network error on transfer ${reference}:`, fetchErr);
+      await userRef.update({
+        walletBalance: admin.firestore.FieldValue.increment(totalDebitNaira),
+        walletBalanceKobo: admin.firestore.FieldValue.increment(totalDebitKobo),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await Promise.all([
+        mainTxDoc.set({ status: "FAILED", failureReason: fetchErr.message, refunded: true }, { merge: true }),
+        feeTxDoc.set({ status: "FAILED", failureReason: fetchErr.message, refunded: true }, { merge: true }),
+        refLockDoc.set({ status: "FAILED", failureReason: fetchErr.message }, { merge: true }),
+        writeUpperLevelTransaction(reference, { ...initialTxData, status: "FAILED", failureReason: fetchErr.message, refunded: true }),
+        writeUpperLevelTransaction(feeRef, { ...feeTxData, status: "FAILED", failureReason: fetchErr.message, refunded: true }),
+      ]);
+      return {
+        status: "error",
+        message: "Failed to communicate with payment processor. Your wallet has been refunded.",
+        refunded: true,
+      };
+    }
+  }
+);
+
+// =========================================================================
+// RECIPIENT RESOLUTION & P2P WALLET TRANSFER (₦0 FEE VIA BARTER ID)
+// =========================================================================
+export const resolvePaywakaRecipient = onCall({ cors: true }, async (req) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const callerUid = req.auth?.uid || (isEmulator ? "dev_caller" : null);
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const rawIdentifier = String(req.data?.identifier || "").trim();
+  if (!rawIdentifier) {
+    throw new HttpsError("invalid-argument", "Please enter a Barter ID, username, phone number, or email.");
+  }
+
+  const cleanNoAt = rawIdentifier.replace(/^@/, "").trim();
+  const lower = cleanNoAt.toLowerCase();
+  const title = cleanNoAt.charAt(0).toUpperCase() + cleanNoAt.slice(1).toLowerCase();
+
+  let recipientDoc = null;
+
+  // 1. Query by Barter ID
+  let qSnap = await db.collection("users").where("barter_id", "==", rawIdentifier).limit(1).get();
+  if (qSnap.empty) qSnap = await db.collection("users").where("barterID", "==", rawIdentifier).limit(1).get();
+
+  // 2. Query by userName (exact, lowercase, TitleCase)
+  if (qSnap.empty) qSnap = await db.collection("users").where("userName", "==", cleanNoAt).limit(1).get();
+  if (qSnap.empty) qSnap = await db.collection("users").where("userName", "==", lower).limit(1).get();
+  if (qSnap.empty) qSnap = await db.collection("users").where("userName", "==", title).limit(1).get();
+
+  // 3. Query by displayName
+  if (qSnap.empty) qSnap = await db.collection("users").where("displayName", "==", cleanNoAt).limit(1).get();
+
+  // 4. Query by firstName
+  if (qSnap.empty) qSnap = await db.collection("users").where("firstName", "==", cleanNoAt).limit(1).get();
+  if (qSnap.empty) qSnap = await db.collection("users").where("firstName", "==", title).limit(1).get();
+
+  // 5. Query by email / userEmail
+  if (qSnap.empty && rawIdentifier.includes("@")) {
+    qSnap = await db.collection("users").where("email", "==", lower).limit(1).get();
+    if (qSnap.empty) qSnap = await db.collection("users").where("userEmail", "==", lower).limit(1).get();
+  }
+
+  // 6. Query by phone / phonenumber / phoneNumber / userPhone
+  if (qSnap.empty) {
+    qSnap = await db.collection("users").where("phonenumber", "==", rawIdentifier).limit(1).get();
+    if (qSnap.empty) qSnap = await db.collection("users").where("phoneNumber", "==", rawIdentifier).limit(1).get();
+    if (qSnap.empty) qSnap = await db.collection("users").where("userPhone", "==", rawIdentifier).limit(1).get();
+  }
+
+  // 7. Case-insensitive fallback scan if direct equality queries missed
+  if (qSnap.empty) {
+    const recentUsers = await db.collection("users").limit(100).get();
+    for (const d of recentUsers.docs) {
+      const u = d.data();
+      const uName = String(u.userName || "").toLowerCase();
+      const fName = String(u.firstName || "").toLowerCase();
+      const dName = String(u.displayName || "").toLowerCase();
+      const mail = String(u.email || u.userEmail || "").toLowerCase();
+      const bId = String(u.barter_id || u.barterID || "");
+      const ph = String(u.phonenumber || u.phoneNumber || u.userPhone || "");
+
+      if (
+        (uName && uName === lower) ||
+        (fName && fName === lower) ||
+        (dName && dName === lower) ||
+        (mail && mail === lower) ||
+        (bId && bId === rawIdentifier) ||
+        (ph && ph === rawIdentifier)
+      ) {
+        recipientDoc = d;
+        break;
+      }
+    }
+  } else {
+    recipientDoc = qSnap.docs[0];
+  }
+
+  if (!recipientDoc) {
+    return { status: "not_found", message: "PayWaka user not found. Please verify the Barter ID or username." };
+  }
+
+  const recipientUid = recipientDoc.id;
+
+  if (recipientUid === callerUid && !isEmulator) {
+    throw new HttpsError("invalid-argument", "You cannot transfer funds to your own wallet.");
+  }
+
+  const rData = recipientDoc.data();
+  let barterId = rData.barter_id || rData.barterID;
+
+  // Auto-heal missing barter_id if user has an active PSA on Flutterwave
+  if (!barterId && (rData.email || rData.userEmail)) {
+    try {
+      const existing = await getWallets(rData.email || rData.userEmail);
+      if (existing?.status === "success" && existing.barter_id) {
+        barterId = existing.barter_id;
+        await recipientDoc.ref.update({
+          barter_id: barterId,
+          barterID: barterId,
+          accountReference: existing.accountReference || rData.accountReference || "",
+          accountNumber: existing.accountNumber || rData.accountNumber || "",
+        });
+      }
+    } catch (_) { }
+  }
+
+  if (!barterId) {
+    throw new HttpsError("failed-precondition", "Recipient has not activated their PayWaka wallet yet.");
+  }
+
+  const fullName = `${rData.firstName || ""} ${rData.lastName || ""}`.trim() || rData.displayName || rData.userName || "PayWaka User";
+
+  return {
+    status: "success",
+    recipient: {
+      uid: recipientUid,
+      fullName,
+      userName: rData.userName || "",
+      barter_id: barterId,
+      photoURL: rData.photoURL || null,
+    },
+  };
+});
+
+export const transferPaywakaP2P = onCall(
+  { cors: true, secrets: ALL_PIN_SECRETS },
+  async (req) => {
+    const senderUid = req.auth?.uid;
+    const payload = req.data;
+    if (!senderUid || !payload) {
+      throw new HttpsError("unauthenticated", "Authentication required for P2P transfer.");
+    }
+
+    const { recipientBarterId, recipientUid, amount, pin, narration } = payload;
+    if ((!recipientBarterId && !recipientUid) || !amount) {
+      throw new HttpsError("invalid-argument", "Missing recipient or transfer amount.");
+    }
+
+    // 1. PIN verification
+    await verifyUserPinCore(senderUid, pin);
+
+    // 2. Kobo Arithmetic & Validation
+    const amountKobo = toKobo(amount);
+    assertWholeNairaKobo(amountKobo);
+    const amountNaira = toNairaNumber(amountKobo);
+
+    // 3. Resolve Sender Profile & PSA Details
+    const senderRef = db.collection("users").doc(senderUid);
+    const senderDoc = await senderRef.get();
+    if (!senderDoc.exists) throw new HttpsError("not-found", "Sender profile not found.");
+    const senderData = senderDoc.data();
+
+    if (!senderData.accountReference) {
+      throw new HttpsError("failed-precondition", "Your PayWaka wallet is not active for transfers.");
+    }
+
+    // 4. Resolve Recipient Profile
+    let recipientRef = null;
+    let rData = null;
+    let targetBarterId = recipientBarterId;
+
+    if (recipientUid) {
+      if (recipientUid === senderUid) {
+        throw new HttpsError("invalid-argument", "You cannot transfer funds to yourself.");
+      }
+      recipientRef = db.collection("users").doc(recipientUid);
+      const rSnap = await recipientRef.get();
+      if (!rSnap.exists) throw new HttpsError("not-found", "Recipient account not found.");
+      rData = rSnap.data();
+      targetBarterId = rData.barter_id || rData.barterID || targetBarterId;
+    } else {
+      let qSnap = await db.collection("users").where("barter_id", "==", recipientBarterId).limit(1).get();
+      if (qSnap.empty) {
+        qSnap = await db.collection("users").where("barterID", "==", recipientBarterId).limit(1).get();
+      }
+      if (qSnap.empty) {
+        throw new HttpsError("not-found", "Recipient Barter ID not found in PayWaka registry.");
+      }
+      recipientRef = qSnap.docs[0].ref;
+      if (recipientRef.id === senderUid) {
+        throw new HttpsError("invalid-argument", "You cannot transfer funds to yourself.");
+      }
+      rData = qSnap.docs[0].data();
+      targetBarterId = rData.barter_id || rData.barterID;
+    }
+
+    if (!targetBarterId) {
+      throw new HttpsError("failed-precondition", "Recipient wallet is missing a valid Barter ID.");
+    }
+
+    // Uniform P2P reference format: pwkp2p{YYYYMMDD}{random digits}
+    const reference = generatePaywakaRef("p2p");
+    const refLockDoc = db.collection("transfer_references").doc(reference);
+
+    // Strictly user-defined P2P narration; fallback to reference if blank
+    const finalNarration = String(narration || "").trim() || reference;
+
+    const senderName =
+      `${senderData.firstName || ""} ${senderData.lastName || ""}`.trim() ||
+      senderData.displayName ||
+      senderData.userName ||
+      "PayWaka User";
+    const senderUserName = senderData.userName || "";
+    const senderBarterId = senderData.barter_id || senderData.barterID || "";
+
+    const recipientName =
+      `${rData.firstName || ""} ${rData.lastName || ""}`.trim() ||
+      rData.displayName ||
+      rData.userName ||
+      "PayWaka Recipient";
+    const recipientUserName = rData.userName || "";
+
+    // 5. Idempotency reservation
+    try {
+      await refLockDoc.create({
+        reference,
+        type: "P2P",
+        uid: senderUid,
+        senderUid,
+        senderName,
+        senderUserName,
+        senderBarterId,
+        recipientUid: recipientRef.id,
+        recipientName,
+        recipientUserName,
+        recipientBarterId: targetBarterId,
+        amountKobo,
+        feeKobo: 0,
+        narration: finalNarration,
+        status: "RESERVED",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (e.code === 6 || e.message?.includes("already exists")) {
+        throw new HttpsError("already-exists", "This P2P transfer is already being processed.");
+      }
+      throw e;
+    }
+
+    // 6. Pre-check live PSA balance
+    try {
+      const flwSec = FLW_SECRET_KEY.value();
+      const psaBalRes = await fetch(
+        `https://api.flutterwave.com/v3/payout-subaccounts/${senderData.accountReference}/balances?currency=NGN`,
+        {
+          headers: {
+            Authorization: `Bearer ${flwSec}`,
+            Accept: "application/json",
+          },
+        }
+      );
+      if (psaBalRes.ok) {
+        const psaBalData = await psaBalRes.json();
+        const availablePsaNaira = Number(psaBalData?.data?.available_balance || 0);
+        if (availablePsaNaira < amountNaira) {
+          await refLockDoc.delete().catch(() => { });
+          throw new HttpsError(
+            "failed-precondition",
+            `Insufficient wallet balance. Available: ₦${availablePsaNaira.toLocaleString()}, Required: ₦${amountNaira.toLocaleString()}`
+          );
+        }
+      }
+    } catch (psaErr) {
+      if (psaErr instanceof HttpsError) throw psaErr;
+      logger.warn("PSA balance pre-check skipped/errored for P2P:", psaErr.message);
+    }
+
+    // 7. Atomic sender debit
+    try {
+      await db.runTransaction(async (t) => {
+        const sSnap = await t.get(senderRef);
+        const curKobo = sSnap.data().walletBalanceKobo ?? toKobo(sSnap.data().walletBalance || 0);
+        if (curKobo < amountKobo) {
+          throw new HttpsError(
+            "failed-precondition",
+            `Insufficient wallet balance. Available: ₦${toNairaNumber(curKobo).toLocaleString()}`
+          );
+        }
+        t.update(senderRef, {
+          walletBalance: admin.firestore.FieldValue.increment(-amountNaira),
+          walletBalanceKobo: admin.firestore.FieldValue.increment(-amountKobo),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+    } catch (debitErr) {
+      await refLockDoc.delete().catch(() => { });
+      throw debitErr;
+    }
+
+    // 8. Execute Flutterwave transfer using barter_id and debit_subaccount (₦0 fee)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const flwRes = await fetch("https://api.flutterwave.com/v3/transfers", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          account_bank: "flutterwave",
+          account_number: targetBarterId,
+          amount: amountNaira,
+          debit_subaccount: senderData.accountReference,
+          narration: finalNarration,
+          currency: "NGN",
+          debit_currency: "NGN",
+          reference,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const response = await flwRes.json();
+      logger.info(`P2P Transfer response for ${reference}:`, response);
+
+      const isQueuedOrSuccess =
+        response?.status === "success" ||
+        response?.data?.status === "NEW" ||
+        response?.data?.status === "PENDING" ||
+        response?.data?.status === "SUCCESSFUL";
+
+      if (isQueuedOrSuccess) {
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const isoNow = new Date().toISOString();
+
+        const senderTxData = stripUndefined({
+          tx_ref: reference,
+          reference,
+          flwTransferId: response?.data?.id || null,
+          userId: senderUid,
+          uid: senderUid,
+          amount: amountNaira,
+          amountKobo,
+          fee: 0,
+          feeKobo: 0,
+          type: "outflow",
+          category: "Transfer",
+          transactionType: "transfer",
+          isP2P: true,
+          title: `Transfer to ${recipientName}`,
+          senderUid,
+          senderName,
+          senderUserName,
+          senderBarterId,
+          recipientUid: recipientRef.id,
+          recipientName,
+          recipientUserName,
+          recipientBarterId: targetBarterId,
+          recipientBankName: "PayWaka Wallet",
+          bankName: "PayWaka Wallet",
+          recipientAccountNumber: targetBarterId,
+          accountNumber: targetBarterId,
+          narration: finalNarration,
+          status: "SUCCESSFUL",
+          createdAt: now,
+          created_at: isoNow,
+          updatedAt: now,
+        });
+
+        const recipientTxData = stripUndefined({
+          tx_ref: reference,
+          reference,
+          flwTransferId: response?.data?.id || null,
+          userId: recipientRef.id,
+          uid: recipientRef.id,
+          amount: amountNaira,
+          amountKobo,
+          fee: 0,
+          feeKobo: 0,
+          type: "inflow",
+          category: "Wallet Funding",
+          transactionType: "transfer",
+          isP2P: true,
+          title: `Transfer from ${senderName}`,
+          senderUid,
+          senderName,
+          senderUserName,
+          senderBarterId,
+          senderBankName: "PayWaka Wallet",
+          recipientUid: recipientRef.id,
+          recipientName,
+          recipientUserName,
+          recipientBarterId: targetBarterId,
+          recipientBankName: "PayWaka Wallet",
+          bankName: "PayWaka Wallet",
+          recipientAccountNumber: targetBarterId,
+          narration: finalNarration,
+          status: "SUCCESSFUL",
+          createdAt: now,
+          created_at: isoNow,
+          updatedAt: now,
+        });
+
+        // Credit recipient wallet in Firestore + write sender, recipient, lock & upper-level audit records
+        await Promise.all([
+          recipientRef.update({
+            walletBalance: admin.firestore.FieldValue.increment(amountNaira),
+            walletBalanceKobo: admin.firestore.FieldValue.increment(amountKobo),
+            updatedAt: now,
+          }),
+          senderRef.collection("Transactions").doc(reference).set(senderTxData),
+          recipientRef.collection("Transactions").doc(reference).set(recipientTxData),
+          refLockDoc.set({ status: "SUCCESSFUL", flwData: response.data }, { merge: true }),
+          writeUpperLevelTransaction(reference, {
+            ...senderTxData,
+            senderTitle: `Transfer to ${recipientName}`,
+            recipientTitle: `Transfer from ${senderName}`,
+            flwData: response.data || null,
+          }),
+        ]);
+
+        return {
+          status: "success",
+          message: `₦${amountNaira.toLocaleString()} transferred successfully to ${recipientName}!`,
+          reference,
+          amount: amountNaira,
+          fee: 0,
+          narration: finalNarration,
+          title: `Transfer to ${recipientName}`,
+          senderName,
+          recipientName,
+          recipientUserName,
+          recipientBarterId: targetBarterId,
+        };
+      }
+
+      // Rejection by Flutterwave -> refund sender
+      logger.error(`P2P outright rejected: ${reference}:`, response);
+      await senderRef.update({
+        walletBalance: admin.firestore.FieldValue.increment(amountNaira),
+        walletBalanceKobo: admin.firestore.FieldValue.increment(amountKobo),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      const failReason = response?.message || "Transfer was declined by payment network.";
+      const failedP2PData = stripUndefined({
+        tx_ref: reference,
+        reference,
+        userId: senderUid,
+        uid: senderUid,
+        senderUid,
+        senderName,
+        senderUserName,
+        senderBarterId,
+        recipientUid: recipientRef.id,
+        recipientName,
+        recipientUserName,
+        recipientBarterId: targetBarterId,
+        title: `Transfer to ${recipientName}`,
+        narration: finalNarration,
+        amount: amountNaira,
+        fee: 0,
+        status: "FAILED",
+        failureReason: failReason,
+        refunded: true,
+        isP2P: true,
+        category: "Transfer",
+        type: "outflow",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        created_at: new Date().toISOString(),
+      });
+      await Promise.all([
+        senderRef.collection("Transactions").doc(reference).set(failedP2PData),
+        refLockDoc.set({ status: "FAILED", failureReason: failReason }, { merge: true }),
+        writeUpperLevelTransaction(reference, failedP2PData),
+      ]);
+
+      return {
+        status: "error",
+        message: failReason,
+        refunded: true,
+      };
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      logger.error(`P2P Fetch error for ${reference}:`, fetchErr);
+      if (fetchErr.name === "AbortError") {
+        return {
+          status: "pending",
+          message: "Transfer initiated but gateway response timed out. Please check your transaction history shortly.",
+          reference,
+          narration: finalNarration,
+        };
+      }
+      // Refund sender on unexpected network failure before submission
+      await senderRef.update({
+        walletBalance: admin.firestore.FieldValue.increment(amountNaira),
+        walletBalanceKobo: admin.firestore.FieldValue.increment(amountKobo),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await Promise.all([
+        refLockDoc.set({ status: "FAILED", failureReason: fetchErr.message }, { merge: true }),
+        writeUpperLevelTransaction(reference, {
+          userId: senderUid,
+          uid: senderUid,
+          senderUid,
+          senderName,
+          recipientUid: recipientRef.id,
+          recipientName,
+          isP2P: true,
+          status: "FAILED",
+          failureReason: fetchErr.message,
+          refunded: true,
+        }),
+      ]);
+      return {
+        status: "error",
+        message: "Network error occurred while communicating with Flutterwave. Your wallet has been refunded.",
+        refunded: true,
+      };
+    }
+  }
+);
+
+// =========================================================================
+// GATEWAY STATUS VERIFICATION & WALLET RETRY
+// =========================================================================
+export const verifyWithdrawalStatus = onCall({ cors: true }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const reference = String(req.data?.reference || "").trim();
+  if (!reference) {
+    throw new HttpsError("invalid-argument", "Missing transfer reference.");
+  }
+
+  const txDocRef = db.collection("users").doc(uid).collection("Transactions").doc(reference);
+  const txDoc = await txDocRef.get();
+  if (!txDoc.exists) {
+    throw new HttpsError("not-found", "Transaction record not found.");
+  }
+
+  const txData = txDoc.data();
+  const flwSecKey = FLW_SECRET_KEY.value();
+  try {
+    const res = await fetch(`https://api.flutterwave.com/v3/transfers?reference=${encodeURIComponent(reference)}`, {
+      headers: {
+        Authorization: `Bearer ${flwSecKey}`,
+        Accept: "application/json",
+      },
+    });
+
+    const result = await res.json();
+    logger.info(`Transfer verification query for ${reference}:`, result);
+
+    let flwTransfer = null;
+    if (result.status === "success" && Array.isArray(result.data) && result.data.length > 0) {
+      flwTransfer = result.data[0];
+    } else if (result.status === "success" && result.data && !Array.isArray(result.data)) {
+      flwTransfer = result.data;
+    }
+
+    if (!flwTransfer) {
+      return {
+        status: txData.status || "PENDING",
+        message: "No updated gateway status found yet. Transfer is still processing.",
+        txData,
       };
     }
 
-    // Flutterwave rejected the request outright — refund immediately, no need to wait for a webhook
-    await walletRef.update({
-      walletBalance: admin.firestore.FieldValue.increment(numericAmount),
-    });
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("Transactions")
-      .doc(reference)
-      .set({ ...(response?.data ?? {}), status: "FAILED" }, { merge: true });
+    const flwStatus = String(flwTransfer.status || "").toUpperCase();
+    const isSuccess = flwStatus === "SUCCESSFUL";
+    const isFailed = flwStatus === "FAILED" || flwStatus === "CANCELLED";
 
-    console.log("unsuccessful wallet withdrawal", response);
-    return {
-      status: "error",
-      message:
-        response?.message ?? "The withdrawal failed, but you've been refunded",
-    };
-  } catch (error) {
-    clearTimeout(timeout);
+    if (isSuccess || isFailed) {
+      await db.runTransaction(async (t) => {
+        const userRef = db.collection("users").doc(uid);
+        const latestTxSnap = await t.get(txDocRef);
+        if (!latestTxSnap.exists) return;
+        const latest = latestTxSnap.data() || {};
+        const latestStatusUpper = String(latest.status || "").toUpperCase();
 
-    if (error.name === "AbortError") {
-      await db
-        .collection("users")
-        .doc(uid)
-        .collection("Transactions")
-        .doc(reference)
-        .set(
-          {
-            status: "PENDING",
-            failureReason: "Request timed out, awaiting webhook confirmation",
-          },
-          { merge: true },
-        );
-      logger.error(
-        "🔥 Timeout: Flutterwave withdrawal API took too long:",
-        error,
-      );
-      return { status: "error", message: "Request timed out" };
+        if (["SUCCESSFUL", "FAILED", "CANCELLED"].includes(latestStatusUpper)) {
+          return;
+        }
+
+        if (isSuccess) {
+          const patch = {
+            status: "SUCCESSFUL",
+            flwData: flwTransfer,
+            flwTransferId: flwTransfer.id || null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+          t.update(txDocRef, patch);
+          t.set(db.collection("transfer_references").doc(reference), { status: "SUCCESSFUL", flwData: flwTransfer }, { merge: true });
+          await writeUpperLevelTransaction(reference, { ...latest, ...patch }, t);
+
+          if (latest.feeRef) {
+            t.set(
+              userRef.collection("Transactions").doc(latest.feeRef),
+              { status: "SUCCESSFUL", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+              { merge: true },
+            );
+            await writeUpperLevelTransaction(latest.feeRef, { uid, userId: uid, status: "SUCCESSFUL" }, t);
+          }
+        } else if (isFailed) {
+          const refundNaira = Number(latest.totalDebit || (Number(latest.amount || 0) + Number(latest.fee || 0)));
+          const refundKobo = toKobo(refundNaira);
+          t.update(userRef, {
+            walletBalance: admin.firestore.FieldValue.increment(refundNaira),
+            walletBalanceKobo: admin.firestore.FieldValue.increment(refundKobo),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          const failPatch = {
+            status: "FAILED",
+            failureReason: flwTransfer.complete_message || "Transfer was declined by destination bank.",
+            flwData: flwTransfer,
+            refunded: true,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+          t.update(txDocRef, failPatch);
+          t.set(db.collection("transfer_references").doc(reference), { status: "FAILED", flwData: flwTransfer }, { merge: true });
+          await writeUpperLevelTransaction(reference, { ...latest, ...failPatch }, t);
+
+          if (latest.feeRef) {
+            t.set(
+              userRef.collection("Transactions").doc(latest.feeRef),
+              {
+                status: "FAILED",
+                failureReason: "Parent transfer failed; fee refunded",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            await writeUpperLevelTransaction(latest.feeRef, {
+              uid,
+              userId: uid,
+              status: "FAILED",
+              failureReason: "Parent transfer failed; fee refunded",
+            }, t);
+          }
+        }
+      });
     }
 
-    // Refund since we debited upfront but the request to Flutterwave never confirmed
-    await walletRef.update({
-      walletBalance: admin.firestore.FieldValue.increment(numericAmount),
-    });
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("Transactions")
-      .doc(reference)
-      .set({ status: "FAILED", errorReason: error.message }, { merge: true });
-    logger.error("Error withdrawing from wallet balance:", error);
-    return { status: "error", message: "Sorry, an error occurred" };
+    return {
+      status: flwStatus,
+      message: flwTransfer.complete_message || `Transfer status: ${flwStatus}`,
+      flwTransfer,
+    };
+  } catch (err) {
+    logger.error(`Error querying Flutterwave status for ${reference}:`, err);
+    return {
+      status: txData.status || "PENDING",
+      message: err.message,
+    };
   }
 });
-//end
-//fetch Banks details(bank codes, Bank names available for withdrawals)
+
+export const retryCreateWallet = onCall({ cors: true }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required to retry wallet creation.");
+  }
+  const userDoc = await db.collection("users").doc(uid).get();
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+  const userData = userDoc.data();
+  if (userData.accountReference && userData.accountNumber) {
+    await db.collection("failedWallets").doc(uid).delete().catch(() => { });
+    return {
+      status: "success",
+      message: "Wallet is already fully active",
+      accountReference: userData.accountReference,
+      accountNumber: userData.accountNumber,
+      barter_id: userData.barter_id,
+    };
+  }
+
+  const { email, phonenumber, phoneNumber, firstName, lastName, country = "NG" } = userData;
+  const phone = phonenumber || phoneNumber || "";
+  const walletResult = await createWallet(email, phone, firstName, lastName, country, uid);
+
+  if (walletResult && walletResult.status === "success") {
+    const virtualResult = await createVirtualAccount(walletResult.accountReference, uid);
+    if (virtualResult && virtualResult.status === "success") {
+      await db.collection("failedWallets").doc(uid).delete().catch(() => { });
+      return {
+        status: "success",
+        message: "Wallet and Virtual Account successfully configured!",
+        accountReference: walletResult.accountReference,
+      };
+    }
+    return {
+      status: "partial_success",
+      message: "Wallet created but virtual account pending",
+      accountReference: walletResult.accountReference,
+    };
+  }
+
+  throw new HttpsError("internal", walletResult?.message || "Failed to create wallet on retry");
+});
+
+// =========================================================================
+// BANK CACHE & FETCHING
+// =========================================================================
 export const fetchBanks = onCall(async (req, context) => {
-  const uid = req.auth.uid;
+  const uid = req.auth?.uid;
   if (!uid) return { status: "error", message: "Unauthorized request" };
 
-  logger.info("fetching banks infos for user");
-  const url = "https://api.flutterwave.com/v3/banks/NG?include_provider_type=1";
-  //API timeout Controller
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 15000); // 15 seconds timeout
   try {
+    // Check system_cache/banks_ng first
+    const cacheDoc = await db.collection("system_cache").doc("banks_ng").get();
+    if (cacheDoc.exists) {
+      const cacheData = cacheDoc.data();
+      const updatedAt = cacheData.updatedAt ? cacheData.updatedAt.toDate() : null;
+      const ageHours = updatedAt ? (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60) : 999;
+      if (ageHours < 24 && Array.isArray(cacheData.banks) && cacheData.banks.length > 0) {
+        return {
+          status: "success",
+          message: "Banks fetched successfully (cached)",
+          bankDetails: cacheData.banks,
+        };
+      }
+    }
+
+    // Fallback: Fetch directly from Flutterwave and update cache
+    logger.info("Fetching banks from Flutterwave API...");
+    const url = "https://api.flutterwave.com/v3/banks/NG?include_provider_type=1";
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(url, {
       method: "GET",
       headers: {
@@ -1540,37 +3035,138 @@ export const fetchBanks = onCall(async (req, context) => {
         Authorization: `Bearer ${FLW_SECRET_KEY.value()}`,
         "Content-Type": "application/json",
       },
-      signal: controller.signal, // Attached the abort signal
+      signal: controller.signal,
     });
-    clearTimeout(timeout); // Clear the timeout if the request completes in time
+    clearTimeout(timeout);
     const response = await res.json();
-    if (
-      response?.status == "success" &&
-      response?.message == "Banks fetched successfully"
-    ) {
-      logger.info("wallet fetched");
-      // return info to the clientside
+    if (response?.status === "success" && Array.isArray(response.data)) {
+      await db.collection("system_cache").doc("banks_ng").set({
+        banks: response.data,
+        count: response.data.length,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: new Date().toISOString(),
+      });
       return {
         status: "success",
         message: "Banks fetched successfully",
-        bankDetails: response?.data,
+        bankDetails: response.data,
       };
-    } else {
-      logger.error(`unsuccessful banks fetch because ${response.message}`);
-      return { status: "error", message: response.message };
     }
+    return { status: "error", message: response?.message || "Failed to fetch banks" };
   } catch (error) {
     if (error.name === "AbortError") {
-      logger.error(
-        "🔥 Timeout: Flutterwave Banks fetch API took too long to respond: ",
-        error,
-      );
       return { status: "error", message: "Request timed out" };
     }
     logger.error("Error fetching Banks Info:", error);
     return { status: "error", message: error.message };
   }
 });
+
+export const refreshNigerianBanksCache = onSchedule(
+  {
+    schedule: "0 0 * * *", // Midnight Africa/Lagos
+    timeZone: "Africa/Lagos",
+  },
+  async () => {
+    logger.info("⏰ Running scheduled nightly refresh of Nigerian banks cache...");
+    try {
+      const flwSecKey = FLW_SECRET_KEY.value();
+      const res = await fetch("https://api.flutterwave.com/v3/banks/NG?include_provider_type=1", {
+        headers: {
+          Authorization: `Bearer ${flwSecKey}`,
+          Accept: "application/json",
+        },
+      });
+      const data = await res.json();
+      if (data?.status === "success" && Array.isArray(data.data)) {
+        await db.collection("system_cache").doc("banks_ng").set({
+          banks: data.data,
+          count: data.data.length,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updated_at: new Date().toISOString(),
+        });
+        logger.info(`✅ Successfully cached ${data.data.length} Nigerian banks in system_cache/banks_ng.`);
+      }
+    } catch (err) {
+      logger.error("❌ Failed to refresh Nigerian banks cache:", err);
+    }
+  }
+);
+
+export const nightlyPsaWalletReconciliation = onSchedule(
+  {
+    schedule: "0 0 * * *", // Midnight Africa/Lagos
+    timeZone: "Africa/Lagos",
+  },
+  async () => {
+    const dateKey = new Date().toISOString().split("T")[0];
+    logger.info(`⏰ Starting Nightly PSA Wallet Reconciliation for ${dateKey}...`);
+    try {
+      const usersSnap = await db.collection("users").where("accountReference", "!=", "").get();
+      const flwSec = FLW_SECRET_KEY.value();
+      let reconciledCount = 0;
+      let driftCount = 0;
+      const driftLogs = [];
+
+      for (const doc of usersSnap.docs) {
+        const u = doc.data();
+        const accountReference = u.accountReference;
+        if (!accountReference) continue;
+
+        try {
+          const res = await fetch(
+            `https://api.flutterwave.com/v3/payout-subaccounts/${accountReference}/balances?currency=NGN`,
+            {
+              headers: {
+                Authorization: `Bearer ${flwSec}`,
+                Accept: "application/json",
+              },
+            }
+          );
+          const body = await res.json();
+          if (body.status === "success" && body.data) {
+            const liveBal = Number(body.data.available_balance || 0);
+            const liveKobo = toKobo(liveBal);
+            const firestoreBal = Number(u.walletBalance || 0);
+
+            if (Math.abs(liveBal - firestoreBal) > 0.01) {
+              driftCount++;
+              driftLogs.push({
+                uid: doc.id,
+                email: u.email || "",
+                accountReference,
+                firestoreBal,
+                liveBal,
+                diff: liveBal - firestoreBal,
+              });
+              // Auto-sync Firestore balance to live PSA balance
+              await doc.ref.update({
+                walletBalance: liveBal,
+                walletBalanceKobo: liveKobo,
+                lastReconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+            }
+            reconciledCount++;
+          }
+        } catch (subErr) {
+          logger.warn(`Could not check PSA balance for user ${doc.id}:`, subErr.message);
+        }
+      }
+
+      await db.collection("admin_reconciliation_logs").doc(dateKey).set({
+        dateKey,
+        totalChecked: reconciledCount,
+        driftCount,
+        drifts: driftLogs,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      logger.info(`✅ Nightly Reconciliation Completed. Checked: ${reconciledCount}, Drifts Resolved: ${driftCount}`);
+    } catch (err) {
+      logger.error("❌ Nightly PSA Reconciliation error:", err);
+    }
+  }
+);
 
 //confirm Account details before user make a transfer/withdrawal
 export const confirmAccountDetails = onCall(async (req, context) => {
@@ -1951,34 +3547,87 @@ const validateCustomerCore = async (itemCode, customerID) => {
   }
 };
 
-//validate the user's customer ID before paying out bill to them
-export const validateCustomer = onCall(async (req, context) => {
-  const payload = req.data;
+// Validate Meter Number / Smartcard IUC (ClubKonnect Legacy V1 + legacy Flutterwave fallback)
+export const validateCustomer = onCall({ cors: true }, async (req) => {
+  const payload = req.data || {};
+  const billType = String(payload.billType || "").toLowerCase().trim();
+  const provider = String(payload.provider || payload.company || payload.cableTV || "").trim();
+  const meterType = String(payload.meterType || "01").trim();
+  const customerId = String(payload.customerID || payload.meterNo || payload.smartCardNo || "").trim();
 
-  if (!payload) {
-    logger.error("No payload provided for customer validation");
-    return { status: "error", message: "No payload provided" };
+  if (!customerId) {
+    return { status: "error", message: "Customer meter or smartcard number is required." };
   }
 
-  const { itemCode, customerID } = payload;
-  if (!itemCode || !customerID) {
-    logger.error("payload particulars empty for customer validation");
-    return { status: "error", message: "No payload provided" };
-  }
   try {
-    logger.info("Validating customer with itemCode:", itemCode, customerID);
-    const res = await validateCustomerCore(itemCode, customerID);
-    logger.info("Customer validation result:", res);
-    console.log("Console Customer validation result:", res);
+    const userId = getClubKonnectUserId();
+    const apiKey = getClubKonnectApiKey();
+
+    if (billType === "electricity" || payload.company || payload.meterNo) {
+      const disco = normalizeClubKonnectDisco(provider);
+      const typeParam = meterType === "02" ? "02" : "01";
+      const url = `https://www.nellobytesystems.com/APIVerifyElectricityV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&ElectricCompany=${encodeURIComponent(disco.code)}&MeterNo=${encodeURIComponent(customerId)}&MeterType=${encodeURIComponent(typeParam)}`;
+      const verifyRes = await fetchClubKonnectApi(url, 12000);
+      const data = verifyRes.data || {};
+      const customerName = String(data.customer_name || data.CustomerName || "").trim();
+      if (
+        verifyRes.success &&
+        customerName &&
+        !customerName.toUpperCase().includes("INVALID") &&
+        !customerName.toUpperCase().includes("ERROR")
+      ) {
+        return {
+          status: "success",
+          message: "Meter number verified",
+          customerName,
+          provider: disco.label,
+        };
+      }
+      return {
+        status: "error",
+        message: customerName || data.status || "Invalid meter number for selected electricity disco.",
+      };
+    }
+
+    if (billType === "cable" || payload.cableTV || payload.smartCardNo) {
+      const cableInfo = normalizeClubKonnectCableCode(provider);
+      const url = `https://www.nellobytesystems.com/APIVerifyCableTVV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&CableTV=${encodeURIComponent(cableInfo.code)}&SmartCardNo=${encodeURIComponent(customerId)}`;
+      const verifyRes = await fetchClubKonnectApi(url, 12000);
+      const data = verifyRes.data || {};
+      const customerName = String(data.customer_name || data.CustomerName || "").trim();
+      if (
+        verifyRes.success &&
+        customerName &&
+        !customerName.toUpperCase().includes("INVALID") &&
+        !customerName.toUpperCase().includes("ERROR")
+      ) {
+        return {
+          status: "success",
+          message: "Smartcard / IUC verified",
+          customerName,
+          provider: cableInfo.label,
+        };
+      }
+      return {
+        status: "error",
+        message: customerName || data.status || "Invalid smartcard / IUC number for selected provider.",
+      };
+    }
+
+    const { itemCode } = payload;
+    if (!itemCode) {
+      return { status: "error", message: "Provider or itemCode is required for customer validation." };
+    }
+    const res = await validateCustomerCore(itemCode, customerId);
     if (res.status === "success") {
       return {
         status: "success",
         message: "customerID successfully verified",
+        customerName: res.provider,
         provider: res.provider,
       };
-    } else {
-      return { status: "error", message: "Customer validation failed" };
     }
+    return { status: "error", message: "Customer validation failed" };
   } catch (error) {
     logger.error("Error validating customer:", error.message);
     return { status: "error", message: "Failed to validate customer" };
@@ -2307,18 +3956,22 @@ export const handleNewRefferal = onDocumentCreated(
     );
     if (walletCreate && walletCreate.status === "success") {
       logger.info("virtual Wallet args:", walletCreate);
-      const virtualAccount = await createVirtualAccount(
-        walletCreate?.accountReference,
-        uid,
-      );
-      if (virtualAccount && virtualAccount.status === "success") {
-        logger.info("Virtual account created successfully for user:", uid);
+      if (walletCreate.accountNumber) {
+        logger.info(`🎉 Virtual account already resolved with NUBAN ${walletCreate.accountNumber} for user ${uid}`);
       } else {
-        logger.error(
-          "Error creating virtual account for user:",
-          virtualAccount.message,
-          "and" + virtualAccount.error,
+        const virtualAccount = await createVirtualAccount(
+          walletCreate?.accountReference,
+          uid,
         );
+        if (virtualAccount && virtualAccount.status === "success") {
+          logger.info("Virtual account created successfully for user:", uid);
+        } else {
+          logger.error(
+            "Error creating virtual account for user:",
+            virtualAccount?.message,
+            "and" + virtualAccount?.error,
+          );
+        }
       }
     }
     if (walletCreate && walletCreate.status === "error") {
@@ -3154,12 +4807,32 @@ export const onUserLogin = onDocumentUpdated(
 // LIVE BILLS PROVIDER INTEGRATION (CLUBKONNECT / NELLOBYTE)
 // ==========================================
 
+function sanitizeEnvCredential(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "")
+    .trim();
+}
+
+let _lastEnvReloadAt = 0;
+function refreshLocalEnvIfNeeded() {
+  const now = Date.now();
+  if (now - _lastEnvReloadAt < 2000) return;
+  _lastEnvReloadAt = now;
+  try {
+    // Allow key rotation in functions/.env to take effect immediately in local emulator
+    dotenv.config({ path: "./.env", override: true });
+  } catch (_) { }
+}
+
 function getClubKonnectUserId() {
-  return process.env.CLUBKONNECT_USER_ID;
+  refreshLocalEnvIfNeeded();
+  return sanitizeEnvCredential(process.env.CLUBKONNECT_USER_ID);
 }
 
 function getClubKonnectApiKey() {
-  return process.env.CLUBKONNECT_API_KEY;
+  refreshLocalEnvIfNeeded();
+  return sanitizeEnvCredential(process.env.CLUBKONNECT_API_KEY);
 }
 
 function getClubKonnectNetworkCode(networkName) {
@@ -3167,59 +4840,306 @@ function getClubKonnectNetworkCode(networkName) {
   const name = String(networkName).toLowerCase();
   if (name.includes("mtn")) return "01";
   if (name.includes("glo")) return "02";
-  if (name.includes("9mob") || name.includes("etisalat")) return "03";
+  if (name.includes("9mob") || name.includes("etisalat") || name.includes("t2")) return "03";
   if (name.includes("airtel")) return "04";
   return "01";
 }
 
-function isClubKonnectOrderSuccess(res) {
-  if (!res) return false;
-  const status = String(res.status || "").toUpperCase();
-  const statusCode = String(res.statuscode || "");
-  const remark = String(
-    res.remark || res.description || res.msg || "",
-  ).toUpperCase();
-  const orderId = res.orderid || res.order_id || res.OrderID;
+const CLUBKONNECT_DISCO_MAP = {
+  "01": { code: "01", label: "Eko Electric (EKEDC)" },
+  "02": { code: "02", label: "Ikeja Electric (IKEDC)" },
+  "03": { code: "03", label: "Abuja Electric (AEDC)" },
+  "04": { code: "04", label: "Kano Electric (KEDCO)" },
+  "05": { code: "05", label: "Port Harcourt Electric (PHEDC)" },
+  "06": { code: "06", label: "Jos Electric (JEDC)" },
+  "07": { code: "07", label: "Ibadan Electric (IBEDC)" },
+  "08": { code: "08", label: "Kaduna Electric (KAEDCO)" },
+  "09": { code: "09", label: "Enugu Electric (EEDC)" },
+  "10": { code: "10", label: "Benin Electric (BEDC)" },
+  "11": { code: "11", label: "Yola Electric (YEDC)" },
+  "12": { code: "12", label: "Aba Electric (APLE)" },
+};
 
-  // 1. HARD FAILURE CHECKS: If remark or status explicitly mentions failure or invalid inputs, it is NEVER a success!
-  if (
-    remark.includes("INVALID") ||
-    remark.includes("FAILED") ||
-    remark.includes("DECLINED") ||
-    remark.includes("UNSUCCESSFUL") ||
-    remark.includes("ERROR") ||
-    remark.includes("CANCELLED") ||
-    remark.includes("REJECTED") ||
-    remark.includes("NOT FOUND") ||
-    remark.includes("INSUFFICIENT") ||
-    remark.includes("LOW BALANCE") ||
-    status.includes("FAIL") ||
-    status.includes("CANCEL") ||
-    status.includes("INVALID") ||
-    status.includes("REJECT") ||
-    status.includes("ERROR") ||
-    status.includes("MISSING") ||
-    statusCode === "400" ||
-    statusCode === "404" ||
-    statusCode === "500"
-  ) {
-    return false;
+export function normalizeClubKonnectDisco(input) {
+  const raw = String(input || "").trim();
+  const padded = /^\d+$/.test(raw) ? raw.padStart(2, "0") : "";
+  if (padded && CLUBKONNECT_DISCO_MAP[padded]) {
+    return CLUBKONNECT_DISCO_MAP[padded];
+  }
+  const lower = raw.toLowerCase();
+  if (lower.includes("eko") || lower.includes("ekedc")) return CLUBKONNECT_DISCO_MAP["01"];
+  if (lower.includes("ikeja") || lower.includes("ikedc")) return CLUBKONNECT_DISCO_MAP["02"];
+  if (lower.includes("abuja") || lower.includes("aedc")) return CLUBKONNECT_DISCO_MAP["03"];
+  if (lower.includes("kano") || lower.includes("kedc")) return CLUBKONNECT_DISCO_MAP["04"];
+  if (lower.includes("port") || lower.includes("phed")) return CLUBKONNECT_DISCO_MAP["05"];
+  if (lower.includes("jos") || lower.includes("jed")) return CLUBKONNECT_DISCO_MAP["06"];
+  if (lower.includes("ibadan") || lower.includes("ibedc")) return CLUBKONNECT_DISCO_MAP["07"];
+  if (lower.includes("kaduna") || lower.includes("kaed")) return CLUBKONNECT_DISCO_MAP["08"];
+  if (lower.includes("enugu") || lower.includes("eedc")) return CLUBKONNECT_DISCO_MAP["09"];
+  if (lower.includes("benin") || lower.includes("bedc")) return CLUBKONNECT_DISCO_MAP["10"];
+  if (lower.includes("yola") || lower.includes("yedc")) return CLUBKONNECT_DISCO_MAP["11"];
+  if (lower.includes("aba") || lower.includes("aple")) return CLUBKONNECT_DISCO_MAP["12"];
+  return { code: padded || raw || "01", label: raw || "Electricity Disco" };
+}
+
+export function normalizeClubKonnectCableCode(input) {
+  const raw = String(input || "").trim().toLowerCase();
+  if (raw === "01" || raw.includes("dstv")) return { code: "dstv", label: "DStv", tvKey: "DStv" };
+  if (raw === "02" || raw.includes("gotv")) return { code: "gotv", label: "GOtv", tvKey: "GOtv" };
+  if (raw === "03" || raw.includes("startim")) return { code: "startimes", label: "StarTimes", tvKey: "Startimes" };
+  if (raw === "04" || raw.includes("showmax")) return { code: "showmax", label: "Showmax", tvKey: "Showmax" };
+  return { code: raw || "dstv", label: input || "Cable TV", tvKey: "DStv" };
+}
+
+// Official ClubKonnect APIParaGetDisputeResolutionV1 business status descriptions
+const CLUBKONNECT_STATUS_DESCRIPTIONS = {
+  "100": "Order has been received and is awaiting processing.",
+  "199": "Unspecified error while receiving the order.",
+  "200": "Transaction completed successfully.",
+  "201": "Network Unresponsive — no response received after 60 seconds. ClubKonnect retries every 5 minutes for up to 1 hour before cancellation.",
+  "299": "Unspecified error after completion stage.",
+  "300": "Transaction was sent and is awaiting a response from the network operator.",
+  "399": "Unspecified error while processing the order.",
+  "400": "Provider authentication failed (INVALID_CREDENTIALS).",
+  "401": "Invalid API request URL format (MISSING_CREDENTIALS).",
+  "402": "Provider UserID field is empty.",
+  "403": "Provider API key field is empty.",
+  "404": "Mobile network parameter is empty.",
+  "405": "Purchase amount parameter is empty.",
+  "406": "Invalid purchase amount for this service.",
+  "407": "Order amount is below the minimum (₦100).",
+  "408": "Order amount is below the bulk minimum (₦50,000).",
+  "409": "Invalid recipient phone number entered.",
+  "410": "Provider API configuration error (INVALID_API_ERROR1).",
+  "411": "Provider API configuration error (INVALID_API_ERROR2).",
+  "412": "Provider reseller gateway balance insufficient (INSUFFICIENT_APIAMOUNT).",
+  "413": "Invalid API configuration or API access not permitted.",
+  "414": "Invalid payment option on provider gateway.",
+  "415": "Insufficient API store dealer balance.",
+  "416": "Insufficient API store balance.",
+  "417": "Insufficient provider reseller balance.",
+  "418": "Invalid mobile network code.",
+  "499": "Unspecified provider order error.",
+  "500": "Order cancelled by API user.",
+  "501": "Order cancelled by provider server.",
+  "506": "Order cancelled due to provider server busy.",
+  "507": "Order cancelled due to network error.",
+  "508": "Your request cannot be processed at this time.",
+  "509": "Order cancelled and credited back due to failed transaction.",
+  "510": "Transaction failed during processing and was cancelled.",
+  "511": "Transaction cancelled after downstream provider failure.",
+  "512": "Request is not valid and was cancelled.",
+  "513": "Recharge failed and was cancelled.",
+  "514": "Transaction rejected by downstream provider and cancelled.",
+  "515": "Recipient account is in an ineligible state.",
+  "516": "Recipient is not a valid subscriber for this service.",
+  "517": "Recipient is not eligible for this offer.",
+  "518": "Subscriber is not eligible for this data purchase.",
+  "519": "Subscriber already has an existing plan pending activation.",
+  "520": "Recipient is not a valid user on the specified network.",
+  "521": "Order is already completed, cancelled, or refunded.",
+  "599": "Unspecified provider cancellation error.",
+  "600": "Transaction placed on hold due to network error.",
+  "601": "Temporary processing limitation; order is on hold for retry.",
+  "602": "Transaction failed and funds were credited back on provider.",
+  "603": "Transaction failed during processing.",
+  "604": "Transaction failure indicated by downstream provider.",
+  "605": "Recharge attempt failed and placed on hold.",
+  "606": "Transaction placed on hold by API user.",
+  "699": "Unspecified on-hold error.",
+  "799": "Unspecified error while processing the order.",
+  "899": "Transaction failed and was refunded by provider.",
+};
+
+/**
+ * Classifies a ClubKonnect JSON response strictly per APIParaGetDisputeResolutionV1.
+ * Critical guard: statusCode 201 ("ORDER_COMPLETED" + "Network Unresponsive") and
+ * Prepaid electricity responses missing a real non-placeholder metertoken are NOT terminal successes!
+ */
+export function classifyClubKonnectResponse(res, { category = "", meterType = "01" } = {}) {
+  if (!res || typeof res !== "object") {
+    return {
+      outcome: "FAILED",
+      isSuccess: false,
+      isPending: false,
+      isFailed: true,
+      needsCancel: false,
+      isProviderBalanceIssue: false,
+      statusCode: "",
+      status: "EMPTY_RESPONSE",
+      remark: "",
+      orderId: "",
+      meterToken: "",
+      reason: "Empty or malformed response from ClubKonnect.",
+    };
   }
 
-  // 2. SUCCESS INDICATORS: Order was received/completed without failure remarks
-  const hasSuccessStatus =
-    status === "ORDER_RECEIVED" ||
-    status === "ORDER_COMPLETED" ||
-    status === "ORDER_ON_HOLD" ||
-    status === "ORDER_PROCESSING" ||
-    status === "SUCCESSFUL" ||
-    status === "SUCCESS" ||
-    status === "100" ||
-    status === "200" ||
-    statusCode === "100" ||
-    statusCode === "200";
+  const rawCode = String(res.statuscode ?? res.statusCode ?? res.StatusCode ?? "").trim();
+  const rawStatus = String(res.status ?? res.orderstatus ?? res.OrderStatus ?? "").trim().toUpperCase();
+  const rawRemark = String(res.remark ?? res.orderremark ?? res.OrderRemark ?? res.description ?? res.msg ?? "").trim();
+  const remarkUpper = rawRemark.toUpperCase();
+  const orderId = String(res.orderid ?? res.orderId ?? res.OrderID ?? res.order_id ?? "").trim();
+  const meterToken = String(res.metertoken ?? res.MeterToken ?? res.token ?? res.pin ?? "").trim();
 
-  return Boolean(orderId && hasSuccessStatus);
+  const isBalanceIssue =
+    rawCode === "412" ||
+    rawCode === "415" ||
+    rawCode === "416" ||
+    rawCode === "417" ||
+    isClubKonnectBalanceOutage(res);
+
+  const needsCancelCodes = new Set(["412", "602", "603", "604"]);
+  const pendingCodes = new Set(["100", "201", "300", "600", "601", "605", "606", "699"]);
+  const terminalFailCodes = new Set(["199", "299", "399", "799", "899"]);
+
+  const base = {
+    statusCode: rawCode,
+    status: rawStatus,
+    remark: rawRemark,
+    orderId,
+    meterToken,
+    isProviderBalanceIssue: isBalanceIssue,
+  };
+
+  // 1. Explicit failed statuses/codes (including 4xx, 5xx, 199/299/399/799/899, 602-604)
+  if (
+    needsCancelCodes.has(rawCode) ||
+    terminalFailCodes.has(rawCode) ||
+    rawCode.startsWith("4") ||
+    rawCode.startsWith("5") ||
+    rawStatus.includes("CANCEL") ||
+    rawStatus.includes("ERROR") ||
+    rawStatus.includes("REFUND") ||
+    rawStatus.includes("FAIL") ||
+    rawStatus.includes("INVALID") ||
+    rawStatus.includes("REJECT") ||
+    rawStatus.includes("MISSING") ||
+    rawStatus.includes("MINIMUM") ||
+    rawStatus.includes("NOT_AVAILABLE") ||
+    rawStatus.includes("INSUFFICIENT") ||
+    rawStatus.includes("LOW_")
+  ) {
+    return {
+      ...base,
+      outcome: "FAILED",
+      isSuccess: false,
+      isPending: false,
+      isFailed: true,
+      needsCancel: needsCancelCodes.has(rawCode) && Boolean(orderId),
+      reason: CLUBKONNECT_STATUS_DESCRIPTIONS[rawCode] || rawRemark || rawStatus || "Transaction failed",
+    };
+  }
+
+  // 2. Non-terminal statuses — NOTE: statusCode 201 ("ORDER_COMPLETED" + "Network Unresponsive") is PENDING!
+  if (
+    pendingCodes.has(rawCode) ||
+    remarkUpper.includes("NETWORK UNRESPONSIVE") ||
+    remarkUpper.includes("NO RESPONSE") ||
+    remarkUpper.includes("AWAITING") ||
+    rawStatus === "ORDER_RECEIVED" ||
+    rawStatus === "ORDER_PROCESSING" ||
+    rawStatus === "ORDER_ONHOLD" ||
+    rawStatus === "ORDER_ON_HOLD"
+  ) {
+    return {
+      ...base,
+      outcome: "PENDING",
+      isSuccess: false,
+      isPending: true,
+      isFailed: false,
+      needsCancel: false,
+      reason: CLUBKONNECT_STATUS_DESCRIPTIONS[rawCode] || rawRemark || "Order is still processing.",
+    };
+  }
+
+  // 3. Strict Success Check: MUST have orderId AND statusCode === "200" AND non-failure remark
+  const hasNegativeRemark =
+    remarkUpper.includes("INVALID") ||
+    remarkUpper.includes("FAILED") ||
+    remarkUpper.includes("DECLINED") ||
+    remarkUpper.includes("UNSUCCESSFUL") ||
+    remarkUpper.includes("ERROR") ||
+    remarkUpper.includes("CANCELLED") ||
+    remarkUpper.includes("REJECTED") ||
+    remarkUpper.includes("NOT FOUND") ||
+    remarkUpper.includes("INSUFFICIENT") ||
+    remarkUpper.includes("LOW BALANCE") ||
+    remarkUpper.includes("UNRESPONSIVE");
+
+  const statusGroupOk = rawStatus === "ORDER_COMPLETED" || rawStatus === "COMPLETED" || rawStatus === "";
+  const isStrictSuccess = Boolean(orderId) && rawCode === "200" && statusGroupOk && !hasNegativeRemark;
+
+  if (isStrictSuccess) {
+    // Prepaid Electricity must have a real meter token (ClubKonnect sends dummy "000123" on initial 100)
+    const isPrepaidElec = String(category).toLowerCase().includes("elect") && String(meterType) !== "02";
+    if (isPrepaidElec && (!meterToken || meterToken === "000123")) {
+      return {
+        ...base,
+        outcome: "PENDING",
+        isSuccess: false,
+        isPending: true,
+        isFailed: false,
+        needsCancel: false,
+        reason: "Order completed at gateway but meter token is not ready yet; querying order status.",
+      };
+    }
+
+    return {
+      ...base,
+      outcome: "SUCCESS",
+      isSuccess: true,
+      isPending: false,
+      isFailed: false,
+      needsCancel: false,
+      reason: rawRemark || "Transaction completed successfully.",
+    };
+  }
+
+  return {
+    ...base,
+    outcome: "FAILED",
+    isSuccess: false,
+    isPending: false,
+    isFailed: true,
+    needsCancel: false,
+    reason: CLUBKONNECT_STATUS_DESCRIPTIONS[rawCode] || rawRemark || rawStatus || "Unrecognized provider status.",
+  };
+}
+
+function isClubKonnectOrderSuccess(res, opts = {}) {
+  return classifyClubKonnectResponse(res, opts).isSuccess;
+}
+
+function isClubKonnectOrderReceived(res, opts = {}) {
+  return classifyClubKonnectResponse(res, opts).isPending;
+}
+
+function getClubKonnectCallbackUrl() {
+  if (process.env.CLUBKONNECT_CALLBACK_URL) {
+    return String(process.env.CLUBKONNECT_CALLBACK_URL).trim();
+  }
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "";
+  if (projectId) {
+    return `https://us-central1-${projectId}.cloudfunctions.net/clubkonnectCallback`;
+  }
+  return "";
+}
+
+async function cancelClubKonnectOrder(requestId, orderId) {
+  const userId = getClubKonnectUserId();
+  const apiKey = getClubKonnectApiKey();
+  const cancelUrl = orderId
+    ? `https://www.nellobytesystems.com/APICancelV1.asp?UserID=${userId}&APIKey=${apiKey}&OrderID=${orderId}`
+    : `https://www.nellobytesystems.com/APICancelV1.asp?UserID=${userId}&APIKey=${apiKey}&RequestID=${requestId}`;
+  try {
+    logger.info(`🚫 [ClubKonnect Order Cancel Attempt]: RequestID=${requestId}, OrderID=${orderId}`);
+    const cancelRes = await fetchClubKonnectApi(cancelUrl, 10000);
+    logger.info(`🚫 [ClubKonnect Order Cancel Result]:`, cancelRes);
+    return cancelRes;
+  } catch (err) {
+    logger.error(`❌ [ClubKonnect Cancel Failed]:`, err);
+    return { success: false, error: err };
+  }
 }
 
 function isClubKonnectBalanceOutage(res) {
@@ -3249,12 +5169,19 @@ function resolveProviderFailureReason(
   if (isProviderBalanceIssue) {
     return "Insufficient Reseller Gateway Balance / Temporary Provider Maintenance";
   }
-  const rawStatus = String(result?.status || "").toUpperCase();
+  const rawCode = String(result?.statuscode ?? result?.statusCode ?? result?.StatusCode ?? "").trim();
+  const rawStatus = String(result?.status ?? result?.orderstatus ?? "").toUpperCase();
   const rawDesc = String(
-    result?.description || result?.remark || result?.msg || "",
+    result?.description || result?.remark || result?.orderremark || result?.msg || "",
   );
   const descUpper = rawDesc.toUpperCase();
 
+  if (
+    rawStatus.includes("INVALID_CREDENTIALS") ||
+    descUpper.includes("INVALID CREDENTIALS")
+  ) {
+    return "Provider authentication failed (INVALID_CREDENTIALS). Please check ClubKonnect API credentials and IP whitelist settings.";
+  }
   if (
     rawStatus.includes("INVALID_METER") ||
     descUpper.includes("INVALID METER") ||
@@ -3272,15 +5199,29 @@ function resolveProviderFailureReason(
   ) {
     return "Invalid decoder / smartcard IUC number. Please verify your decoder details.";
   }
+  if (rawStatus.includes("INVALID_DATAPLAN") || rawStatus.includes("PACKAGE_NOT_AVAILABLE")) {
+    return "Selected plan or package is temporarily unavailable on the provider gateway.";
+  }
   if (
+    rawCode === "409" ||
+    rawStatus.includes("INVALID_RECIPIENT") ||
     rawStatus.includes("INVALID_PHONE") ||
     descUpper.includes("PHONE") ||
     descUpper.includes("INVALID MOBILE")
   ) {
     return "Invalid recipient phone number format.";
   }
-  if (rawStatus.includes("INVALID_AMOUNT") || descUpper.includes("AMOUNT")) {
+  if (rawStatus.includes("MINIMUM_50")) {
+    return "Minimum airtime order amount is ₦50.";
+  }
+  if (rawCode === "407" || rawStatus.includes("MINIMUM_100")) {
+    return "Order amount is below the provider minimum (₦100).";
+  }
+  if (rawCode === "406" || rawStatus.includes("INVALID_AMOUNT") || descUpper.includes("AMOUNT")) {
     return rawDesc || "Invalid purchase amount specified for this service.";
+  }
+  if (rawCode && CLUBKONNECT_STATUS_DESCRIPTIONS[rawCode]) {
+    return rawDesc || CLUBKONNECT_STATUS_DESCRIPTIONS[rawCode];
   }
   if (
     rawStatus.includes("MISSING_ORDERID") ||
@@ -3299,27 +5240,48 @@ function resolveProviderFailureReason(
   );
 }
 
-async function verifyClubKonnectOrderStatus(requestId) {
+async function verifyClubKonnectOrderStatus(requestId, orderId = null, opts = {}) {
   const userId = getClubKonnectUserId();
   const apiKey = getClubKonnectApiKey();
-  const queryUrl = `https://www.nellobytesystems.com/APIQueryV1.asp?UserID=${userId}&APIKey=${apiKey}&RequestID=${requestId}`;
+  const queryParam = orderId
+    ? `OrderID=${encodeURIComponent(orderId)}`
+    : `RequestID=${encodeURIComponent(requestId)}`;
+  const queryUrl = `https://www.nellobytesystems.com/APIQueryV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&${queryParam}`;
   try {
     logger.info(
-      `🔍 [2-Step Verification]: Querying order status for RequestID ${requestId}...`,
+      `🔍 [2-Step Verification]: Querying order status for ${orderId ? `OrderID ${orderId}` : `RequestID ${requestId}`}...`,
     );
     const queryRes = await fetchClubKonnectApi(queryUrl, 10000);
     if (queryRes.success && queryRes.data) {
-      const isSuccess = isClubKonnectOrderSuccess(queryRes.data);
+      const cls = classifyClubKonnectResponse(queryRes.data, opts);
       logger.info(
-        `🔍 [2-Step Verification Result for ${requestId}]: isSuccess=${isSuccess}`,
+        `🔍 [2-Step Verification Result for ${requestId}]: outcome=${cls.outcome} statusCode=${cls.statusCode} isSuccess=${cls.isSuccess} isPending=${cls.isPending}`,
         queryRes.data,
       );
-      return { checked: true, isSuccess, data: queryRes.data };
+      return {
+        checked: true,
+        isSuccess: cls.isSuccess,
+        isPending: cls.isPending,
+        isFailed: cls.isFailed,
+        needsCancel: cls.needsCancel,
+        statusCode: cls.statusCode,
+        reason: cls.reason,
+        data: queryRes.data,
+      };
     }
   } catch (err) {
     logger.error(`❌ [2-Step Verification Error for ${requestId}]:`, err);
   }
-  return { checked: false, isSuccess: false, data: null };
+  return {
+    checked: false,
+    isSuccess: false,
+    isPending: false,
+    isFailed: false,
+    needsCancel: false,
+    statusCode: "",
+    reason: "",
+    data: null,
+  };
 }
 
 async function fetchClubKonnectApi(targetUrl, timeoutMs = 15000) {
@@ -3374,8 +5336,145 @@ async function fetchClubKonnectApi(targetUrl, timeoutMs = 15000) {
   }
 }
 
-function getFlutterwaveMerchantId() {
-  return process.env.FLW_MERCHANT_ID || "100381242";
+/**
+ * Real-Time Zero-Fee Settlement from User PSA to Merchant Account (100381242)
+ * Sweeps the cost of bill/service purchases immediately into merchant account.
+ */
+export async function settleUserPsaToMerchantCore({
+  uid,
+  requestId,
+  category,
+  amountNaira,
+  userDocData = {},
+}) {
+  const cleanId = String(requestId || "").replace(/[^a-zA-Z0-9]/g, "").replace(/^pwk/i, "");
+  const sweepRef = `pwksweep${cleanId || Date.now()}`;
+  const merchantId = getFlutterwaveMerchantId();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const isoNow = new Date().toISOString();
+
+  await db.collection("transfer_references").doc(sweepRef).set(
+    {
+      reference: sweepRef,
+      requestId,
+      type: "MERCHANT_SWEEP",
+      uid,
+      category,
+      amount: Number(amountNaira),
+      status: "INITIATED",
+      createdAt: now,
+    },
+    { merge: true },
+  ).catch(() => { });
+
+  // Require live PSA accountReference — never simulate settlement in emulator or production
+  if (!userDocData.accountReference) {
+    const missingErr = "Missing user PSA accountReference for real-time merchant settlement.";
+    logger.error(`❌ PSA Settlement skipped/failed for ${sweepRef}: ${missingErr}`);
+    await Promise.all([
+      db.collection("admin_settlement_sweeps").doc(sweepRef).set({
+        sweepRef,
+        requestId,
+        uid,
+        category,
+        amount: Number(amountNaira),
+        accountReference: "",
+        merchantId,
+        status: "SWEEP_FAILED",
+        error: missingErr,
+        createdAt: now,
+        created_at: isoNow,
+      }),
+      db.collection("admin_failed_sweeps").doc(sweepRef).set({
+        sweepRef,
+        requestId,
+        uid,
+        category,
+        amount: Number(amountNaira),
+        accountReference: "",
+        merchantId,
+        error: missingErr,
+        createdAt: now,
+      }),
+    ]);
+    return { status: "failed", error: missingErr };
+  }
+
+  try {
+    const flwSecKey = FLW_SECRET_KEY.value();
+    logger.info(`⚡ [Real-Time PSA Settlement]: Transferring ₦${amountNaira} from PSA ${userDocData.accountReference} to merchant ${merchantId}`);
+
+    const res = await fetch("https://api.flutterwave.com/v3/transfers", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${flwSecKey}`,
+        "Content-Type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        account_bank: "flutterwave",
+        account_number: merchantId,
+        amount: Number(amountNaira),
+        currency: "NGN",
+        debit_currency: "NGN",
+        debit_subaccount: userDocData.accountReference,
+        narration: `PayWaka Real-Time Settlement - ${category} - ${requestId}`,
+        reference: sweepRef,
+      }),
+    });
+
+    const flwResponse = await res.json();
+    const isSuccess =
+      flwResponse?.status === "success" ||
+      flwResponse?.status === "NEW" ||
+      flwResponse?.status === "PENDING";
+
+    await db.collection("admin_settlement_sweeps").doc(sweepRef).set({
+      sweepRef,
+      requestId,
+      uid,
+      category,
+      amount: Number(amountNaira),
+      accountReference: userDocData.accountReference,
+      merchantId,
+      status: isSuccess ? "SETTLED_SUCCESSFULLY" : "SWEEP_FAILED",
+      response: flwResponse,
+      createdAt: now,
+      created_at: isoNow,
+    });
+
+    if (!isSuccess) {
+      logger.error(`❌ Instant settlement failed for ${sweepRef}:`, flwResponse);
+      await db.collection("admin_failed_sweeps").doc(sweepRef).set({
+        sweepRef,
+        requestId,
+        uid,
+        category,
+        amount: Number(amountNaira),
+        accountReference: userDocData.accountReference,
+        merchantId,
+        error: flwResponse?.message || "Unknown error during settlement",
+        response: flwResponse,
+        createdAt: now,
+      });
+    }
+
+    return { status: isSuccess ? "success" : "failed", response: flwResponse };
+  } catch (err) {
+    logger.error(`❌ Exception in settleUserPsaToMerchantCore for ${sweepRef}:`, err);
+    await db.collection("admin_failed_sweeps").doc(sweepRef).set({
+      sweepRef,
+      requestId,
+      uid,
+      category,
+      amount: Number(amountNaira),
+      accountReference: userDocData.accountReference,
+      merchantId,
+      error: err.message,
+      createdAt: now,
+    });
+    return { status: "error", error: err.message };
+  }
 }
 
 async function recordPendingSettlement({
@@ -4005,6 +6104,279 @@ export async function awardTransactionPointsCore({ uid, requestId, category, amo
   }
 }
 
+let _cashbackServiceInstance = null;
+function getCashbackService() {
+  if (!_cashbackServiceInstance) {
+    _cashbackServiceInstance = createCashbackService({
+      db,
+      stripUndefined,
+      writeUpperLevelTransaction,
+      generatePaywakaRef,
+      settleUserPsaToMerchantCore,
+      recordPendingSettlement,
+      cancelPendingSettlement,
+      awardTransactionPointsCore,
+      verifyUserPinCore,
+      verifyClubKonnectOrderStatus,
+      cancelClubKonnectOrder,
+      getFlutterwaveMerchantId,
+      FLW_SECRET_KEY,
+      assertWholeNairaKobo,
+      getPricingConfigCore,
+      calculatePlanPricing,
+    });
+  }
+  return _cashbackServiceInstance;
+}
+
+/**
+ * Unified execution orchestrator for ClubKonnect VTU & Bill purchases (Airtime, Data, Electricity, Cable).
+ * Enforces:
+ * 1. Atomic reservation of existing cashback (C) + main wallet (W) against Total Payable (Face + Fee).
+ * 2. Full face value P sent to ClubKonnect & stored canonically on transaction `amount`.
+ * 3. Order_Received (100) / OnHold held as PENDING until callback or APIQueryV1 verification.
+ * 4. Earned cashback credited ONLY on COMPLETED orders AND suppressed to ₦0 if W === 0 (100% cashback funded).
+ * 5. Merchant PSA sweep transfers ONLY W (never P) when W > 0.
+ * 6. Confirmed failures refund BOTH +W and +C idempotently.
+ */
+async function executeClubKonnectPurchase({
+  uid,
+  category,
+  provider,
+  meterType = "01",
+  faceAmountNaira,
+  actualProviderCostNaira = null,
+  baseDataCashbackNaira = null,
+  useCashback = false,
+  buildUrl,
+  txBaseFields = {},
+  serviceSubcollection = null,
+  buildServiceSubdoc = null,
+  defaultFailureMsg = "Transaction failed",
+  extractSuccessExtra = null,
+}) {
+  const cbService = getCashbackService();
+  const billCfg = await cbService.getBillPricingConfigCore();
+  const requestId = generatePaywakaRef("default");
+
+  let reservation;
+  try {
+    reservation = await cbService.reservePurchaseFundsCore({
+      uid,
+      requestId,
+      category,
+      provider,
+      faceAmountNaira,
+      actualProviderCostNaira,
+      baseDataCashbackNaira,
+      useCashback: Boolean(useCashback),
+      config: billCfg,
+      txBaseFields,
+    });
+  } catch (err) {
+    logger.error(`Pre-debit reservation failed for ${category} (${requestId}):`, err);
+    throw new HttpsError("failed-precondition", err.message || "Balance deduction failed.");
+  }
+
+  const { userData: cachedUserData, pricing } = reservation;
+  const callbackUrl = getClubKonnectCallbackUrl();
+  const callbackQuery = callbackUrl ? `&CallBackURL=${encodeURIComponent(callbackUrl)}` : "";
+  const primaryUrl = `${buildUrl(requestId)}${callbackQuery}`;
+
+  let result;
+  let isSuccess = false;
+  let isPending = false;
+  let isProviderBalanceIssue = false;
+  let isNetworkOrHtmlError = false;
+  let needsCancel = false;
+  let failureReasonOverride = "";
+
+  const fetchRes = await fetchClubKonnectApi(primaryUrl);
+  let isInvalidCredentials = false;
+  if (!fetchRes.success) {
+    logger.error(`${category} API fetch error for ${requestId}:`, fetchRes.error);
+    isSuccess = false;
+    isNetworkOrHtmlError = true;
+    result = {
+      status: "NETWORK_ERROR",
+      description: fetchRes.error?.message || "Provider connection failed",
+    };
+  } else {
+    result = fetchRes.data;
+    logger.info(`📡 [${category} RAW PROVIDER RESPONSE (${requestId})]:`, result);
+    const cls = classifyClubKonnectResponse(result, { category, meterType });
+    isInvalidCredentials =
+      cls.statusCode === "400" || cls.status.includes("INVALID_CREDENTIALS");
+    isSuccess = cls.isSuccess;
+    isPending = cls.isPending;
+    isProviderBalanceIssue = cls.isProviderBalanceIssue;
+    needsCancel = cls.needsCancel;
+    failureReasonOverride = cls.reason || "";
+  }
+
+  // Query OrderID/RequestID if primary call is not strictly COMPLETED (200) — or if completed without amountcharged
+  const initialOrderId = result?.orderid || result?.order_id || result?.OrderID || null;
+  if (!isSuccess && !isInvalidCredentials && !needsCancel && !isNetworkOrHtmlError) {
+    const delays = [1400, 2200];
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      logger.warn(
+        `⚠️ ${category} call status not yet terminal success for ${requestId} (isPending=${isPending}, attempt=${attempt + 1}/${delays.length}). Querying APIQueryV1...`,
+      );
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+      const stepCheck = await verifyClubKonnectOrderStatus(requestId, initialOrderId, {
+        category,
+        meterType,
+      });
+
+      if (stepCheck.data) {
+        result = stepCheck.data;
+      }
+
+      if (stepCheck.isSuccess) {
+        logger.info(`✅ [Step 2 Check Succeeded]: ${category} fulfilled for ${requestId}!`);
+        isSuccess = true;
+        isPending = false;
+        isProviderBalanceIssue = false;
+        needsCancel = false;
+        break;
+      } else if (stepCheck.needsCancel) {
+        isSuccess = false;
+        isPending = false;
+        needsCancel = true;
+        failureReasonOverride = stepCheck.reason || "";
+        isProviderBalanceIssue = isProviderBalanceIssue || stepCheck.statusCode === "412";
+        break;
+      } else if (stepCheck.isPending) {
+        isPending = true;
+        // Keep polling one more time in case operator responds quickly
+      } else if (stepCheck.checked && stepCheck.isFailed) {
+        isSuccess = false;
+        isPending = false;
+        failureReasonOverride = stepCheck.reason || "";
+        break;
+      } else if (!stepCheck.checked && !isPending) {
+        isPending = false;
+        break;
+      }
+    }
+  } else if (
+    isSuccess &&
+    initialOrderId &&
+    !actualProviderCostNaira &&
+    !result?.amountcharged &&
+    !result?.amount_charged
+  ) {
+    // Enrich actual provider debit (amountcharged) from APIQueryV1 when synchronous response omits it
+    const enrichRes = await verifyClubKonnectOrderStatus(requestId, initialOrderId, {
+      category,
+      meterType,
+    });
+    if (enrichRes.checked && enrichRes.data) {
+      result = { ...enrichRes.data, ...result, ...enrichRes.data };
+    }
+  }
+
+  if (isPending && !isSuccess) {
+    const pendingRes = await cbService.keepPurchasePendingCore({
+      uid,
+      requestId,
+      category,
+      provider,
+      ckResult: result,
+    });
+    return {
+      status: "pending",
+      message:
+        "Order received by provider and is processing. Any earned cashback will be credited automatically once completed.",
+      tx_ref: requestId,
+      orderId: pendingRes.orderId,
+      chargedAmount: pricing.faceAmount,
+      feeCharged: pricing.feeCharged,
+      totalPayable: pricing.totalPayable,
+      cashbackApplied: pricing.funding.cashbackApplied,
+      walletContribution: pricing.funding.walletContribution,
+      cashbackExpected: pricing.cashbackGiven,
+      cashbackEarned: 0,
+      data: result,
+    };
+  }
+
+  if (!isSuccess) {
+    if (needsCancel) {
+      const cancelOrderId =
+        result?.orderid || result?.order_id || result?.OrderID || initialOrderId || null;
+      if (cancelOrderId) {
+        await cancelClubKonnectOrder(requestId, cancelOrderId);
+      }
+    }
+
+    const failureReasonStr =
+      failureReasonOverride ||
+      resolveProviderFailureReason(
+        result,
+        isProviderBalanceIssue,
+        isNetworkOrHtmlError,
+        defaultFailureMsg,
+      );
+
+    await cbService.refundPurchaseFundsCore({
+      uid,
+      requestId,
+      category,
+      ckResult: result,
+      failureReasonStr,
+      isReversal: false,
+      extraFailedFields: txBaseFields,
+    });
+
+    return {
+      status: "provider_error",
+      message: isProviderBalanceIssue
+        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet and cashback were NOT charged (and have been safely refunded). Please try again shortly!"
+        : failureReasonStr,
+      tx_ref: requestId,
+      refunded: true,
+      cashbackRestored: pricing.funding.cashbackApplied,
+      walletRefunded: pricing.funding.walletContribution,
+      data: result,
+    };
+  }
+
+  const extraSuccessFields = extractSuccessExtra ? extractSuccessExtra(result, pricing) : {};
+  const subdocData = buildServiceSubdoc ? buildServiceSubdoc(result, pricing) : null;
+
+  const finalRes = await cbService.finalizePurchaseSuccessCore({
+    uid,
+    requestId,
+    category,
+    provider,
+    ckResult: result,
+    faceAmountNaira: pricing.faceAmount,
+    baseDataCashbackNaira,
+    actualCostOverrideNaira: actualProviderCostNaira,
+    useCashback: Boolean(useCashback),
+    userDocData: cachedUserData,
+    extraSuccessFields,
+    serviceSubcollection,
+    serviceSubdocData: subdocData,
+  });
+
+  return {
+    status: "success",
+    message: `${category} purchase successful`,
+    data: result,
+    tx_ref: requestId,
+    chargedAmount: pricing.faceAmount,
+    feeCharged: pricing.feeCharged,
+    totalPayable: pricing.totalPayable,
+    cashbackApplied: pricing.funding.cashbackApplied,
+    walletContribution: pricing.funding.walletContribution,
+    cashbackEarned: finalRes.cashbackEarned,
+    pointsEarned: finalRes.pointsEarned,
+    ...extraSuccessFields,
+  };
+}
+
 // 1. BUY AIRTIME
 export const clubkonnectBuyAirtime = onCall({ cors: true, secrets: ALL_PIN_SECRETS }, async (request) => {
   const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
@@ -4015,206 +6387,45 @@ export const clubkonnectBuyAirtime = onCall({ cors: true, secrets: ALL_PIN_SECRE
       "Authentication required to perform airtime purchase.",
     );
   }
-  const { network, phone, amount, pin } = request.data || {};
+  const { network, phone, amount, pin, useCashback = false } = request.data || {};
   const numAmount = Number(amount || 0);
-  if (!network || !phone || !numAmount || numAmount <= 0) {
+  if (!network || !phone || !numAmount || numAmount < 50) {
     throw new HttpsError(
       "invalid-argument",
-      "Network, valid phone number, and positive amount are required.",
+      "Network, valid phone number, and minimum ₦50 airtime amount are required.",
     );
   }
 
-  // Verify user transaction PIN before proceeding with wallet debit
   await verifyUserPinCore(uid, pin);
 
   const userId = getClubKonnectUserId();
   const apiKey = getClubKonnectApiKey();
   const networkCode = getClubKonnectNetworkCode(network);
-  const requestId = `PWK_${uid}_${Date.now()}`;
-  const userRef = db.collection("users").doc(uid);
-  let cachedUserData = {};
+  const netUpper = String(network).toUpperCase();
 
-  try {
-    await db.runTransaction(async (t) => {
-      const userDoc = await t.get(userRef);
-      if (userDoc.exists) {
-        cachedUserData = userDoc.data() || {};
-        const currentBalance = Number(cachedUserData.walletBalance || 0);
-        if (currentBalance < numAmount) {
-          throw new Error("Insufficient wallet balance for airtime purchase.");
-        }
-        t.update(userRef, {
-          walletBalance: admin.firestore.FieldValue.increment(-numAmount),
-        });
-      } else if (process.env.FUNCTIONS_EMULATOR === "true") {
-        cachedUserData = {
-          email: "dev_user@paywaka.com",
-          accountReference: "PSAF010632D562280420",
-          accountNumber: "7353739008",
-          bankCode: "035",
-          bankName: "Wema Bank PLC",
-          barter_id: "234000003484364",
-          walletBalance: 100000,
-        };
-        t.set(userRef, cachedUserData, { merge: true });
-      } else {
-        throw new Error("User account not found or has zero balance.");
-      }
-    });
-  } catch (err) {
-    logger.error(`Transaction failed for airtime: ${requestId}`, err);
-    throw new HttpsError(
-      "failed-precondition",
-      err.message || "Balance deduction failed.",
-    );
-  }
-
-  const primaryUrl = `https://www.nellobytesystems.com/APIAirtimeV1.asp?UserID=${userId}&APIKey=${apiKey}&MobileNetwork=${networkCode}&Amount=${numAmount}&MobileNumber=${phone}&RequestID=${requestId}`;
-
-  let result;
-  let isSuccess = false;
-  let isProviderBalanceIssue = false;
-  let isNetworkOrHtmlError = false;
-
-  const fetchRes = await fetchClubKonnectApi(primaryUrl);
-  if (!fetchRes.success) {
-    logger.error(`Airtime API fetch error for ${requestId}:`, fetchRes.error);
-    isSuccess = false;
-    isNetworkOrHtmlError = true;
-    result = {
-      status: "NETWORK_ERROR",
-      description: fetchRes.error?.message || "Provider connection failed",
-    };
-  } else {
-    result = fetchRes.data;
-    isSuccess = isClubKonnectOrderSuccess(result);
-    isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
-  }
-
-  // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
-  if (!isSuccess) {
-    logger.warn(
-      `⚠️ Airtime primary purchase returned non-success for ${requestId}. Executing Step 2 Status Query...`,
-    );
-    await new Promise((r) => setTimeout(r, 1200));
-    const step2Check = await verifyClubKonnectOrderStatus(requestId);
-    if (step2Check.isSuccess) {
-      logger.info(
-        `✅ [Step 2 Check Succeeded]: Airtime was received/fulfilled by provider for ${requestId}!`,
-      );
-      isSuccess = true;
-      result = step2Check.data || result;
-    }
-  }
-
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const isoNow = new Date().toISOString();
-
-  if (!isSuccess) {
-    // AUTOMATIC USER WALLET REFUND
-    await userRef.set(
-      { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
-      { merge: true },
-    );
-
-    const failureReasonStr = resolveProviderFailureReason(
-      result,
-      isProviderBalanceIssue,
-      isNetworkOrHtmlError,
-      "Airtime recharge failed",
-    );
-
-    await cancelPendingSettlement(requestId, failureReasonStr);
-
-    await db.collection("system_failed_payouts").doc(requestId).set({
-      tx_ref: requestId,
-      uid,
-      category: "Airtime",
-      amount: numAmount,
-      customerId: phone,
-      reason: failureReasonStr,
-      providerResponse: result,
-      createdAt: now,
-      created_at: isoNow,
-      resolved: false,
-    });
-
-    await userRef
-      .collection("Transactions")
-      .doc(requestId)
-      .set({
-        tx_ref: requestId,
-        narration: `Airtime Recharge (${network}) - Refunded`,
-        category: "Airtime",
-        type: "debit",
-        amount: numAmount,
-        status: "failed",
-        phone,
-        customerId: phone,
-        failureReason: failureReasonStr,
-        created_at: isoNow,
-        createdAt: now,
-        response: result,
-      });
-
-    return {
-      status: "provider_error",
-      message: isProviderBalanceIssue
-        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
-        : failureReasonStr,
-      tx_ref: requestId,
-      refunded: true,
-      data: result,
-    };
-  }
-
-  // SUCCESS PATH: Record pending subaccount sweep for midnight batch
-  await recordPendingSettlement({
+  return await executeClubKonnectPurchase({
     uid,
-    requestId,
     category: "Airtime",
-    amount: numAmount,
-    userDocData: cachedUserData,
-  });
-  await userRef
-    .collection("Transactions")
-    .doc(requestId)
-    .set({
-      tx_ref: requestId,
+    provider: netUpper,
+    faceAmountNaira: numAmount,
+    useCashback: Boolean(useCashback),
+    buildUrl: (requestId) =>
+      `https://www.nellobytesystems.com/APIAirtimeV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&MobileNetwork=${encodeURIComponent(networkCode)}&Amount=${encodeURIComponent(numAmount)}&MobileNumber=${encodeURIComponent(String(phone).trim())}&RequestID=${encodeURIComponent(requestId)}`,
+    txBaseFields: {
+      title: `${network} Airtime Recharge`,
       narration: `Airtime Recharge (${network})`,
-      category: "Airtime",
-      type: "debit",
-      amount: numAmount,
-      status: "completed",
+      network: netUpper,
       phone,
       customerId: phone,
-      created_at: isoNow,
-      createdAt: now,
-      response: result,
-    });
-
-  await userRef.collection("airtime").doc(requestId).set({
-    network,
-    phone,
-    amount: numAmount,
-    status: "completed",
-    createdAt: now,
+    },
+    serviceSubcollection: "airtime",
+    buildServiceSubdoc: () => ({
+      network: netUpper,
+      phone,
+      amount: numAmount,
+    }),
+    defaultFailureMsg: "Airtime recharge failed",
   });
-
-  const ptsRes = await awardTransactionPointsCore({
-    uid,
-    requestId,
-    category: "Airtime",
-    amount: numAmount,
-  });
-
-  return {
-    status: "success",
-    message: "Airtime purchase successful",
-    data: result,
-    tx_ref: requestId,
-    pointsEarned: ptsRes.pointsEarned,
-  };
 });
 
 // 2. BUY DATA
@@ -4227,7 +6438,7 @@ export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS 
       "Authentication required to purchase data.",
     );
   }
-  const { network, plan, phone, pin } = request.data || {};
+  const { network, plan, phone, pin, useCashback = false } = request.data || {};
   if (!network || !plan || !phone) {
     throw new HttpsError(
       "invalid-argument",
@@ -4235,7 +6446,6 @@ export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS 
     );
   }
 
-  // Verify user transaction PIN before proceeding with price calculation and wallet debit
   await verifyUserPinCore(uid, pin);
 
   const netUpper = String(network).toUpperCase();
@@ -4250,6 +6460,7 @@ export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS 
   let competitorPrice = null;
   let customDisplayPrice = null;
   let overrideMode = "AUTOMATIC";
+  let planDataName = request.data?.planName || "";
 
   if (planDocSnap.exists) {
     const planData = planDocSnap.data() || {};
@@ -4257,8 +6468,10 @@ export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS 
     competitorPrice = planData.competitorPrice;
     customDisplayPrice = planData.customDisplayPrice;
     overrideMode = planData.overrideMode || "AUTOMATIC";
+    if (!planDataName) {
+      planDataName = planData.planName || planData.name || "";
+    }
   } else {
-    // Fallback: fetch live cost from ClubKonnect if plan not in Firestore yet
     try {
       const userId = getClubKonnectUserId();
       const res = await fetch(`https://www.nellobytesystems.com/APIDatabundlePlansV2.asp?UserID=${userId}`);
@@ -4274,6 +6487,9 @@ export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS 
       const matched = rawPlans.find((p) => String(p.PRODUCT_ID || p.PRODUCT_CODE).trim() === planCodeStr);
       if (matched) {
         costPrice = Number(matched.PRODUCT_AMOUNT || 0);
+        if (!planDataName) {
+          planDataName = matched.PRODUCT_NAME || "";
+        }
       }
     } catch (err) {
       logger.error("Error fetching fallback plan cost:", err);
@@ -4294,220 +6510,33 @@ export const clubkonnectBuyData = onCall({ cors: true, secrets: ALL_PIN_SECRETS 
   );
 
   const numAmount = pricingResult.displayPrice;
-
   const userId = getClubKonnectUserId();
   const apiKey = getClubKonnectApiKey();
   const networkCode = getClubKonnectNetworkCode(network);
-  const requestId = `PWK_${uid}_${Date.now()}`;
-  const userRef = db.collection("users").doc(uid);
-  let cachedUserData = {};
 
-  try {
-    await db.runTransaction(async (t) => {
-      const userDoc = await t.get(userRef);
-      if (userDoc.exists) {
-        cachedUserData = userDoc.data() || {};
-        const currentBalance = Number(cachedUserData.walletBalance || 0);
-        if (currentBalance < numAmount) {
-          throw new Error(
-            `Insufficient PayWaka wallet balance. Data plan price is ₦${numAmount.toLocaleString()}. Please add funds to your wallet.`,
-          );
-        }
-        t.update(userRef, {
-          walletBalance: admin.firestore.FieldValue.increment(-numAmount),
-        });
-      } else if (process.env.FUNCTIONS_EMULATOR === "true") {
-        cachedUserData = {
-          email: "dev_user@paywaka.com",
-          accountReference: "PSAF010632D562280420",
-          accountNumber: "7353739008",
-          bankCode: "035",
-          bankName: "Wema Bank PLC",
-          barter_id: "234000003484364",
-          walletBalance: 100000,
-        };
-        t.set(userRef, cachedUserData, { merge: true });
-      } else {
-        throw new Error("User account not found or has zero balance.");
-      }
-    });
-  } catch (err) {
-    logger.error(`Transaction failed for data: ${requestId}`, err);
-    throw new HttpsError(
-      "failed-precondition",
-      err.message || "Balance deduction failed.",
-    );
-  }
-
-  const primaryUrl = `https://www.nellobytesystems.com/APIDatabundleV1.asp?UserID=${userId}&APIKey=${apiKey}&MobileNetwork=${networkCode}&DataPlan=${planCodeStr}&MobileNumber=${phone}&RequestID=${requestId}`;
-
-  let result;
-  let isSuccess = false;
-  let isProviderBalanceIssue = false;
-  let isNetworkOrHtmlError = false;
-
-  const dataFetch = await fetchClubKonnectApi(primaryUrl);
-  if (!dataFetch.success) {
-    logger.error(`Data API fetch error for ${requestId}:`, dataFetch.error);
-    isSuccess = false;
-    isNetworkOrHtmlError = true;
-    result = {
-      status: "NETWORK_ERROR",
-      description: dataFetch.error?.message || "Provider connection failed",
-    };
-  } else {
-    result = dataFetch.data;
-    logger.info("📶 [DATA BUNDLE PURCHASE RAW PROVIDER RESPONSE]:", result);
-    isSuccess = isClubKonnectOrderSuccess(result);
-    isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
-  }
-
-  // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
-  if (!isSuccess) {
-    logger.warn(
-      `⚠️ Data primary purchase returned non-success for ${requestId}. Executing Step 2 Status Query...`,
-    );
-    await new Promise((r) => setTimeout(r, 1200));
-    const step2Check = await verifyClubKonnectOrderStatus(requestId);
-    if (step2Check.isSuccess) {
-      logger.info(
-        `✅ [Step 2 Check Succeeded]: Data plan was received/fulfilled by provider for ${requestId}!`,
-      );
-      isSuccess = true;
-      result = step2Check.data || result;
-    }
-  }
-
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const isoNow = new Date().toISOString();
-
-  if (!isSuccess) {
-    await userRef.set(
-      { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
-      { merge: true },
-    );
-
-    const failureReasonStr = resolveProviderFailureReason(
-      result,
-      isProviderBalanceIssue,
-      isNetworkOrHtmlError,
-      "Data plan purchase failed",
-    );
-
-    await cancelPendingSettlement(requestId, failureReasonStr);
-
-    await db.collection("system_failed_payouts").doc(requestId).set({
-      tx_ref: requestId,
-      uid,
-      category: "Data",
-      amount: numAmount,
+  return await executeClubKonnectPurchase({
+    uid,
+    category: "Data",
+    provider: netUpper,
+    faceAmountNaira: numAmount,
+    actualProviderCostNaira: pricingResult.costPrice,
+    baseDataCashbackNaira: Number(pricingResult.cashbackAmount || 0),
+    useCashback: Boolean(useCashback),
+    buildUrl: (requestId) =>
+      `https://www.nellobytesystems.com/APIDatabundleV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&MobileNetwork=${encodeURIComponent(networkCode)}&DataPlan=${encodeURIComponent(planCodeStr)}&MobileNumber=${encodeURIComponent(String(phone).trim())}&RequestID=${encodeURIComponent(requestId)}`,
+    txBaseFields: {
+      title: `${netUpper} Data Bundle`,
+      narration: `Data Purchase (${netUpper})`,
+      network: netUpper,
+      planName: planDataName || planCodeStr,
+      planCode: planCodeStr,
+      costPrice: pricingResult.costPrice,
+      isHero: pricingResult.isHero,
+      phone,
       customerId: phone,
-      reason: failureReasonStr,
-      providerResponse: result,
-      createdAt: now,
-      created_at: isoNow,
-      resolved: false,
-    });
-
-    await userRef
-      .collection("Transactions")
-      .doc(requestId)
-      .set({
-        tx_ref: requestId,
-        narration: `Data Purchase (${netUpper}) - Refunded`,
-        category: "Data",
-        type: "debit",
-        amount: numAmount,
-        status: "failed",
-        phone,
-        customerId: phone,
-        failureReason: failureReasonStr,
-        created_at: isoNow,
-        createdAt: now,
-        response: result,
-      });
-
-    return {
-      status: "provider_error",
-      message: isProviderBalanceIssue
-        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
-        : failureReasonStr,
-      tx_ref: requestId,
-      refunded: true,
-      data: result,
-    };
-  }
-
-  // SUCCESS PATH: Record pending subaccount sweep for midnight batch
-  await recordPendingSettlement({
-    uid,
-    requestId,
-    category: "Data",
-    amount: numAmount,
-    userDocData: cachedUserData,
+    },
+    defaultFailureMsg: "Data plan purchase failed",
   });
-
-  const txDocRef = userRef.collection("Transactions").doc(requestId);
-  await txDocRef.set({
-    tx_ref: requestId,
-    narration: `Data Purchase (${netUpper})`,
-    category: "Data",
-    type: "debit",
-    amount: numAmount,
-    costPrice: pricingResult.costPrice,
-    profit: pricingResult.profit,
-    isHero: pricingResult.isHero,
-    status: "completed",
-    phone,
-    customerId: phone,
-    created_at: isoNow,
-    createdAt: now,
-    response: result,
-  });
-
-  // IDEMPOTENT CASHBACK CREDITING: Check if cashback has already been awarded
-  if (pricingResult.cashbackAmount > 0) {
-    try {
-      await db.runTransaction(async (t) => {
-        const txDocSnap = await t.get(txDocRef);
-        const txData = txDocSnap.exists ? txDocSnap.data() : {};
-        if (!txData.cashback_awarded) {
-          t.update(userRef, {
-            walletBalance: admin.firestore.FieldValue.increment(pricingResult.cashbackAmount),
-          });
-          t.set(
-            txDocRef,
-            {
-              cashback_awarded: true,
-              cashback_amount: pricingResult.cashbackAmount,
-              cashback_rate: pricingResult.cashbackRate,
-              cashback_awarded_at: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        }
-      });
-    } catch (cbErr) {
-      logger.error(`Cashback crediting error for ${requestId}:`, cbErr);
-    }
-  }
-
-  const ptsRes = await awardTransactionPointsCore({
-    uid,
-    requestId,
-    category: "Data",
-    amount: numAmount,
-  });
-
-  return {
-    status: "success",
-    message: "Data purchase successful",
-    data: result,
-    tx_ref: requestId,
-    chargedAmount: numAmount,
-    cashbackEarned: pricingResult.cashbackAmount,
-    pointsEarned: ptsRes.pointsEarned,
-  };
 });
 
 // 3. PAY ELECTRICITY
@@ -4522,7 +6551,8 @@ export const clubkonnectPayElectricity = onCall(
         "Authentication required to perform electricity payment.",
       );
     }
-    const { company, meterType, meterNo, amount, phone, pin } = request.data || {};
+    const { company, meterType, meterNo, amount, phone, pin, useCashback = false } =
+      request.data || {};
     const numAmount = Number(amount || 0);
     if (!company || !meterNo || !numAmount || numAmount <= 0) {
       throw new HttpsError(
@@ -4531,211 +6561,58 @@ export const clubkonnectPayElectricity = onCall(
       );
     }
 
-    // Verify user transaction PIN before proceeding with wallet debit
     await verifyUserPinCore(uid, pin);
 
     const userId = getClubKonnectUserId();
     const apiKey = getClubKonnectApiKey();
-    const typeParam = meterType || "01";
-    const requestId = `PWK_${uid}_${Date.now()}`;
-    const userRef = db.collection("users").doc(uid);
-    let cachedUserData = {};
+    const typeParam = meterType === "02" ? "02" : "01";
+    const disco = normalizeClubKonnectDisco(company);
 
-    try {
-      await db.runTransaction(async (t) => {
-        const userDoc = await t.get(userRef);
-        if (userDoc.exists) {
-          cachedUserData = userDoc.data() || {};
-          const currentBalance = Number(cachedUserData.walletBalance || 0);
-          if (currentBalance < numAmount) {
-            throw new Error(
-              "Insufficient PayWaka wallet balance. Please add funds to your wallet to complete this purchase.",
-            );
-          }
-          t.update(userRef, {
-            walletBalance: admin.firestore.FieldValue.increment(-numAmount),
-          });
-        } else if (process.env.FUNCTIONS_EMULATOR === "true") {
-          cachedUserData = {
-            email: "dev_user@paywaka.com",
-            accountReference: "PSAF010632D562280420",
-            accountNumber: "7353739008",
-            bankCode: "035",
-            bankName: "Wema Bank PLC",
-            barter_id: "234000003484364",
-            walletBalance: 100000,
-          };
-          t.set(userRef, cachedUserData, { merge: true });
-        } else {
-          throw new Error("User account not found or has zero balance.");
-        }
-      });
-    } catch (err) {
-      logger.error(`Transaction failed for elec: ${requestId}`, err);
-      throw new HttpsError(
-        "failed-precondition",
-        err.message || "Balance deduction failed.",
-      );
-    }
-
-    const primaryUrl = `https://www.nellobytesystems.com/APIElectricityV1.asp?UserID=${userId}&APIKey=${apiKey}&ElectricCompany=${company}&MeterType=${typeParam}&MeterNo=${meterNo}&Amount=${numAmount}&PhoneNo=${phone || ""}&RequestID=${requestId}`;
-
-    let result;
-    let isSuccess = false;
-    let isProviderBalanceIssue = false;
-    let isNetworkOrHtmlError = false;
-
-    const elecFetch = await fetchClubKonnectApi(primaryUrl);
-    if (!elecFetch.success) {
-      logger.error(
-        `Electricity API fetch error for ${requestId}:`,
-        elecFetch.error,
-      );
-      isSuccess = false;
-      isNetworkOrHtmlError = true;
-      result = {
-        status: "NETWORK_ERROR",
-        description: elecFetch.error?.message || "Provider connection failed",
-      };
-    } else {
-      result = elecFetch.data;
-      logger.info("🔌 [ELECTRICITY PURCHASE RAW PROVIDER RESPONSE]:", result);
-      isSuccess = isClubKonnectOrderSuccess(result);
-      isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
-    }
-
-    // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
-    if (!isSuccess) {
-      logger.warn(
-        `⚠️ Electricity primary payment returned non-success for ${requestId}. Executing Step 2 Status Query...`,
-        result,
-      );
-      await new Promise((r) => setTimeout(r, 1200));
-      const step2Check = await verifyClubKonnectOrderStatus(requestId);
-      if (step2Check.isSuccess) {
-        logger.info(
-          `✅ [Step 2 Check Succeeded]: Electricity bill was received/fulfilled by provider for ${requestId}!`,
-          step2Check.data,
-        );
-        isSuccess = true;
-        result = step2Check.data || result;
-      }
-    }
-
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const isoNow = new Date().toISOString();
-
-    if (!isSuccess) {
-      await userRef.set(
-        { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
-        { merge: true },
-      );
-
-      const failureReasonStr = resolveProviderFailureReason(
-        result,
-        isProviderBalanceIssue,
-        isNetworkOrHtmlError,
-        "Electricity payment failed",
-      );
-
-      await cancelPendingSettlement(requestId, failureReasonStr);
-
-      await db.collection("system_failed_payouts").doc(requestId).set({
-        tx_ref: requestId,
-        uid,
-        category: "Electricity",
-        amount: numAmount,
-        customerId: meterNo,
-        reason: failureReasonStr,
-        providerResponse: result,
-        createdAt: now,
-        created_at: isoNow,
-        resolved: false,
-      });
-
-      await userRef
-        .collection("Transactions")
-        .doc(requestId)
-        .set({
-          tx_ref: requestId,
-          narration: `Electricity Payment (${company}) - Refunded`,
-          category: "Electricity",
-          type: "debit",
-          amount: numAmount,
-          status: "failed",
-          meterNo,
-          customerId: meterNo,
-          failureReason: failureReasonStr,
-          created_at: isoNow,
-          createdAt: now,
-          response: result,
-        });
-
-      return {
-        status: "provider_error",
-        message: isProviderBalanceIssue
-          ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
-          : failureReasonStr,
-        tx_ref: requestId,
-        refunded: true,
-        data: result,
-      };
-    }
-
-    // SUCCESS PATH: Record pending subaccount sweep for midnight batch
-    await recordPendingSettlement({
+    return await executeClubKonnectPurchase({
       uid,
-      requestId,
       category: "Electricity",
-      amount: numAmount,
-      userDocData: cachedUserData,
-    });
-    await userRef
-      .collection("Transactions")
-      .doc(requestId)
-      .set({
-        tx_ref: requestId,
-        narration: `Electricity Payment (${company})`,
-        category: "Electricity",
-        type: "debit",
-        amount: numAmount,
-        status: "completed",
+      provider: disco.label,
+      meterType: typeParam,
+      faceAmountNaira: numAmount,
+      useCashback: Boolean(useCashback),
+      buildUrl: (requestId) =>
+        `https://www.nellobytesystems.com/APIElectricityV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&ElectricCompany=${encodeURIComponent(disco.code)}&MeterType=${encodeURIComponent(typeParam)}&MeterNo=${encodeURIComponent(String(meterNo).trim())}&Amount=${encodeURIComponent(numAmount)}&PhoneNo=${encodeURIComponent(String(phone || "").trim())}&RequestID=${encodeURIComponent(requestId)}`,
+      txBaseFields: {
+        title: `${disco.label} Electricity Token`,
+        narration: `Electricity Payment (${disco.label})`,
+        company: disco.label,
+        companyCode: disco.code,
+        meterType: typeParam === "02" ? "Postpaid" : "Prepaid",
         meterNo,
         customerId: meterNo,
-        tokenPin: result.token || result.pin || "",
-        created_at: isoNow,
-        createdAt: now,
-        response: result,
-      });
-
-    await userRef
-      .collection("utility")
-      .doc(requestId)
-      .set({
-        billType: "electricity",
-        provider: company,
-        amount: numAmount,
-        customerId: meterNo,
-        token: result.token || result.pin || "",
-        status: "completed",
-        createdAt: now,
-      });
-
-    const ptsRes = await awardTransactionPointsCore({
-      uid,
-      requestId,
-      category: "Electricity",
-      amount: numAmount,
+      },
+      extractSuccessExtra: (ckRes) => {
+        const rawToken =
+          ckRes?.metertoken || ckRes?.MeterToken || ckRes?.token || ckRes?.pin || "";
+        const tokenValue = rawToken && rawToken !== "000123" ? rawToken : "";
+        return {
+          token: tokenValue,
+          tokenPin: tokenValue,
+          units: ckRes?.units || ckRes?.Units || "",
+        };
+      },
+      serviceSubcollection: "utility",
+      buildServiceSubdoc: (ckRes, pricing) => {
+        const rawToken =
+          ckRes?.metertoken || ckRes?.MeterToken || ckRes?.token || ckRes?.pin || "";
+        return {
+          billType: "electricity",
+          provider: disco.label,
+          providerCode: disco.code,
+          amount: numAmount,
+          fee: pricing.feeCharged,
+          totalPayable: pricing.totalPayable,
+          customerId: meterNo,
+          token: rawToken && rawToken !== "000123" ? rawToken : "",
+        };
+      },
+      defaultFailureMsg: "Electricity payment failed",
     });
-
-    return {
-      status: "success",
-      message: "Electricity payment successful",
-      token: result.token || result.pin,
-      data: result,
-      tx_ref: requestId,
-      pointsEarned: ptsRes.pointsEarned,
-    };
   },
 );
 
@@ -4749,465 +6626,147 @@ export const clubkonnectPayCable = onCall({ cors: true, secrets: ALL_PIN_SECRETS
       "Authentication required to perform cable TV payment.",
     );
   }
-  const { cableTV, packageCode, smartCardNo, amount, phone, pin } =
+  const { cableTV, packageCode, smartCardNo, amount, phone, pin, useCashback = false } =
     request.data || {};
-  const numAmount = Number(amount || 0);
-  if (!cableTV || !packageCode || !smartCardNo) {
+  const clientAmount = Number(amount || 0);
+  if (!cableTV || !packageCode || !smartCardNo || clientAmount <= 0) {
     throw new HttpsError(
       "invalid-argument",
-      "CableTV, package code, and smartcard number are required.",
+      "CableTV, package code, smartcard number, and positive amount are required.",
     );
   }
 
-  // Verify user transaction PIN before proceeding with wallet debit
   await verifyUserPinCore(uid, pin);
 
   const userId = getClubKonnectUserId();
   const apiKey = getClubKonnectApiKey();
-  const requestId = `PWK_${uid}_${Date.now()}`;
-  const userRef = db.collection("users").doc(uid);
-  let cachedUserData = {};
+  const cableInfo = normalizeClubKonnectCableCode(cableTV);
+  const pkgCodeStr = String(packageCode).trim();
 
-  if (numAmount > 0) {
-    try {
-      await db.runTransaction(async (t) => {
-        const userDoc = await t.get(userRef);
-        if (userDoc.exists) {
-          cachedUserData = userDoc.data() || {};
-          const currentBalance = Number(cachedUserData.walletBalance || 0);
-          if (currentBalance < numAmount) {
-            throw new Error(
-              "Insufficient PayWaka wallet balance. Please add funds to your wallet to complete this purchase.",
-            );
-          }
-          t.update(userRef, {
-            walletBalance: admin.firestore.FieldValue.increment(-numAmount),
-          });
-        } else if (process.env.FUNCTIONS_EMULATOR === "true") {
-          cachedUserData = {
-            email: "dev_user@paywaka.com",
-            accountReference: "PSAF010632D562280420",
-            accountNumber: "7353739008",
-            bankCode: "035",
-            bankName: "Wema Bank PLC",
-            barter_id: "234000003484364",
-            walletBalance: 100000,
-          };
-          t.set(userRef, cachedUserData, { merge: true });
-        } else {
-          throw new Error("User account not found or has zero balance.");
-        }
-      });
-    } catch (err) {
-      logger.error(`Transaction failed for cable: ${requestId}`, err);
-      throw new HttpsError(
-        "failed-precondition",
-        err.message || "Balance deduction failed.",
+  // Authoritative server-side package price & wholesale discount lookup (Admin-synced Firestore catalog first, live fallback)
+  let verifiedFaceAmount = clientAmount;
+  let actualPackageCost = null;
+  let verifiedPackageName = pkgCodeStr;
+  const provKey = cableInfo.tvKey.toUpperCase();
+  const safePkgId = String(pkgCodeStr).replace(/[\/\\\s#?\[\]]+/g, "_");
+  try {
+    const pkgSnap = await db
+      .collection("cable_package_pricing")
+      .doc(`${provKey}_${safePkgId}`)
+      .get();
+    if (pkgSnap.exists) {
+      const pkgData = pkgSnap.data() || {};
+      if (pkgData.isActive === false) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This Cable TV package is currently disabled by administrator.",
+        );
+      }
+      const adminOverride = Number(pkgData.customDisplayPrice || 0);
+      const storedFace = Number(pkgData.faceAmount || pkgData.amount || 0);
+      const storedCost = Number(pkgData.costPrice || 0);
+      if (adminOverride > 0) verifiedFaceAmount = adminOverride;
+      else if (storedFace > 0) verifiedFaceAmount = storedFace;
+      if (storedCost > 0) actualPackageCost = storedCost;
+      if (pkgData.packageName) verifiedPackageName = pkgData.packageName;
+    } else {
+      const pkgRes = await fetch(
+        `https://www.nellobytesystems.com/APICableTVPackagesV2.asp?UserID=${encodeURIComponent(userId)}`,
       );
-    }
-  }
-
-  const primaryUrl = `https://www.nellobytesystems.com/APICableTVV1.asp?UserID=${userId}&APIKey=${apiKey}&CableTV=${cableTV}&Package=${packageCode}&SmartCardNo=${smartCardNo}&PhoneNo=${phone || ""}&RequestID=${requestId}`;
-
-  let result;
-  let isSuccess = false;
-  let isProviderBalanceIssue = false;
-  let isNetworkOrHtmlError = false;
-
-  const cableFetch = await fetchClubKonnectApi(primaryUrl);
-  if (!cableFetch.success) {
-    logger.error(`Cable API fetch error for ${requestId}:`, cableFetch.error);
-    isSuccess = false;
-    isNetworkOrHtmlError = true;
-    result = {
-      status: "NETWORK_ERROR",
-      description: cableFetch.error?.message || "Provider connection failed",
-    };
-  } else {
-    result = cableFetch.data;
-    logger.info("📺 [CABLE TV PURCHASE RAW PROVIDER RESPONSE]:", result);
-    isSuccess = isClubKonnectOrderSuccess(result);
-    isProviderBalanceIssue = !isSuccess && isClubKonnectBalanceOutage(result);
-  }
-
-  // 2-STEP CHECK: Query status API before issuing refund if primary call was ambiguous or network failed
-  if (!isSuccess) {
-    logger.warn(
-      `⚠️ Cable primary payment returned non-success for ${requestId}. Executing Step 2 Status Query...`,
-    );
-    await new Promise((r) => setTimeout(r, 1200));
-    const step2Check = await verifyClubKonnectOrderStatus(requestId);
-    if (step2Check.isSuccess) {
-      logger.info(
-        `✅ [Step 2 Check Succeeded]: Cable subscription was received/fulfilled by provider for ${requestId}!`,
+      const pkgJson = await pkgRes.json();
+      const tvObj = pkgJson?.TV_ID || pkgJson?.CABLETV || {};
+      const list = tvObj?.[cableInfo.tvKey]?.[0]?.PRODUCT || tvObj?.[cableInfo.tvKey]?.[0]?.PACKAGE || [];
+      const matched = list.find(
+        (p) => String(p.PACKAGE_ID || p.PACKAGE_CODE || "").trim() === pkgCodeStr,
       );
-      isSuccess = true;
-      result = step2Check.data || result;
+      if (matched) {
+        const liveAmt = Number(matched.PACKAGE_AMOUNT || matched.amount || 0);
+        const liveCost = Number(matched.PRODUCT_DISCOUNT_AMOUNT || 0);
+        if (liveAmt > 0) verifiedFaceAmount = liveAmt;
+        if (liveCost > 0) actualPackageCost = liveCost;
+        if (matched.PACKAGE_NAME) verifiedPackageName = matched.PACKAGE_NAME;
+      }
     }
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    logger.warn("⚠️ Cable package lookup failed; falling back to client amount:", err.message);
   }
 
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const isoNow = new Date().toISOString();
-
-  if (!isSuccess) {
-    if (numAmount > 0) {
-      await userRef.set(
-        { walletBalance: admin.firestore.FieldValue.increment(numAmount) },
-        { merge: true },
-      );
-    }
-
-    const failureReasonStr = resolveProviderFailureReason(
-      result,
-      isProviderBalanceIssue,
-      isNetworkOrHtmlError,
-      "Cable TV payment failed",
-    );
-
-    await cancelPendingSettlement(requestId, failureReasonStr);
-
-    await db.collection("system_failed_payouts").doc(requestId).set({
-      tx_ref: requestId,
-      uid,
-      category: "Cable",
-      amount: numAmount,
-      customerId: smartCardNo,
-      reason: failureReasonStr,
-      providerResponse: result,
-      createdAt: now,
-      created_at: isoNow,
-      resolved: false,
-    });
-
-    await userRef
-      .collection("Transactions")
-      .doc(requestId)
-      .set({
-        tx_ref: requestId,
-        narration: `Cable Payment (${cableTV}) - Refunded`,
-        category: "Cable",
-        type: "debit",
-        amount: numAmount,
-        status: "failed",
-        smartCardNo,
-        customerId: smartCardNo,
-        failureReason: failureReasonStr,
-        created_at: isoNow,
-        createdAt: now,
-        response: result,
-      });
-
-    return {
-      status: "provider_error",
-      message: isProviderBalanceIssue
-        ? "We're experiencing temporary service maintenance on our provider gateway. Your PayWaka wallet was NOT charged (and has been safely refunded). Please try again shortly!"
-        : failureReasonStr,
-      tx_ref: requestId,
-      refunded: true,
-      data: result,
-    };
-  }
-
-  // SUCCESS PATH: Record pending subaccount sweep for midnight batch
-  await recordPendingSettlement({
+  return await executeClubKonnectPurchase({
     uid,
-    requestId,
     category: "Cable",
-    amount: numAmount,
-    userDocData: cachedUserData,
-  });
-  await userRef
-    .collection("Transactions")
-    .doc(requestId)
-    .set({
-      tx_ref: requestId,
-      narration: `Cable Payment (${cableTV})`,
-      category: "Cable",
-      type: "debit",
-      amount: numAmount,
-      status: "completed",
+    provider: cableInfo.label,
+    faceAmountNaira: verifiedFaceAmount,
+    actualProviderCostNaira: actualPackageCost,
+    useCashback: Boolean(useCashback),
+    buildUrl: (requestId) =>
+      `https://www.nellobytesystems.com/APICableTVV1.asp?UserID=${encodeURIComponent(userId)}&APIKey=${encodeURIComponent(apiKey)}&CableTV=${encodeURIComponent(cableInfo.code)}&Package=${encodeURIComponent(pkgCodeStr)}&SmartCardNo=${encodeURIComponent(String(smartCardNo).trim())}&PhoneNo=${encodeURIComponent(String(phone || "").trim())}&RequestID=${encodeURIComponent(requestId)}`,
+    txBaseFields: {
+      title: `${cableInfo.label} Subscription`,
+      narration: `Cable Payment (${cableInfo.label})`,
+      cableTV: cableInfo.label,
+      cableCode: cableInfo.code,
+      packageCode: pkgCodeStr,
+      packageName: verifiedPackageName,
       smartCardNo,
       customerId: smartCardNo,
-      created_at: isoNow,
-      createdAt: now,
-      response: result,
-    });
-
-  await userRef.collection("cable").doc(requestId).set({
-    cableTV,
-    packageCode,
-    smartCardNo,
-    amount: numAmount,
-    status: "completed",
-    createdAt: now,
+    },
+    serviceSubcollection: "cable",
+    buildServiceSubdoc: () => ({
+      cableTV: cableInfo.label,
+      cableCode: cableInfo.code,
+      packageCode: pkgCodeStr,
+      packageName: verifiedPackageName,
+      smartCardNo,
+      amount: verifiedFaceAmount,
+    }),
+    defaultFailureMsg: "Cable TV payment failed",
   });
-
-  const ptsRes = await awardTransactionPointsCore({
-    uid,
-    requestId,
-    category: "Cable",
-    amount: numAmount,
-  });
-
-  return {
-    status: "success",
-    message: "Cable subscription successful",
-    data: result,
-    tx_ref: requestId,
-    pointsEarned: ptsRes.pointsEarned,
-  };
 });
 
-// 5. FETCH CABLE PACKAGES
+// Rigorously verified fallback catalog matching live ClubKonnect specifications
+const FALLBACK_CABLE_PACKAGES = {
+  GOTV: [
+    { id: "gotv-smallie", name: "GOtv Smallie - Monthly", amount: 1900, package_code: "gotv-smallie", item_code: "gotv-smallie", short_name: "GOtv Smallie - Monthly - ₦1,900" },
+    { id: "gotv-smallie-3months", name: "GOtv Smallie - Quarterly", amount: 5100, package_code: "gotv-smallie-3months", item_code: "gotv-smallie-3months", short_name: "GOtv Smallie - Quarterly - ₦5,100" },
+    { id: "gotv-smallie-1year", name: "GOtv Smallie - Yearly", amount: 15000, package_code: "gotv-smallie-1year", item_code: "gotv-smallie-1year", short_name: "GOtv Smallie - Yearly - ₦15,000" },
+    { id: "gotv-jinja", name: "GOtv Jinja", amount: 3900, package_code: "gotv-jinja", item_code: "gotv-jinja", short_name: "GOtv Jinja - ₦3,900" },
+    { id: "gotv-jolli", name: "GOtv Jolli", amount: 5800, package_code: "gotv-jolli", item_code: "gotv-jolli", short_name: "GOtv Jolli - ₦5,800" },
+    { id: "gotv-max", name: "GOtv Max", amount: 8500, package_code: "gotv-max", item_code: "gotv-max", short_name: "GOtv Max - ₦8,500" },
+    { id: "gotv-supa", name: "GOtv Supa", amount: 11400, package_code: "gotv-supa", item_code: "gotv-supa", short_name: "GOtv Supa - ₦11,400" },
+    { id: "gotv-supa-plus", name: "GOtv Supa Plus", amount: 16800, package_code: "gotv-supa-plus", item_code: "gotv-supa-plus", short_name: "GOtv Supa Plus - ₦16,800" },
+  ],
+  DSTV: [
+    { id: "dstv-padi", name: "DStv Padi", amount: 4400, package_code: "dstv-padi", item_code: "dstv-padi", short_name: "DStv Padi - ₦4,400" },
+    { id: "dstv-yanga", name: "DStv Yanga", amount: 6000, package_code: "dstv-yanga", item_code: "dstv-yanga", short_name: "DStv Yanga - ₦6,000" },
+    { id: "dstv-confam", name: "DStv Confam", amount: 11000, package_code: "dstv-confam", item_code: "dstv-confam", short_name: "DStv Confam - ₦11,000" },
+    { id: "dstv-compact", name: "DStv Compact", amount: 19000, package_code: "dstv-compact", item_code: "dstv-compact", short_name: "DStv Compact - ₦19,000" },
+    { id: "dstv-compact-plus", name: "DStv Compact Plus", amount: 30000, package_code: "dstv-compact-plus", item_code: "dstv-compact-plus", short_name: "DStv Compact Plus - ₦30,000" },
+    { id: "dstv-premium", name: "DStv Premium", amount: 44000, package_code: "dstv-premium", item_code: "dstv-premium", short_name: "DStv Premium - ₦44,000" },
+  ],
+  STARTIMES: [
+    { id: "nova", name: "Nova (Antenna) - 1 Month", amount: 2100, package_code: "nova", item_code: "nova", short_name: "Nova (Antenna) - ₦2,100" },
+    { id: "basic", name: "Basic (Antenna) - 1 Month", amount: 3700, package_code: "basic", item_code: "basic", short_name: "Basic (Antenna) - ₦3,700" },
+    { id: "smart", name: "Basic (Dish) - 1 Month", amount: 4700, package_code: "smart", item_code: "smart", short_name: "Basic (Dish) - ₦4,700" },
+    { id: "classic", name: "Classic (Antenna) - 1 Month", amount: 6000, package_code: "classic", item_code: "classic", short_name: "Classic (Antenna) - ₦6,000" },
+    { id: "super", name: "Super (Dish) - 1 Month", amount: 9800, package_code: "super", item_code: "super", short_name: "Super (Dish) - ₦9,800" },
+  ],
+  SHOWMAX: [
+    { id: "showmax-entertainment", name: "Showmax Entertainment", amount: 2900, package_code: "showmax-entertainment", item_code: "showmax-entertainment", short_name: "Showmax Entertainment - ₦2,900" },
+    { id: "showmax-premier-league", name: "Showmax Premier League", amount: 3200, package_code: "showmax-premier-league", item_code: "showmax-premier-league", short_name: "Showmax Premier League - ₦3,200" },
+    { id: "showmax-all", name: "Showmax All Access", amount: 5400, package_code: "showmax-all", item_code: "showmax-all", short_name: "Showmax All Access - ₦5,400" },
+  ],
+};
+
+// 5. FETCH CABLE PACKAGES (Reads from Admin-Governed Materialized Catalog)
 export const clubkonnectFetchCablePackages = onCall(
   { cors: true },
   async (request) => {
-    const userId = getClubKonnectUserId();
-    const { provider } = request.data || {};
+    const { provider, forceSync = false } = request.data || {};
     const provUpper = String(provider || "DSTV")
       .toUpperCase()
       .trim();
 
-    // Rigorously verified fallback catalog matching live ClubKonnect specifications
-    const FALLBACK_CABLE_PACKAGES = {
-      GOTV: [
-        {
-          id: "gotv-smallie",
-          name: "GOtv Smallie - Monthly",
-          amount: 1900,
-          package_code: "gotv-smallie",
-          item_code: "gotv-smallie",
-          short_name: "GOtv Smallie - Monthly - ₦1,900",
-        },
-        {
-          id: "gotv-smallie-3months",
-          name: "GOtv Smallie - Quarterly",
-          amount: 5100,
-          package_code: "gotv-smallie-3months",
-          item_code: "gotv-smallie-3months",
-          short_name: "GOtv Smallie - Quarterly - ₦5,100",
-        },
-        {
-          id: "gotv-smallie-1year",
-          name: "GOtv Smallie - Yearly",
-          amount: 15000,
-          package_code: "gotv-smallie-1year",
-          item_code: "gotv-smallie-1year",
-          short_name: "GOtv Smallie - Yearly - ₦15,000",
-        },
-        {
-          id: "gotv-jinja",
-          name: "GOtv Jinja",
-          amount: 3900,
-          package_code: "gotv-jinja",
-          item_code: "gotv-jinja",
-          short_name: "GOtv Jinja - ₦3,900",
-        },
-        {
-          id: "gotv-jolli",
-          name: "GOtv Jolli",
-          amount: 5800,
-          package_code: "gotv-jolli",
-          item_code: "gotv-jolli",
-          short_name: "GOtv Jolli - ₦5,800",
-        },
-        {
-          id: "gotv-max",
-          name: "GOtv Max",
-          amount: 8500,
-          package_code: "gotv-max",
-          item_code: "gotv-max",
-          short_name: "GOtv Max - ₦8,500",
-        },
-        {
-          id: "gotv-supa",
-          name: "GOtv Supa",
-          amount: 11400,
-          package_code: "gotv-supa",
-          item_code: "gotv-supa",
-          short_name: "GOtv Supa - ₦11,400",
-        },
-        {
-          id: "gotv-supa-plus",
-          name: "GOtv Supa Plus",
-          amount: 16800,
-          package_code: "gotv-supa-plus",
-          item_code: "gotv-supa-plus",
-          short_name: "GOtv Supa Plus - ₦16,800",
-        },
-      ],
-      DSTV: [
-        {
-          id: "dstv-padi",
-          name: "DStv Padi",
-          amount: 4400,
-          package_code: "dstv-padi",
-          item_code: "dstv-padi",
-          short_name: "DStv Padi - ₦4,400",
-        },
-        {
-          id: "dstv-yanga",
-          name: "DStv Yanga",
-          amount: 6000,
-          package_code: "dstv-yanga",
-          item_code: "dstv-yanga",
-          short_name: "DStv Yanga - ₦6,000",
-        },
-        {
-          id: "dstv-confam",
-          name: "DStv Confam",
-          amount: 11000,
-          package_code: "dstv-confam",
-          item_code: "dstv-confam",
-          short_name: "DStv Confam - ₦11,000",
-        },
-        {
-          id: "dstv-compact",
-          name: "DStv Compact",
-          amount: 19000,
-          package_code: "dstv-compact",
-          item_code: "dstv-compact",
-          short_name: "DStv Compact - ₦19,000",
-        },
-        {
-          id: "dstv-compact-plus",
-          name: "DStv Compact Plus",
-          amount: 30000,
-          package_code: "dstv-compact-plus",
-          item_code: "dstv-compact-plus",
-          short_name: "DStv Compact Plus - ₦30,000",
-        },
-        {
-          id: "dstv-premium",
-          name: "DStv Premium",
-          amount: 44000,
-          package_code: "dstv-premium",
-          item_code: "dstv-premium",
-          short_name: "DStv Premium - ₦44,000",
-        },
-      ],
-      STARTIMES: [
-        {
-          id: "nova",
-          name: "Nova (Antenna) - 1 Month",
-          amount: 2100,
-          package_code: "nova",
-          item_code: "nova",
-          short_name: "Nova (Antenna) - ₦2,100",
-        },
-        {
-          id: "basic",
-          name: "Basic (Antenna) - 1 Month",
-          amount: 3700,
-          package_code: "basic",
-          item_code: "basic",
-          short_name: "Basic (Antenna) - ₦3,700",
-        },
-        {
-          id: "smart",
-          name: "Basic (Dish) - 1 Month",
-          amount: 4700,
-          package_code: "smart",
-          item_code: "smart",
-          short_name: "Basic (Dish) - ₦4,700",
-        },
-        {
-          id: "classic",
-          name: "Classic (Antenna) - 1 Month",
-          amount: 6000,
-          package_code: "classic",
-          item_code: "classic",
-          short_name: "Classic (Antenna) - ₦6,000",
-        },
-        {
-          id: "super",
-          name: "Super (Dish) - 1 Month",
-          amount: 9800,
-          package_code: "super",
-          item_code: "super",
-          short_name: "Super (Dish) - ₦9,800",
-        },
-      ],
-      SHOWMAX: [
-        {
-          id: "showmax-entertainment",
-          name: "Showmax Entertainment",
-          amount: 2900,
-          package_code: "showmax-entertainment",
-          item_code: "showmax-entertainment",
-          short_name: "Showmax Entertainment - ₦2,900",
-        },
-        {
-          id: "showmax-premier-league",
-          name: "Showmax Premier League",
-          amount: 3200,
-          package_code: "showmax-premier-league",
-          item_code: "showmax-premier-league",
-          short_name: "Showmax Premier League - ₦3,200",
-        },
-        {
-          id: "showmax-all",
-          name: "Showmax All Access",
-          amount: 5400,
-          package_code: "showmax-all",
-          item_code: "showmax-all",
-          short_name: "Showmax All Access - ₦5,400",
-        },
-      ],
-    };
-
-    try {
-      const res = await fetch(
-        `https://www.nellobytesystems.com/APICableTVPackagesV2.asp?UserID=${userId}`,
-      );
-      const data = await res.json();
-      const tvObj = data?.TV_ID || data?.CABLETV || {};
-      let rawPackages = [];
-
-      if ((provUpper === "01" || provUpper.includes("DSTV")) && tvObj.DStv) {
-        rawPackages = tvObj.DStv[0]?.PRODUCT || tvObj.DStv[0]?.PACKAGE || [];
-      } else if (
-        (provUpper === "02" || provUpper.includes("GOTV")) &&
-        tvObj.GOtv
-      ) {
-        rawPackages = tvObj.GOtv[0]?.PRODUCT || tvObj.GOtv[0]?.PACKAGE || [];
-      } else if (
-        (provUpper === "03" ||
-          provUpper.includes("STARTIMES") ||
-          provUpper.includes("STARTIME")) &&
-        tvObj.Startimes
-      ) {
-        rawPackages =
-          tvObj.Startimes[0]?.PRODUCT || tvObj.Startimes[0]?.PACKAGE || [];
-      } else if (
-        (provUpper === "04" || provUpper.includes("SHOWMAX")) &&
-        tvObj.Showmax
-      ) {
-        rawPackages =
-          tvObj.Showmax[0]?.PRODUCT || tvObj.Showmax[0]?.PACKAGE || [];
-      }
-
-      if (rawPackages.length > 0) {
-        const formatted = rawPackages.map((p) => {
-          const amt = Number(p.PACKAGE_AMOUNT || p.amount || 0);
-          const name = p.PACKAGE_NAME || p.name || "Package";
-          const pkgCode = p.PACKAGE_ID || p.PACKAGE_CODE || p.package_code;
-          return {
-            id: pkgCode,
-            name: name,
-            short_name: `${name} - ₦${amt.toLocaleString()}`,
-            amount: amt,
-            package_code: pkgCode,
-            item_code: pkgCode,
-          };
-        });
-        return { status: "success", data: formatted };
-      }
-    } catch (err) {
-      logger.error("Error fetching live cable packages:", err);
-    }
-
-    // Fallback to verified catalog matching provider
     const key =
       provUpper === "02" || provUpper.includes("GOTV")
         ? "GOTV"
@@ -5219,8 +6778,17 @@ export const clubkonnectFetchCablePackages = onCall(
             ? "SHOWMAX"
             : "DSTV";
 
-    const fallback =
-      FALLBACK_CABLE_PACKAGES[key] || FALLBACK_CABLE_PACKAGES.GOTV;
+    try {
+      const catalog = await ensureFreshBillCatalogCore({ forceSync: Boolean(forceSync) });
+      const packages = catalog?.cablePackagesByProvider?.[key];
+      if (Array.isArray(packages) && packages.length > 0) {
+        return { status: "success", data: packages, catalog };
+      }
+    } catch (err) {
+      logger.error("Error reading cable packages from materialized catalog:", err);
+    }
+
+    const fallback = FALLBACK_CABLE_PACKAGES[key] || FALLBACK_CABLE_PACKAGES.GOTV;
     return { status: "success", data: fallback };
   },
 );
@@ -5321,7 +6889,7 @@ export function calculatePlanPricing(
     const isHero = numComp !== null && !isNaN(numComp) && numComp > 0;
     const cashbackRate = isHero ? heroCashbackRate : standardCashbackRate;
     const margin = Math.max(0, numCustom - numCost);
-    const cashbackAmount = Math.round(margin * cashbackRate * 100) / 100;
+    const cashbackAmount = Math.round(Math.max(0, margin * cashbackRate) * 100) / 100;
     const profit = Math.round((numCustom - numCost - cashbackAmount) * 100) / 100;
 
     return {
@@ -5375,7 +6943,7 @@ export function calculatePlanPricing(
 
   const cashbackRate = isHero ? heroCashbackRate : standardCashbackRate;
   const margin = Math.max(0, displayPrice - numCost);
-  const cashbackAmount = Math.round(margin * cashbackRate * 100) / 100;
+  const cashbackAmount = Math.round(Math.max(0, margin * cashbackRate) * 100) / 100;
   const profit = Math.round((displayPrice - numCost - cashbackAmount) * 100) / 100;
 
   return {
@@ -5410,13 +6978,80 @@ export async function getPricingConfigCore() {
   return DEFAULT_PRICING_CONFIG;
 }
 
+export const DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS = 3;
+export const CLUBKONNECT_SYNC_INTERVAL_MS =
+  DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS * 60 * 60 * 1000;
+
+let inFlightCatalogSyncPromise = null;
+
+function sanitizeCatalogDocSegment(value) {
+  return String(value || "").trim().replace(/[\/\\\s#?\[\]]+/g, "_");
+}
+
+function normalizeDataNetKey(network) {
+  const netUpper = String(network || "MTN").toUpperCase();
+  if (netUpper.includes("GLO")) return "GLO";
+  if (netUpper.includes("AIRTEL")) return "AIRTEL";
+  if (netUpper.includes("9MOB") || netUpper.includes("ETISALAT") || netUpper.includes("T2")) {
+    return "9MOBILE";
+  }
+  return "MTN";
+}
+
+function normalizeCableProvKey(provider) {
+  const provUpper = String(provider || "DSTV").toUpperCase().trim();
+  if (provUpper === "02" || provUpper.includes("GOTV")) return "GOTV";
+  if (provUpper === "03" || provUpper.includes("STARTIMES") || provUpper.includes("STARTIME")) {
+    return "STARTIMES";
+  }
+  if (provUpper === "04" || provUpper.includes("SHOWMAX")) return "SHOWMAX";
+  return "DSTV";
+}
+
+async function commitFirestoreWritesInChunks(targetDb, ops = []) {
+  const CHUNK_SIZE = 420;
+  for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+    const chunk = ops.slice(i, i + CHUNK_SIZE);
+    const batch = targetDb.batch();
+    for (const op of chunk) {
+      batch.set(op.ref, op.data, op.options || { merge: true });
+    }
+    await batch.commit();
+  }
+}
+
+function buildDefaultElectricityDiscosList(metadataDiscos = null) {
+  const metaMap = new Map();
+  if (Array.isArray(metadataDiscos)) {
+    for (const item of metadataDiscos) {
+      if (item?.code) metaMap.set(String(item.code).padStart(2, "0"), item);
+    }
+  }
+  return Object.values(CLUBKONNECT_DISCO_MAP).map((d) => {
+    const meta = metaMap.get(d.code) || {};
+    return {
+      id: d.code,
+      code: d.code,
+      name: d.label,
+      minAmount: Number(meta.minAmount || 1000),
+      maxAmount: Number(meta.maxAmount || 500000),
+      commissionRate:
+        typeof meta.commissionRate === "number" && meta.commissionRate > 0
+          ? meta.commissionRate
+          : 0.005,
+    };
+  });
+}
+
 export async function syncClubKonnectDataPlansCore() {
   const userId = getClubKonnectUserId();
   const res = await fetch(
-    `https://www.nellobytesystems.com/APIDatabundlePlansV2.asp?UserID=${userId}`,
+    `https://www.nellobytesystems.com/APIDatabundlePlansV2.asp?UserID=${encodeURIComponent(userId)}`,
   );
   const data = await res.json();
   const mobileNetworkObj = data?.MOBILE_NETWORK || {};
+  const isoNow = new Date().toISOString();
+  const serverNow = admin.firestore.FieldValue.serverTimestamp();
 
   const networkMappings = [
     { key: "MTN", rawObj: mobileNetworkObj.MTN },
@@ -5428,43 +7063,473 @@ export async function syncClubKonnectDataPlansCore() {
     },
   ];
 
-  let syncedCount = 0;
-  const batch = db.batch();
+  const writeOps = [];
+  const liveIdsByNet = new Map();
 
   for (const net of networkMappings) {
     const rawPlans = net.rawObj?.[0]?.PRODUCT || [];
+    const seenIds = new Set();
     for (const p of rawPlans) {
-      const planId = String(p.PRODUCT_ID || p.PRODUCT_CODE).trim();
-      const planName = String(p.PRODUCT_NAME).trim();
+      const planId = String(p.PRODUCT_ID || p.PRODUCT_CODE || "").trim();
+      if (!planId) continue;
+      const planName = String(p.PRODUCT_NAME || planId).trim();
       const rawCost = Number(p.PRODUCT_AMOUNT || 0);
       const roundedCost = Math.round(rawCost * 100) / 100;
-      const docRef = db.collection("data_plan_pricing").doc(`${net.key}_${planId}`);
+      const docId = `${net.key}_${sanitizeCatalogDocSegment(planId)}`;
+      seenIds.add(docId);
 
-      batch.set(
-        docRef,
-        {
+      writeOps.push({
+        ref: db.collection("data_plan_pricing").doc(docId),
+        data: {
           planId,
           network: net.key,
           planName,
           costPrice: roundedCost,
           validity_period: parsePlanValidity(planName),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          upstreamAvailable: true,
+          lastSeenInClubKonnectAtIso: isoNow,
+          updatedAt: serverNow,
         },
-        { merge: true },
-      );
-      syncedCount++;
+        options: { merge: true },
+      });
+    }
+    if (seenIds.size > 0) {
+      liveIdsByNet.set(net.key, seenIds);
     }
   }
 
-  const configRef = db.collection("system_settings").doc("pricing_config");
-  batch.set(
-    configRef,
-    { lastSyncedAt: admin.firestore.FieldValue.serverTimestamp() },
-    { merge: true },
-  );
+  // Soft-mark stale data plans that ClubKonnect removed upstream without deleting Admin notes/overrides
+  if (liveIdsByNet.size > 0) {
+    const existingSnap = await db.collection("data_plan_pricing").get();
+    existingSnap.forEach((doc) => {
+      const docData = doc.data() || {};
+      const netKey = normalizeDataNetKey(docData.network || doc.id.split("_")[0]);
+      const liveSet = liveIdsByNet.get(netKey);
+      if (liveSet && !liveSet.has(doc.id) && docData.upstreamAvailable !== false) {
+        writeOps.push({
+          ref: doc.ref,
+          data: { upstreamAvailable: false, updatedAt: serverNow },
+          options: { merge: true },
+        });
+      }
+    });
+  }
 
-  await batch.commit();
+  const syncedCount = writeOps.filter((op) => op.data.upstreamAvailable === true).length;
+  writeOps.push({
+    ref: db.collection("system_settings").doc("pricing_config"),
+    data: {
+      lastSyncedAt: serverNow,
+      lastSyncedAtIso: isoNow,
+      syncIntervalHours: DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS,
+    },
+    options: { merge: true },
+  });
+
+  await commitFirestoreWritesInChunks(db, writeOps);
   return syncedCount;
+}
+
+export async function syncClubKonnectCablePackagesCore() {
+  const userId = getClubKonnectUserId();
+  const isoNow = new Date().toISOString();
+  const serverNow = admin.firestore.FieldValue.serverTimestamp();
+  const writeOps = [];
+  const liveIdsByProv = new Map();
+
+  let tvObj = {};
+  try {
+    const res = await fetch(
+      `https://www.nellobytesystems.com/APICableTVPackagesV2.asp?UserID=${encodeURIComponent(userId)}`,
+    );
+    const json = await res.json();
+    tvObj = json?.TV_ID || json?.CABLETV || {};
+  } catch (err) {
+    logger.warn("⚠️ ClubKonnect Cable packages sync failed; preserving catalog:", err.message);
+  }
+
+  const provMappings = [
+    { key: "DSTV", code: "dstv", tvKey: "DStv" },
+    { key: "GOTV", code: "gotv", tvKey: "GOtv" },
+    { key: "STARTIMES", code: "startimes", tvKey: "Startimes" },
+    { key: "SHOWMAX", code: "showmax", tvKey: "Showmax" },
+  ];
+
+  for (const prov of provMappings) {
+    const rawPackages =
+      tvObj?.[prov.tvKey]?.[0]?.PRODUCT || tvObj?.[prov.tvKey]?.[0]?.PACKAGE || [];
+    const seenIds = new Set();
+
+    for (const p of rawPackages) {
+      const packageId = String(p.PACKAGE_ID || p.PACKAGE_CODE || p.package_code || "").trim();
+      if (!packageId) continue;
+      const packageName = String(p.PACKAGE_NAME || p.name || "Package").trim();
+      const faceAmount = Math.round(Number(p.PACKAGE_AMOUNT || p.amount || 0) * 100) / 100;
+      const rawCost = Number(p.PRODUCT_DISCOUNT_AMOUNT || 0);
+      const costPrice =
+        rawCost > 0 ? Math.round(rawCost * 100) / 100 : faceAmount;
+      const commissionAmount =
+        faceAmount > costPrice
+          ? Math.round((faceAmount - costPrice) * 100) / 100
+          : 0;
+      const docId = `${prov.key}_${sanitizeCatalogDocSegment(packageId)}`;
+      seenIds.add(docId);
+
+      writeOps.push({
+        ref: db.collection("cable_package_pricing").doc(docId),
+        data: {
+          packageId,
+          provider: prov.key,
+          providerCode: prov.code,
+          packageName,
+          faceAmount,
+          costPrice,
+          commissionAmount,
+          minAmount: Number(p.MINAMOUNT || 100),
+          maxAmount: Number(p.MAXAMOUNT || 200000),
+          upstreamAvailable: true,
+          lastSeenInClubKonnectAtIso: isoNow,
+          updatedAt: serverNow,
+        },
+        options: { merge: true },
+      });
+    }
+
+    if (seenIds.size > 0) {
+      liveIdsByProv.set(prov.key, seenIds);
+    }
+  }
+
+  // Ensure missing providers fall back only if cable_package_pricing has zero docs for that provider
+  const existingCableSnap = await db.collection("cable_package_pricing").get();
+  const existingByProv = new Set();
+  existingCableSnap.forEach((doc) => {
+    const d = doc.data() || {};
+    const provKey = normalizeCableProvKey(d.provider || doc.id.split("_")[0]);
+    existingByProv.add(provKey);
+    const liveSet = liveIdsByProv.get(provKey);
+    if (liveSet && !liveSet.has(doc.id) && d.upstreamAvailable !== false) {
+      writeOps.push({
+        ref: doc.ref,
+        data: { upstreamAvailable: false, updatedAt: serverNow },
+        options: { merge: true },
+      });
+    }
+  });
+
+  for (const prov of provMappings) {
+    if (!liveIdsByProv.has(prov.key) && !existingByProv.has(prov.key)) {
+      const fallbacks = FALLBACK_CABLE_PACKAGES[prov.key] || [];
+      for (const fb of fallbacks) {
+        const docId = `${prov.key}_${sanitizeCatalogDocSegment(fb.package_code || fb.id)}`;
+        writeOps.push({
+          ref: db.collection("cable_package_pricing").doc(docId),
+          data: {
+            packageId: fb.package_code || fb.id,
+            provider: prov.key,
+            providerCode: prov.code,
+            packageName: fb.name,
+            faceAmount: Number(fb.amount || 0),
+            costPrice: Math.round(Number(fb.amount || 0) * 0.99 * 100) / 100,
+            commissionAmount: Math.round(Number(fb.amount || 0) * 0.01 * 100) / 100,
+            upstreamAvailable: true,
+            seededFromFallback: true,
+            lastSeenInClubKonnectAtIso: isoNow,
+            updatedAt: serverNow,
+          },
+          options: { merge: true },
+        });
+      }
+    }
+  }
+
+  const syncedCount = writeOps.filter((op) => op.data.upstreamAvailable === true).length;
+  await commitFirestoreWritesInChunks(db, writeOps);
+  return syncedCount;
+}
+
+export async function syncClubKonnectProviderRatesCore() {
+  const userId = getClubKonnectUserId();
+  const isoNow = new Date().toISOString();
+  const serverNow = admin.firestore.FieldValue.serverTimestamp();
+
+  const [discoFetchRes, airtimeFetchRes] = await Promise.allSettled([
+    fetch(`https://www.nellobytesystems.com/APIElectricityDiscosV1.asp?UserID=${encodeURIComponent(userId)}`).then((r) => r.json()),
+    fetch(`https://www.nellobytesystems.com/APIAirtimeNetworkV2.asp?UserID=${encodeURIComponent(userId)}`).then((r) => r.json()),
+  ]);
+
+  const parsedDiscos = [];
+  if (discoFetchRes.status === "fulfilled" && discoFetchRes.value?.ELECTRIC_COMPANY) {
+    const companyGroups = Object.values(discoFetchRes.value.ELECTRIC_COMPANY);
+    for (const group of companyGroups) {
+      const entry = Array.isArray(group) ? group[0] : group;
+      if (!entry?.ID) continue;
+      const code = String(entry.ID).padStart(2, "0");
+      const mapEntry = CLUBKONNECT_DISCO_MAP[code];
+      const prepaidProd = Array.isArray(entry.PRODUCT)
+        ? entry.PRODUCT.find((p) => String(p.PRODUCT_TYPE || "").toLowerCase() === "prepaid") || entry.PRODUCT[0]
+        : null;
+      const discountFactor = Number(prepaidProd?.PRODUCT_DISCOUNT_AMOUNT || 0);
+      const commissionRate =
+        discountFactor > 0 && discountFactor < 1
+          ? Math.round((1 - discountFactor) * 10000) / 10000
+          : 0.005;
+      parsedDiscos.push({
+        id: code,
+        code,
+        name: mapEntry?.label || String(entry.NAME || code).trim(),
+        minAmount: Number(prepaidProd?.MINAMOUNT || 1000),
+        maxAmount: Number(prepaidProd?.MAXAMOUNT || 500000),
+        commissionRate,
+      });
+    }
+  }
+
+  const airtimeNetworks = {};
+  if (airtimeFetchRes.status === "fulfilled" && airtimeFetchRes.value?.MOBILE_NETWORK) {
+    const rawMobile = airtimeFetchRes.value.MOBILE_NETWORK;
+    const entries = Array.isArray(rawMobile)
+      ? rawMobile
+      : Object.values(rawMobile).flatMap((v) => (Array.isArray(v) ? v : [v]));
+    for (const item of entries) {
+      const rawName = String(item?.NETWORK_NAME || "").toLowerCase();
+      let key = null;
+      if (rawName.includes("mtn")) key = "mtn";
+      else if (rawName.includes("airtel")) key = "airtel";
+      else if (rawName.includes("glo")) key = "glo";
+      else if (rawName.includes("9mob") || rawName.includes("t2") || rawName.includes("etisalat")) {
+        key = "9mobile";
+      }
+      if (!key) continue;
+      const discountFactor = Number(item.DISCOUNT_AMOUNT || 0);
+      const commissionRate =
+        discountFactor > 0 && discountFactor < 1
+          ? Math.round((1 - discountFactor) * 10000) / 10000
+          : 0.03;
+      airtimeNetworks[key] = {
+        networkId: String(item.NETWORK_ID || ""),
+        name: item.NETWORK_NAME || key.toUpperCase(),
+        commissionRate,
+        minAmount: Number(item.MINAMOUNT || 50),
+        maxAmount: Number(item.MAXAMOUNT || 200000),
+      };
+    }
+  }
+
+  const electricityDiscos = buildDefaultElectricityDiscosList(parsedDiscos);
+  const metadata = {
+    electricityDiscos,
+    airtimeNetworks,
+    lastSyncedAtIso: isoNow,
+    updatedAt: serverNow,
+  };
+
+  await db
+    .collection("system_settings")
+    .doc("bill_provider_metadata")
+    .set(metadata, { merge: true });
+
+  return metadata;
+}
+
+export async function rebuildMaterializedBillCatalogCore({ targetDb = db } = {}) {
+  const [dataCfgSnap, billCfgSnap, metaSnap, dataPlansSnap, cablePkgsSnap] =
+    await Promise.all([
+      targetDb.collection("system_settings").doc("pricing_config").get(),
+      targetDb.collection("system_settings").doc("bill_pricing_config").get(),
+      targetDb.collection("system_settings").doc("bill_provider_metadata").get(),
+      targetDb.collection("data_plan_pricing").get(),
+      targetDb.collection("cable_package_pricing").get(),
+    ]);
+
+  const rawDataCfg = dataCfgSnap.exists ? dataCfgSnap.data() || {} : {};
+  const dataConfig = {
+    ...DEFAULT_PRICING_CONFIG,
+    ...rawDataCfg,
+    networks: {
+      ...DEFAULT_PRICING_CONFIG.networks,
+      ...(rawDataCfg.networks || {}),
+    },
+  };
+
+  const billConfig = mergeBillPricingConfig(billCfgSnap.exists ? billCfgSnap.data() : {});
+  const liveProviderMetadata = metaSnap.exists ? metaSnap.data() || {} : {};
+
+  // Overlay live ClubKonnect fallback airtime rates if present without mutating Admin cashback rules
+  if (liveProviderMetadata.airtimeNetworks && typeof liveProviderMetadata.airtimeNetworks === "object") {
+    const updatedFallbacks = { ...(billConfig.airtime?.fallbackCommissionRates || {}) };
+    for (const [netKey, info] of Object.entries(liveProviderMetadata.airtimeNetworks)) {
+      if (typeof info?.commissionRate === "number" && info.commissionRate > 0) {
+        updatedFallbacks[netKey] = info.commissionRate;
+      }
+    }
+    billConfig.airtime = {
+      ...billConfig.airtime,
+      fallbackCommissionRates: updatedFallbacks,
+    };
+  }
+
+  const dataPlansByNetwork = { MTN: [], GLO: [], AIRTEL: [], "9MOBILE": [] };
+  dataPlansSnap.forEach((doc) => {
+    const p = doc.data() || {};
+    if (p.isActive === false || p.upstreamAvailable === false) return;
+    const netKey = normalizeDataNetKey(p.network || doc.id.split("_")[0]);
+    const pricingResult = calculatePlanPricing(
+      p.costPrice,
+      netKey,
+      p.competitorPrice,
+      p.customDisplayPrice,
+      p.overrideMode,
+      dataConfig,
+    );
+    const planId = p.planId || doc.id.replace(`${netKey}_`, "");
+    dataPlansByNetwork[netKey].push({
+      id: planId,
+      planName: p.planName || planId,
+      network: netKey,
+      biller_name: `${netKey} ${p.planName || planId}`,
+      amount: pricingResult.displayPrice,
+      costPrice: pricingResult.costPrice,
+      cashbackAmount: pricingResult.cashbackAmount,
+      isHero: pricingResult.isHero,
+      item_code: planId,
+      validity_period: p.validity_period || parsePlanValidity(p.planName),
+      validity: p.validity_period || parsePlanValidity(p.planName),
+      overrideMode: p.overrideMode || "AUTOMATIC",
+    });
+  });
+
+  for (const key of Object.keys(dataPlansByNetwork)) {
+    dataPlansByNetwork[key].sort((a, b) => Number(a.amount || 0) - Number(b.amount || 0));
+  }
+
+  const cablePackagesByProvider = { DSTV: [], GOTV: [], STARTIMES: [], SHOWMAX: [] };
+  cablePkgsSnap.forEach((doc) => {
+    const p = doc.data() || {};
+    if (p.isActive === false || p.upstreamAvailable === false) return;
+    const provKey = normalizeCableProvKey(p.provider || doc.id.split("_")[0]);
+    const customAmt = Number(p.customDisplayPrice || 0);
+    const faceAmt = customAmt > 0 ? customAmt : Number(p.faceAmount || p.amount || 0);
+    const costPrice = Number(p.costPrice || faceAmt);
+    const pkgId = p.packageId || doc.id.replace(`${provKey}_`, "");
+    const name = String(p.packageName || p.name || pkgId).trim();
+    const alreadyHasPrice = /(?:₦|NGN|Naira|\bN\s?\d[\d,]*)/i.test(name);
+    const pricing = computeBillPricingAndEarnings({
+      category: "cable",
+      provider: provKey,
+      faceAmountNaira: faceAmt,
+      actualProviderCostNaira: costPrice,
+      config: billConfig,
+    });
+    cablePackagesByProvider[provKey].push({
+      id: pkgId,
+      docId: doc.id,
+      name,
+      short_name: alreadyHasPrice ? name : `${name} - ₦${faceAmt.toLocaleString()}`,
+      amount: faceAmt,
+      costPrice,
+      feeCharged: pricing.feeCharged,
+      cashbackAmount: pricing.cashbackGiven,
+      package_code: pkgId,
+      item_code: pkgId,
+      provider: provKey,
+    });
+  });
+
+  for (const key of Object.keys(cablePackagesByProvider)) {
+    cablePackagesByProvider[key].sort((a, b) => Number(a.amount || 0) - Number(b.amount || 0));
+  }
+
+  const electricityDiscos = buildDefaultElectricityDiscosList(
+    liveProviderMetadata.electricityDiscos,
+  );
+  const lastSyncedAtIso =
+    dataConfig.lastSyncedAtIso ||
+    liveProviderMetadata.lastSyncedAtIso ||
+    new Date().toISOString();
+
+  const snapshot = {
+    catalogVersion: Date.now(),
+    lastSyncedAtIso,
+    rebuiltAtIso: new Date().toISOString(),
+    syncIntervalHours: DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS,
+    dataPlansByNetwork,
+    cablePackagesByProvider,
+    electricityDiscos,
+    billPricingConfig: billConfig,
+    dataPricingConfig: {
+      networks: dataConfig.networks,
+      undercutSpreadMin: dataConfig.undercutSpreadMin,
+      undercutDiscount: dataConfig.undercutDiscount,
+      largePlanThreshold: dataConfig.largePlanThreshold,
+      heroCashbackRate: dataConfig.heroCashbackRate,
+    },
+    liveProviderMetadata: {
+      airtimeNetworks: liveProviderMetadata.airtimeNetworks || {},
+      lastSyncedAtIso,
+    },
+  };
+
+  await targetDb.collection("system_cache").doc("bill_catalog_v1").set(snapshot);
+  return snapshot;
+}
+
+export async function syncAllClubKonnectCatalogsCore() {
+  if (inFlightCatalogSyncPromise) {
+    return await inFlightCatalogSyncPromise;
+  }
+
+  inFlightCatalogSyncPromise = (async () => {
+    const [syncedDataPlans, syncedCablePackages, providerMetadata] = await Promise.all([
+      syncClubKonnectDataPlansCore(),
+      syncClubKonnectCablePackagesCore(),
+      syncClubKonnectProviderRatesCore(),
+    ]);
+
+    const catalog = await rebuildMaterializedBillCatalogCore();
+    return {
+      syncedDataPlans,
+      syncedCablePackages,
+      syncedElectricityDiscos: providerMetadata?.electricityDiscos?.length || 12,
+      catalogVersion: catalog.catalogVersion,
+      lastSyncedAtIso: catalog.lastSyncedAtIso,
+      catalog,
+    };
+  })();
+
+  try {
+    return await inFlightCatalogSyncPromise;
+  } finally {
+    inFlightCatalogSyncPromise = null;
+  }
+}
+
+export async function ensureFreshBillCatalogCore({
+  maxAgeMs = CLUBKONNECT_SYNC_INTERVAL_MS,
+  forceSync = false,
+} = {}) {
+  if (forceSync) {
+    const syncRes = await syncAllClubKonnectCatalogsCore();
+    return syncRes.catalog;
+  }
+
+  const cacheSnap = await db.collection("system_cache").doc("bill_catalog_v1").get();
+  if (cacheSnap.exists) {
+    const cached = cacheSnap.data() || {};
+    const hasDataPlans = Array.isArray(cached.dataPlansByNetwork?.MTN) && cached.dataPlansByNetwork.MTN.length > 0;
+    const hasCable = Array.isArray(cached.cablePackagesByProvider?.DSTV) && cached.cablePackagesByProvider.DSTV.length > 0;
+    const syncedAtMs = cached.lastSyncedAtIso ? Date.parse(cached.lastSyncedAtIso) : 0;
+    const isFresh = Number.isFinite(syncedAtMs) && Date.now() - syncedAtMs <= maxAgeMs;
+    if (hasDataPlans && hasCable && isFresh) {
+      return cached;
+    }
+  }
+
+  logger.info(
+    `🔄 Materialized bill catalog missing or older than ${DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS}h; syncing all ClubKonnect catalogs...`,
+  );
+  const syncRes = await syncAllClubKonnectCatalogsCore();
+  return syncRes.catalog;
 }
 
 export async function seedPricingFromExcelCore() {
@@ -5472,6 +7537,7 @@ export async function seedPricingFromExcelCore() {
   await configRef.set(
     {
       ...DEFAULT_PRICING_CONFIG,
+      syncIntervalHours: DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS,
       seededAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
@@ -5496,6 +7562,10 @@ export async function seedPricingFromExcelCore() {
   }
   await batch.commit();
 
+  await syncClubKonnectCablePackagesCore();
+  await syncClubKonnectProviderRatesCore();
+  await rebuildMaterializedBillCatalogCore();
+
   return syncedCount;
 }
 
@@ -5514,68 +7584,25 @@ const verifyAdmin = async (request) => {
   return uid;
 };
 
-// 6. FETCH DATA PLANS (Firestore Catalog Reader in <30ms)
+// 6. FETCH DATA PLANS (Admin-Governed Materialized Catalog Reader in <30ms)
 export const clubkonnectFetchDataPlans = onCall(
   { cors: true },
   async (request) => {
-    const { network } = request.data || {};
-    const netUpper = String(network || "MTN").toUpperCase();
-    const netKey = netUpper.includes("GLO")
-      ? "GLO"
-      : netUpper.includes("AIRTEL")
-        ? "AIRTEL"
-        : netUpper.includes("9MOB") || netUpper.includes("ETISALAT")
-          ? "9MOBILE"
-          : "MTN";
+    const { network, forceSync = false, checkFreshnessOnly = false } = request.data || {};
+    const netKey = normalizeDataNetKey(network || "MTN");
 
     try {
-      const config = await getPricingConfigCore();
-      let plansSnap = await db
-        .collection("data_plan_pricing")
-        .where("network", "==", netKey)
-        .get();
+      const catalog = await ensureFreshBillCatalogCore({ forceSync: Boolean(forceSync) });
+      const formattedPlans = catalog?.dataPlansByNetwork?.[netKey] || [];
 
-      if (plansSnap.empty) {
-        logger.info(`data_plan_pricing empty for ${netKey}, executing auto-sync...`);
-        await syncClubKonnectDataPlansCore();
-        plansSnap = await db
-          .collection("data_plan_pricing")
-          .where("network", "==", netKey)
-          .get();
+      if (checkFreshnessOnly) {
+        return { status: "success", data: formattedPlans, catalog };
       }
-
-      const formattedPlans = [];
-      plansSnap.forEach((doc) => {
-        const p = doc.data() || {};
-        if (p.isActive === false) return;
-
-        const pricingResult = calculatePlanPricing(
-          p.costPrice,
-          netKey,
-          p.competitorPrice,
-          p.customDisplayPrice,
-          p.overrideMode,
-          config,
-        );
-
-        formattedPlans.push({
-          id: p.planId || doc.id.replace(`${netKey}_`, ""),
-          biller_name: `${netKey} ${p.planName}`,
-          amount: pricingResult.displayPrice,
-          costPrice: pricingResult.costPrice,
-          cashbackAmount: pricingResult.cashbackAmount,
-          isHero: pricingResult.isHero,
-          item_code: p.planId || doc.id.replace(`${netKey}_`, ""),
-          validity_period: p.validity_period || parsePlanValidity(p.planName),
-          validity: p.validity_period || parsePlanValidity(p.planName),
-        });
-      });
-
       if (formattedPlans.length > 0) {
-        return { status: "success", data: formattedPlans };
+        return { status: "success", data: formattedPlans, catalog };
       }
     } catch (error) {
-      logger.error("Error fetching dynamic data plans from Firestore:", error);
+      logger.error("Error fetching dynamic data plans from materialized catalog:", error);
     }
 
     return { status: "error", message: "Failed to fetch data plans" };
@@ -5585,8 +7612,16 @@ export const clubkonnectFetchDataPlans = onCall(
 // ADMIN CALLABLES & EXPORTS
 export const adminSyncClubKonnect = onCall({ cors: true }, async (request) => {
   await verifyAdmin(request);
-  const syncedCount = await syncClubKonnectDataPlansCore();
-  return { status: "success", message: `Synced ${syncedCount} data plans from ClubKonnect.` };
+  const summary = await syncAllClubKonnectCatalogsCore();
+  return {
+    status: "success",
+    syncedDataPlans: summary.syncedDataPlans,
+    syncedCablePackages: summary.syncedCablePackages,
+    syncedElectricityDiscos: summary.syncedElectricityDiscos,
+    catalogVersion: summary.catalogVersion,
+    lastSyncedAtIso: summary.lastSyncedAtIso,
+    message: `Synced ${summary.syncedDataPlans} data plans, ${summary.syncedCablePackages} cable packages & ${summary.syncedElectricityDiscos} electricity discos from ClubKonnect.`,
+  };
 });
 
 export const adminGetPricingConfig = onCall({ cors: true }, async (request) => {
@@ -5594,7 +7629,13 @@ export const adminGetPricingConfig = onCall({ cors: true }, async (request) => {
   try {
     await verifyAdmin(request);
     const config = await getPricingConfigCore();
-    const plansSnap = await db.collection("data_plan_pricing").get();
+    const [plansSnap, cableSnap, billMetaSnap, catalogSnap, billConfig] = await Promise.all([
+      db.collection("data_plan_pricing").get(),
+      db.collection("cable_package_pricing").get(),
+      db.collection("system_settings").doc("bill_provider_metadata").get(),
+      db.collection("system_cache").doc("bill_catalog_v1").get(),
+      getCashbackService().getBillPricingConfigCore(true),
+    ]);
     const plans = [];
     const flaggedPlans = [];
 
@@ -5712,11 +7753,65 @@ export const adminGetPricingConfig = onCall({ cors: true }, async (request) => {
       console.log(`✅ [adminGetPricingConfig] All ${plans.length} plans loaded cleanly without fallbacks.`);
     }
 
-    console.log(`✅ [adminGetPricingConfig] Returning ${plans.length} plans (${flaggedPlans.length} flagged for fallbacks).`);
+    const cablePackages = [];
+    cableSnap.forEach((doc) => {
+      const p = doc.data() || {};
+      const provKey = normalizeCableProvKey(p.provider || doc.id.split("_")[0]);
+      const customDisplayPrice =
+        p.customDisplayPrice !== undefined && p.customDisplayPrice !== null && p.customDisplayPrice !== ""
+          ? Number(p.customDisplayPrice)
+          : null;
+      const faceAmount = Number(p.faceAmount || p.amount || 0);
+      const displayPrice =
+        customDisplayPrice && customDisplayPrice > 0 ? customDisplayPrice : faceAmount;
+      const costPrice = Number(p.costPrice || displayPrice);
+      const pricing = computeBillPricingAndEarnings({
+        category: "cable",
+        provider: provKey,
+        faceAmountNaira: displayPrice,
+        actualProviderCostNaira: costPrice,
+        config: billConfig,
+      });
+
+      cablePackages.push({
+        id: doc.id,
+        packageId: p.packageId || doc.id.replace(`${provKey}_`, ""),
+        provider: provKey,
+        providerCode: p.providerCode || provKey.toLowerCase(),
+        packageName: p.packageName || p.name || doc.id,
+        faceAmount,
+        customDisplayPrice,
+        displayPrice,
+        costPrice,
+        commissionAmount: Math.round((displayPrice - costPrice) * 100) / 100,
+        cashbackAmount: pricing.cashbackGiven,
+        feeCharged: pricing.feeCharged,
+        profit: pricing.netEarning,
+        isActive: p.isActive !== false,
+        upstreamAvailable: p.upstreamAvailable !== false,
+        lastSeenInClubKonnectAtIso: p.lastSeenInClubKonnectAtIso || null,
+      });
+    });
+    cablePackages.sort((a, b) => Number(a.displayPrice || 0) - Number(b.displayPrice || 0));
+
+    const liveProviderMetadata = billMetaSnap.exists ? billMetaSnap.data() || {} : {};
+    const catalogData = catalogSnap.exists ? catalogSnap.data() || {} : {};
+    const lastSyncedAtIso =
+      catalogData.lastSyncedAtIso ||
+      config.lastSyncedAtIso ||
+      liveProviderMetadata.lastSyncedAtIso ||
+      null;
+
+    console.log(`✅ [adminGetPricingConfig] Returning ${plans.length} data plans & ${cablePackages.length} cable packages.`);
     return {
       status: "success",
       config,
       plans,
+      cablePackages,
+      liveProviderMetadata,
+      lastSyncedAtIso,
+      catalogVersion: catalogData.catalogVersion || null,
+      syncIntervalHours: DEFAULT_CLUBKONNECT_SYNC_INTERVAL_HOURS,
       flaggedCount: flaggedPlans.length,
       hasFallbackPlans: flaggedPlans.length > 0,
       flaggedPlansSummary: flaggedPlans.map((p) => ({
@@ -5746,7 +7841,12 @@ export const adminUpdatePricingConfig = onCall({ cors: true }, async (request) =
   updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
   await db.collection("system_settings").doc("pricing_config").set(updateData, { merge: true });
-  return { status: "success", message: "Pricing configuration updated successfully." };
+  const catalog = await rebuildMaterializedBillCatalogCore();
+  return {
+    status: "success",
+    catalogVersion: catalog.catalogVersion,
+    message: "Pricing configuration updated & live catalog rebuilt.",
+  };
 });
 
 export const adminUpdatePlanPrice = onCall({ cors: true }, async (request) => {
@@ -5764,7 +7864,38 @@ export const adminUpdatePlanPrice = onCall({ cors: true }, async (request) => {
   updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
   await db.collection("data_plan_pricing").doc(docId).set(updateData, { merge: true });
-  return { status: "success", message: "Plan price updated successfully." };
+  const catalog = await rebuildMaterializedBillCatalogCore();
+  return {
+    status: "success",
+    catalogVersion: catalog.catalogVersion,
+    message: "Plan price updated & live catalog rebuilt.",
+  };
+});
+
+export const adminUpdateCablePackagePrice = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  const { docId, customDisplayPrice, isActive } = request.data || {};
+  if (!docId) throw new HttpsError("invalid-argument", "Cable package docId is required.");
+
+  const updateData = {};
+  if (customDisplayPrice !== undefined) {
+    updateData.customDisplayPrice =
+      customDisplayPrice === "" || customDisplayPrice === null
+        ? null
+        : Number(customDisplayPrice);
+  }
+  if (isActive !== undefined) {
+    updateData.isActive = Boolean(isActive);
+  }
+  updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.collection("cable_package_pricing").doc(docId).set(updateData, { merge: true });
+  const catalog = await rebuildMaterializedBillCatalogCore();
+  return {
+    status: "success",
+    catalogVersion: catalog.catalogVersion,
+    message: "Cable package updated & live catalog rebuilt.",
+  };
 });
 
 export const adminSeedPricingFromExcel = onCall({ cors: true }, async (request) => {
@@ -5773,11 +7904,101 @@ export const adminSeedPricingFromExcel = onCall({ cors: true }, async (request) 
   return { status: "success", message: `Seeded pricing logic and ${count} plan initial configurations.` };
 });
 
-export const scheduledClubKonnectSync = onSchedule("every 6 hours", async (event) => {
-  logger.info("⏰ Executing scheduled 6-hour ClubKonnect data plan cost sync...");
+// ============================================================================
+// CASHBACK VAULT, BILL PRICING RULES, CLUBKONNECT CALLBACK & ADMIN LEDGER
+// ============================================================================
+
+export const getBillPricingConfig = onCall({ cors: true }, async () => {
+  const config = await getCashbackService().getBillPricingConfigCore();
+  return { status: "success", config };
+});
+
+export const transferCashbackToWallet = onCall(
+  { cors: true, secrets: ALL_PIN_SECRETS },
+  async (request) => {
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+    const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Authentication required to transfer cashback.");
+    }
+    const { amount, pin } = request.data || {};
+    return await getCashbackService().transferCashbackToWalletCore({
+      uid,
+      requestedAmountNaira: amount ?? null,
+      pin,
+    });
+  },
+);
+
+export const verifyPendingClubKonnectOrder = onCall({ cors: true }, async (request) => {
+  const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+  const uid = request.auth?.uid || (isEmulator ? "dev_user_123" : null);
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const { requestId, tx_ref, orderId } = request.data || {};
+  const targetRef = String(requestId || tx_ref || "").trim();
+  if (!targetRef && !orderId) {
+    throw new HttpsError("invalid-argument", "Transaction reference or OrderID is required.");
+  }
+  return await getCashbackService().reconcileClubKonnectOrderCore({
+    requestId: targetRef,
+    orderId: String(orderId || "").trim(),
+  });
+});
+
+export const clubkonnectCallback = onRequest({ cors: true }, async (req, res) => {
+  const params = { ...(req.query || {}), ...(req.body || {}) };
+  const requestId = String(params.requestid || params.RequestID || params.tx_ref || "").trim();
+  const orderId = String(params.orderid || params.OrderID || params.order_id || "").trim();
+  logger.info(
+    `📩 [ClubKonnect Callback Received]: requestId=${requestId}, orderId=${orderId}`,
+    params,
+  );
+  if (!requestId && !orderId) {
+    return res.status(400).send("Missing requestid or orderid");
+  }
   try {
-    const count = await syncClubKonnectDataPlansCore();
-    logger.info(`✅ Scheduled sync complete! Updated ${count} data plans.`);
+    const result = await getCashbackService().reconcileClubKonnectOrderCore({
+      requestId,
+      orderId,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    logger.error("❌ [ClubKonnect Callback Error]:", err);
+    return res.status(200).json({ status: "error", message: err.message });
+  }
+});
+
+export const adminGetDashboardData = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  return await getCashbackService().adminGetDashboardDataCore();
+});
+
+export const adminGetBillPricingConfig = onCall({ cors: true }, async (request) => {
+  await verifyAdmin(request);
+  const config = await getCashbackService().getBillPricingConfigCore(true);
+  return { status: "success", config };
+});
+
+export const adminUpdateBillPricingConfig = onCall({ cors: true }, async (request) => {
+  const adminUid = await verifyAdmin(request);
+  const updates = request.data || {};
+  const result = await getCashbackService().adminUpdateBillPricingConfigCore({
+    adminUid,
+    updates,
+  });
+  await rebuildMaterializedBillCatalogCore();
+  return result;
+});
+
+export const scheduledClubKonnectSync = onSchedule("every 3 hours", async (event) => {
+  logger.info("⏰ Executing scheduled 3-hour ClubKonnect full bill catalog sync...");
+  try {
+    const summary = await syncAllClubKonnectCatalogsCore();
+    logger.info(
+      `✅ Scheduled 3h sync complete! Data: ${summary.syncedDataPlans}, Cable: ${summary.syncedCablePackages}, Discos: ${summary.syncedElectricityDiscos}, Version: ${summary.catalogVersion}.`,
+    );
   } catch (err) {
     logger.error("❌ Scheduled ClubKonnect sync failed:", err);
   }
@@ -5851,17 +8072,12 @@ export async function executeSubaccountSettlementBatch() {
     let sweepSuccess = false;
     let flwResponse = null;
 
-    if (isEmulator || !group.accountReference) {
-      // Emulator / Mock mode simulation
-      logger.info(
-        `🧪 [Emulator Sweep Simulation]: Sweeping ₦${group.totalAmount} from Subaccount (${group.accountReference || group.uid}) to Merchant ID ${merchantId}`,
+    if (!group.accountReference) {
+      logger.error(
+        `❌ Nightly batch sweep skipped/failed for user ${group.uid}: Missing PSA accountReference`,
       );
-      sweepSuccess = true;
-      flwResponse = {
-        status: "success",
-        message: "Simulated sweep in emulator mode",
-        id: `EMU_${Date.now()}`,
-      };
+      sweepSuccess = false;
+      flwResponse = { error: "Missing user PSA accountReference" };
     } else {
       // Live Flutterwave debit_subaccount call to pull funds from user subaccount into merchant pool
       try {
@@ -5875,6 +8091,8 @@ export async function executeSubaccountSettlementBatch() {
             accept: "application/json",
           },
           body: JSON.stringify({
+            account_bank: "flutterwave",
+            account_number: merchantId,
             amount: group.totalAmount,
             currency: "NGN",
             debit_currency: "NGN",
@@ -8352,8 +10570,8 @@ export async function createVendorCampaignCore({
     typeof imageUploadStatus === "string" && ["uploading", "synced", "failed", "none"].includes(imageUploadStatus)
       ? imageUploadStatus
       : cleanImage
-      ? "synced"
-      : "none";
+        ? "synced"
+        : "none";
 
   const campRef = db.collection("meal_campaigns").doc();
   const campaignId = campRef.id;
@@ -9179,8 +11397,8 @@ export async function updateVendorCampaignImageCore({
     const cleanStatus = ["uploading", "synced", "failed", "none"].includes(imageUploadStatus)
       ? imageUploadStatus
       : cleanImage
-      ? "synced"
-      : "none";
+        ? "synced"
+        : "none";
 
     await campRef.update({
       image: cleanImage,

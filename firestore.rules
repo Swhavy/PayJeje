@@ -20,7 +20,14 @@ service cloud.firestore {
       // Allow creation if authenticated user owns the document and doesn't inject protected fields
       allow create: if request.auth != null && request.auth.uid == userId
         && !('walletBalance' in request.resource.data.keys())
+        && !('walletBalanceKobo' in request.resource.data.keys())
+        && !('cashbackBalance' in request.resource.data.keys())
+        && !('cashbackBalanceKobo' in request.resource.data.keys())
         && !('account_reference' in request.resource.data.keys())
+        && !('accountReference' in request.resource.data.keys())
+        && !('barter_id' in request.resource.data.keys())
+        && !('cashbackAccountReference' in request.resource.data.keys())
+        && !('cashbackBarterId' in request.resource.data.keys())
         && !('role' in request.resource.data.keys())
         && !('isAdmin' in request.resource.data.keys())
         && !('vendorId' in request.resource.data.keys())
@@ -30,10 +37,14 @@ service cloud.firestore {
         && !('hasTransactionPin' in request.resource.data.keys())
         && (!('points' in request.resource.data.keys()) || (request.resource.data.points is int && request.resource.data.points == 0));
 
-      // Allow updates if authenticated user owns document and does not modify protected fields (points, wallet, role, admin, vendor, pin)
+      // Allow updates if authenticated user owns document and does not modify protected fields (points, wallet, role, admin, vendor, pin, cashback)
       allow update: if request.auth != null && request.auth.uid == userId
         && resource != null
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['walletBalance', 'account_reference', 'role', 'isAdmin', 'vendorId', 'vendorRole', 'vendorBranch', 'cashierName', 'hasTransactionPin', 'points']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'walletBalance', 'walletBalanceKobo', 'cashbackBalance', 'cashbackBalanceKobo',
+          'account_reference', 'accountReference', 'barter_id', 'cashbackAccountReference', 'cashbackBarterId',
+          'role', 'isAdmin', 'vendorId', 'vendorRole', 'vendorBranch', 'cashierName', 'hasTransactionPin', 'points'
+        ]);
 
       allow delete: if false;
 
@@ -54,6 +65,12 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Cashback Ledger Subcollection (Read-only for owner, writes strictly forbidden for client SDKs)
+      match /cashback_ledger/{ledgerId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if false;
+      }
+
       // Meal Claims & Lifetime Tracking Subcollection (Read-only for owner, writes strictly forbidden for client SDKs)
       match /mealClaims/{offerId} {
         allow read: if request.auth != null && request.auth.uid == userId;
@@ -65,13 +82,32 @@ service cloud.firestore {
         allow read: if request.auth != null && request.auth.uid == userId
           && !(collection in ['private_security']);
         allow write: if request.auth != null && request.auth.uid == userId
-          && !(collection in ['private_security', 'Transactions', 'transactions', 'points', 'mealClaims']);
+          && !(collection in ['private_security', 'Transactions', 'transactions', 'points', 'mealClaims', 'cashback_ledger']);
       }
     }
 
-    // Top-Level Transactions Collection (Read-only for owner, writes strictly forbidden for client SDKs)
+    // Top-Level Transactions Collections (Read-only for owner/participants/admin, writes strictly forbidden for client SDKs)
     match /transactions/{txId} {
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.uid == request.auth.uid ||
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.recipientUid == request.auth.uid ||
+        (resource.data.participantUids is list && request.auth.uid in resource.data.participantUids) ||
+        isPlatformAdmin()
+      );
+      allow write: if false;
+    }
+
+    match /Transactions/{txId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.uid == request.auth.uid ||
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.recipientUid == request.auth.uid ||
+        (resource.data.participantUids is list && request.auth.uid in resource.data.participantUids) ||
+        isPlatformAdmin()
+      );
       allow write: if false;
     }
 
@@ -122,6 +158,27 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // System Cache Collection (Read-only for authenticated users, e.g. cached bank lists)
+    match /system_cache/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // System Settings Collection (Read-only for authenticated users; all updates via authenticated admin Cloud Functions)
+    match /system_settings/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Transfer & Deposit Session Idempotency Indexes (Server-only; direct client reads and writes strictly forbidden)
+    match /transfer_references/{docId} {
+      allow read, write: if false;
+    }
+
+    match /deposit_sessions/{docId} {
+      allow read, write: if false;
+    }
+
     // =========================================================================
     // ADMIN & OPERATIONAL COLLECTIONS (FORBIDDEN FOR CLIENT SDKs)
     // =========================================================================
@@ -142,6 +199,10 @@ service cloud.firestore {
     }
 
     match /admin_audit_logs/{docId} {
+      allow read, write: if false;
+    }
+
+    match /pricing_change_logs/{logId} {
       allow read, write: if false;
     }
 

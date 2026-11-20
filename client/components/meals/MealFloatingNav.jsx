@@ -98,11 +98,11 @@ export default function MealFloatingNav({ className = "" }) {
   return (
     <nav
       aria-label="Meal Rewards Navigation"
-      className={`w-full max-w-full sm:w-auto sm:max-w-none mx-auto sm:mx-0 flex items-center justify-start sm:justify-between gap-1 p-1.5 rounded-2xl sm:rounded-full bg-[#16181d] border border-[#282a2e] shadow-lg text-[#e2e2e8] overflow-x-auto no-scrollbar ${className}`}
+      className={`w-full max-w-full sm:w-auto sm:max-w-none mx-auto sm:mx-0 flex items-center justify-between sm:justify-between gap-1 p-1 rounded-2xl sm:rounded-full bg-[#16181d] border border-[#282a2e] shadow-lg text-[#e2e2e8] overflow-x-auto no-scrollbar ${className}`}
     >
       <Link
         to="/services/meals"
-        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
+        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 min-h-9 py-2 px-2.5 sm:px-3.5 rounded-full font-bold text-[11px] sm:text-xs whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
           isMarketplace
             ? "bg-[#ff6b00] text-white shadow-[0_2px_12px_rgba(255,107,0,0.35)]"
             : "text-zinc-400 hover:text-white hover:bg-[#202227]"
@@ -114,7 +114,7 @@ export default function MealFloatingNav({ className = "" }) {
 
       <Link
         to="/services/meals/vouchers"
-        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 relative ${
+        className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 min-h-9 py-2 px-2.5 sm:px-3.5 rounded-full font-bold text-[11px] sm:text-xs whitespace-nowrap flex-shrink-0 transition-all duration-200 relative ${
           isVouchers
             ? "bg-[#ff6b00] text-white shadow-[0_2px_12px_rgba(255,107,0,0.35)]"
             : "text-zinc-400 hover:text-white hover:bg-[#202227]"
@@ -139,7 +139,7 @@ export default function MealFloatingNav({ className = "" }) {
           <Link
             to="/merchant/meals"
             data-testid="merchant-dashboard-tab"
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 min-h-9 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
               isDashboard
                 ? "bg-[#ff6b00] text-white shadow-[0_2px_12px_rgba(255,107,0,0.35)]"
                 : "text-zinc-400 hover:text-white hover:bg-[#202227]"
@@ -152,7 +152,7 @@ export default function MealFloatingNav({ className = "" }) {
           <Link
             to="/services/meals/terminal"
             data-testid="merchant-terminal-tab"
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 min-h-9 py-2 px-3 sm:px-3.5 rounded-full font-bold text-xs sm:text-[13px] whitespace-nowrap flex-shrink-0 transition-all duration-200 ${
               isTerminal
                 ? "bg-[#44e092] text-[#091e14] shadow-[0_2px_12px_rgba(68,224,146,0.35)] font-black"
                 : "text-zinc-400 hover:text-white hover:bg-[#202227]"

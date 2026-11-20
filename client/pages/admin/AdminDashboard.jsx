@@ -40,6 +40,7 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { toast } from "sonner";
 import useCloudfunc from "@/components/useCloudfunc";
+import { DEFAULT_BILL_PRICING_CONFIG } from "@shared/billPricingEngine";
 
 // Navigation groupings
 const BASE_NAV_GROUPS = [
@@ -64,7 +65,13 @@ const BASE_NAV_GROUPS = [
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const user = useSelector((state) => state?.user?.user) || {};
-  const { adminGetPricingConfig, adminUpdatePricingConfig, adminGetDashboardData } = useCloudfunc();
+  const {
+    adminGetPricingConfig,
+    adminUpdatePricingConfig,
+    adminGetDashboardData,
+    adminGetBillPricingConfig,
+    adminUpdateBillPricingConfig,
+  } = useCloudfunc();
 
   const [activeTab, setActiveTab] = useState("Overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -81,8 +88,25 @@ export default function AdminDashboard() {
     totalVolume: 0,
     netPlatformMargin: 0,
     managedPlansCount: 0,
+    totalUserCashbackLiability: 0,
+    totalWalletFloat: 0,
+    totalFaceValue: 0,
+    totalGrossGain: 0,
+    totalFeesCollected: 0,
+    totalCommission: 0,
+    clubkonnectReconciliationTotal: 0,
+    totalCashbackGiven: 0,
+    totalCashbackSpentInApp: 0,
+    totalCashbackTransferredToWallet: 0,
+    totalGatewayCost: 0,
+    totalNetEarning: 0,
+    actualCommissionCount: 0,
+    fallbackCommissionCount: 0,
+    negativeNetCount: 0,
   });
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [billPricingConfig, setBillPricingConfig] = useState(DEFAULT_BILL_PRICING_CONFIG);
+  const [billPricingSaving, setBillPricingSaving] = useState(false);
 
   // Selected Transaction for modal
   const [selectedTx, setSelectedTx] = useState(null);
@@ -124,17 +148,43 @@ export default function AdminDashboard() {
   const loadDashboardData = async () => {
     setDashboardLoading(true);
     try {
-      const res = await adminGetDashboardData();
+      const [res, billRes] = await Promise.all([
+        adminGetDashboardData(),
+        adminGetBillPricingConfig().catch(() => null),
+      ]);
       if (res?.status === "success") {
         if (Array.isArray(res.transactions)) setTransactions(res.transactions);
         if (Array.isArray(res.users)) setUsersList(res.users);
         if (Array.isArray(res.auditLogs)) setAuditLogs(res.auditLogs);
-        if (res.summary) setDashboardSummary(res.summary);
+        if (res.summary) setDashboardSummary((prev) => ({ ...prev, ...res.summary }));
+        if (res.billPricingConfig) setBillPricingConfig(res.billPricingConfig);
+      }
+      if (billRes?.status === "success" && billRes.config) {
+        setBillPricingConfig(billRes.config);
       }
     } catch (err) {
       console.warn("Real dashboard data fetch notice:", err.message);
+      toast.error(`Admin Dashboard load warning: ${err.message || "Check admin privileges"}`);
     } finally {
       setDashboardLoading(false);
+    }
+  };
+
+  const handleSaveBillPricing = async () => {
+    setBillPricingSaving(true);
+    try {
+      const res = await adminUpdateBillPricingConfig(billPricingConfig);
+      if (res?.status === "success" && res.config) {
+        setBillPricingConfig(res.config);
+        toast.success(`Bill pricing & cashback rules saved (${res.ruleVersion})!`);
+      } else {
+        toast.error(res?.message || "Failed to save bill pricing rules.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not save bill pricing rules: " + err.message);
+    } finally {
+      setBillPricingSaving(false);
     }
   };
 
@@ -246,32 +296,69 @@ export default function AdminDashboard() {
     }
   };
 
-  // Transaction export to CSV
-  const handleExportTransactions = () => {
-    const headers = ["ID", "Customer", "Email", "Service", "Provider", "Amount", "Gain", "Status", "Time", "Reference"];
-    const rows = transactions.map((t) => [
-      t.id,
-      t.name,
-      t.email,
-      t.service,
-      t.provider,
-      t.amount,
-      t.gain,
-      t.status,
-      t.time,
-      t.reference,
-    ]);
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+  // Transaction export to CSV (with full financial engineering breakdown)
+  const handleExportTransactions = (rowsToExport = transactions) => {
+    const list = Array.isArray(rowsToExport) ? rowsToExport : transactions;
+    const escapeCsv = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = [
+      "ID",
+      "Customer",
+      "Email",
+      "Service",
+      "Provider",
+      "FaceValue",
+      "ProviderCost",
+      "Commission",
+      "CommissionSource",
+      "FeeCharged",
+      "CashbackGiven",
+      "CashbackApplied",
+      "WalletContribution",
+      "FundingSource",
+      "GatewayCost",
+      "GrossGain",
+      "NetEarning",
+      "RuleVersion",
+      "Status",
+      "Time",
+      "Reference",
+    ];
+    const rows = list.map((t) =>
+      [
+        t.id,
+        t.name,
+        t.email,
+        t.service,
+        t.provider,
+        t.faceValue ?? t.rawAmount ?? 0,
+        t.providerCost ?? 0,
+        t.commission ?? 0,
+        t.commissionSource ?? "n/a",
+        t.feeCharged ?? 0,
+        t.cashbackGiven ?? 0,
+        t.cashbackApplied ?? 0,
+        t.walletContribution ?? t.faceValue ?? 0,
+        t.fundingSource ?? "WALLET_ONLY",
+        t.gatewayCost ?? 0,
+        t.grossGain ?? 0,
+        t.netEarning ?? t.rawGain ?? 0,
+        t.ruleVersion ?? "—",
+        t.status,
+        t.time,
+        t.reference,
+      ]
+        .map(escapeCsv)
+        .join(","),
+    );
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `paywaka_transactions_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `paywaka_earnings_ledger_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Transaction ledger exported as CSV");
+    toast.success(`Exported ${list.length} ledger row(s) as CSV`);
   };
 
   // User status toggle
@@ -313,9 +400,8 @@ export default function AdminDashboard() {
 
       {/* ── SIDEBAR (DESKTOP & MOBILE DRAWER) ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card px-4 py-5 transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card px-4 py-5 transition-transform duration-200 ease-in-out lg:translate-x-0 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         {/* Brand & Close button */}
         <div className="mb-6 flex items-center justify-between px-2">
@@ -376,11 +462,10 @@ export default function AdminDashboard() {
                         setActiveTab(item.id);
                         setMobileMenuOpen(false);
                       }}
-                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-                        isActive
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors ${isActive
                           ? "bg-primary/10 text-primary font-semibold border border-primary/20"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
+                        }`}
                     >
                       <span className="flex items-center gap-3">
                         <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
@@ -411,11 +496,10 @@ export default function AdminDashboard() {
               setActiveTab("Settings");
               setMobileMenuOpen(false);
             }}
-            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-              activeTab === "Settings"
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${activeTab === "Settings"
                 ? "bg-primary/10 text-primary font-semibold border border-primary/20"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
+              }`}
           >
             <Settings2 size={16} />
             Platform Settings
@@ -434,11 +518,11 @@ export default function AdminDashboard() {
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] font-bold text-primary">
               {user?.fullName
                 ? user.fullName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()
                 : "DA"}
             </span>
             <div className="min-w-0 flex-1">
@@ -481,6 +565,16 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={loadDashboardData}
+              disabled={dashboardLoading}
+              aria-label="Refresh Dashboard"
+              title="Refresh live ledger data"
+              className="rounded-lg border border-border bg-card p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={15} className={dashboardLoading ? "animate-spin" : ""} />
+            </button>
+
             {/* Theme Switcher Toggle */}
             <ThemeToggle />
 
@@ -499,11 +593,11 @@ export default function AdminDashboard() {
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-[11px] font-bold text-primary">
                 {user?.fullName
                   ? user.fullName
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase()
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)
+                    .toUpperCase()
                   : "DA"}
               </span>
               <span className="text-xs font-medium text-foreground max-w-[120px] truncate">
@@ -551,6 +645,10 @@ export default function AdminDashboard() {
               setMargins={setProviderMargins}
               onSave={handleSavePricing}
               isSaving={pricingSaving}
+              billPricingConfig={billPricingConfig}
+              setBillPricingConfig={setBillPricingConfig}
+              onSaveBillPricing={handleSaveBillPricing}
+              billPricingSaving={billPricingSaving}
             />
           )}
 
@@ -783,38 +881,61 @@ function OverviewTab({
       {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          label="Today's Transactions"
-          value={todayCount.toLocaleString()}
-          change={totalTxCount > 0 ? `${totalTxCount} all-time` : "Live"}
-          positive
-          icon={Activity}
-          subtitle="Processed through gateway"
-        />
-        <MetricCard
-          label="Successful Payments"
-          value={successCount.toLocaleString()}
-          change={successRate}
-          positive={successCount >= totalTxCount * 0.9}
-          icon={Check}
-          subtitle={`${totalTxCount - successCount} pending/failed`}
-        />
-        <MetricCard
-          label="Total Volume"
+          label="Total Face Value"
           value={`₦${totalVolNum.toLocaleString()}`}
-          change={totalVolNum > 0 ? "Processed" : "₦0.00"}
+          change={`${todayCount} today / ${totalTxCount} total`}
           positive
           icon={Wallet}
-          subtitle="Gross transaction turnover"
+          subtitle={`${successCount} successful (${successRate})`}
         />
         <MetricCard
-          label="Net Platform Margin"
-          value={`₦${netMarginNum.toLocaleString()}`}
+          label="Exact Net Platform Profit"
+          value={`₦${Number(summary.totalNetEarning ?? netMarginNum).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           change={avgMarginRate}
-          positive
+          positive={Number(summary.totalNetEarning ?? netMarginNum) >= 0}
           icon={TrendingUp}
-          subtitle="Retained commission & markup"
+          subtitle={`Gross: ₦${Number(summary.totalGrossGain || 0).toLocaleString()} (Fees + Comm)`}
+        />
+        <MetricCard
+          label="User Cashback Liability"
+          value={`₦${Number(summary.totalUserCashbackLiability || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          change={`Given: ₦${Number(summary.totalCashbackGiven || 0).toLocaleString()}`}
+          positive
+          icon={CircleDollarSign}
+          subtitle={`Spent: ₦${Number(summary.totalCashbackSpentInApp || 0).toLocaleString()} • Moved ₦1k+: ₦${Number(summary.totalCashbackTransferredToWallet || 0).toLocaleString()}`}
+        />
+        <MetricCard
+          label="ClubKonnect Reconciliation"
+          value={`₦${Number(summary.clubkonnectReconciliationTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          change={`${summary.actualCommissionCount || 0} actual / ${summary.fallbackCommissionCount || 0} est.`}
+          positive
+          icon={BarChart3}
+          subtitle={`Comm: ₦${Number(summary.totalCommission || 0).toLocaleString()} • Fees: ₦${Number(summary.totalFeesCollected || 0).toLocaleString()}`}
         />
       </div>
+
+      {/* NEGATIVE NET PROFIT ALERT BANNER */}
+      {Number(summary.negativeNetCount || 0) > 0 && (
+        <div className="rounded-xl border border-red-500/35 bg-red-500/10 p-4 flex items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-bold text-red-600 dark:text-red-400">
+                Negative-Net Alert: {summary.negativeNetCount} transaction(s) recorded net loss
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Inspect Ledger &amp; Margins to review provider costs, gateway costs, or cashback rules on flagged orders.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate("Ledger")}
+            className="text-xs font-bold text-red-500 hover:underline shrink-0"
+          >
+            Inspect Ledger &rarr;
+          </button>
+        </div>
+      )}
 
       {/* BACKEND NOTIFICATION BANNER (IF MID-IMPLEMENTATION) */}
       {pricingBackendStatus === "mid-implementation" && (
@@ -867,9 +988,8 @@ function OverviewTab({
                   title={`${bar.day}: Volume ${bar.vol} (Margin: ${bar.gain}, ${bar.count} tx)`}
                 >
                   <div
-                    className={`w-full max-w-[36px] rounded-t-md transition-all duration-200 group-hover:brightness-110 ${
-                      bar.isToday ? "bg-primary" : "bg-primary/25"
-                    }`}
+                    className={`w-full max-w-[36px] rounded-t-md transition-all duration-200 group-hover:brightness-110 ${bar.isToday ? "bg-primary" : "bg-primary/25"
+                      }`}
                     style={{ height: `${heightPct}%` }}
                   />
                   <span className="text-[10px] font-medium text-muted-foreground">
@@ -964,38 +1084,56 @@ function OverviewTab({
 function TransactionsTab({ transactions, onSelectTx, onExport }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [providerFilter, setProviderFilter] = useState("All");
+  const [serviceFilter, setServiceFilter] = useState("All");
+  const [dateRangeFilter, setDateRangeFilter] = useState("all");
 
   const filtered = useMemo(() => {
+    const nowMs = Date.now();
+    const todayIso = new Date().toISOString().slice(0, 10);
     return transactions.filter((tx) => {
       const matchQuery =
-        tx.name.toLowerCase().includes(query.toLowerCase()) ||
-        tx.service.toLowerCase().includes(query.toLowerCase()) ||
-        tx.id.toLowerCase().includes(query.toLowerCase()) ||
-        tx.provider.toLowerCase().includes(query.toLowerCase());
+        String(tx.name || "").toLowerCase().includes(query.toLowerCase()) ||
+        String(tx.service || "").toLowerCase().includes(query.toLowerCase()) ||
+        String(tx.id || "").toLowerCase().includes(query.toLowerCase()) ||
+        String(tx.provider || "").toLowerCase().includes(query.toLowerCase());
       const matchStatus = statusFilter === "All" || tx.status === statusFilter;
-      const matchProvider = providerFilter === "All" || tx.provider === providerFilter;
-      return matchQuery && matchStatus && matchProvider;
+      const svcLower = String(tx.service || "").toLowerCase();
+      const matchService =
+        serviceFilter === "All" ||
+        (serviceFilter === "Electricity" && svcLower.includes("elect")) ||
+        (serviceFilter === "Cable" && (svcLower.includes("cable") || svcLower.includes("tv"))) ||
+        (serviceFilter === "Data" && svcLower.includes("data")) ||
+        (serviceFilter === "Airtime" && svcLower.includes("airtime")) ||
+        (serviceFilter === "Cashback Transfer" && svcLower.includes("cashback"));
+      let matchDate = true;
+      if (dateRangeFilter === "today") {
+        matchDate = String(tx.isoDate || "").slice(0, 10) === todayIso;
+      } else if (dateRangeFilter === "7d") {
+        matchDate = Number(tx.timeMillis || 0) >= nowMs - 7 * 24 * 60 * 60 * 1000;
+      } else if (dateRangeFilter === "30d") {
+        matchDate = Number(tx.timeMillis || 0) >= nowMs - 30 * 24 * 60 * 60 * 1000;
+      }
+      return matchQuery && matchStatus && matchService && matchDate;
     });
-  }, [transactions, query, statusFilter, providerFilter]);
+  }, [transactions, query, statusFilter, serviceFilter, dateRangeFilter]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            Transaction Ledger
+            Transaction & Earnings Ledger
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Search, filter, and audit all financial transactions processed on PayWaka.
+            Audit face values, ClubKonnect wholesale costs, commissions, fees, cashback splits, and net platform profit.
           </p>
         </div>
         <button
-          onClick={onExport}
+          onClick={() => onExport(filtered)}
           className="flex items-center gap-2 h-9 px-3.5 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-muted transition-colors shadow-xs"
         >
           <Download size={14} />
-          Export Ledger (CSV)
+          Export Filtered CSV
         </button>
       </div>
 
@@ -1009,14 +1147,27 @@ function TransactionsTab({ transactions, onSelectTx, onExport }) {
             />
             <input
               type="text"
-              placeholder="Search by customer name, service, or TX ID..."
+              placeholder="Search by customer name, service, provider, or TX ID..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full h-9 rounded-lg border border-border bg-background pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={serviceFilter}
+              onChange={(e) => setServiceFilter(e.target.value)}
+              className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="All">All Services</option>
+              <option value="Electricity">Electricity</option>
+              <option value="Cable">Cable TV</option>
+              <option value="Data">Data Bundles</option>
+              <option value="Airtime">Airtime VTU</option>
+              <option value="Cashback Transfer">Cashback Transfers</option>
+            </select>
+
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -1024,22 +1175,20 @@ function TransactionsTab({ transactions, onSelectTx, onExport }) {
             >
               <option value="All">All Statuses</option>
               <option value="Success">Success</option>
+              <option value="Pending">Pending</option>
               <option value="Failed">Failed</option>
               <option value="Refunded">Refunded</option>
             </select>
 
             <select
-              value={providerFilter}
-              onChange={(e) => setProviderFilter(e.target.value)}
+              value={dateRangeFilter}
+              onChange={(e) => setDateRangeFilter(e.target.value)}
               className="h-9 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="All">All Providers</option>
-              <option value="MTN">MTN</option>
-              <option value="Airtel">Airtel</option>
-              <option value="Glo">Glo</option>
-              <option value="9mobile">9mobile</option>
-              <option value="IKEDC">IKEDC</option>
-              <option value="DSTV">DSTV</option>
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
             </select>
           </div>
         </div>
@@ -1049,12 +1198,13 @@ function TransactionsTab({ transactions, onSelectTx, onExport }) {
             Showing <strong>{filtered.length}</strong> of{" "}
             {transactions.length} transactions
           </span>
-          {(query || statusFilter !== "All" || providerFilter !== "All") && (
+          {(query || statusFilter !== "All" || serviceFilter !== "All" || dateRangeFilter !== "all") && (
             <button
               onClick={() => {
                 setQuery("");
                 setStatusFilter("All");
-                setProviderFilter("All");
+                setServiceFilter("All");
+                setDateRangeFilter("all");
               }}
               className="text-primary font-semibold hover:underline"
             >
@@ -1076,29 +1226,53 @@ function TransactionsTab({ transactions, onSelectTx, onExport }) {
 // TAB 3: LEDGER & MARGINS
 // ─────────────────────────────────────────────────────────────
 function LedgerTab({ onNavigate, transactions = [], summary = {} }) {
-  const totalVolNum = summary.totalVolume ?? transactions.reduce((acc, t) => acc + (t.rawAmount || 0), 0);
-  const netMarginNum = summary.netPlatformMargin ?? transactions.reduce((acc, t) => acc + (t.rawGain || 0), 0);
-  const avgMarginRate = totalVolNum > 0 ? `${((netMarginNum / totalVolNum) * 100).toFixed(1)}%` : "0.0%";
+  const [serviceFilter, setServiceFilter] = useState("All");
+  const [dateRange, setDateRange] = useState("all");
 
-  // Breakdown by service category
-  const dataTx = transactions.filter((t) => String(t.service || "").toLowerCase().includes("data"));
-  const dataVol = dataTx.reduce((acc, t) => acc + (t.rawAmount || 0), 0);
-  const dataGain = dataTx.reduce((acc, t) => acc + (t.rawGain || 0), 0);
+  const filteredTx = useMemo(() => {
+    const nowMs = Date.now();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    return transactions.filter((t) => {
+      if (t.status !== "Success") return false;
+      const s = String(t.service || "").toLowerCase();
+      const matchService =
+        serviceFilter === "All" ||
+        (serviceFilter === "Electricity" && s.includes("elect")) ||
+        (serviceFilter === "Cable" && (s.includes("cable") || s.includes("tv"))) ||
+        (serviceFilter === "Data" && s.includes("data")) ||
+        (serviceFilter === "Airtime" && s.includes("airtime"));
+      let matchDate = true;
+      if (dateRange === "today") matchDate = String(t.isoDate || "").slice(0, 10) === todayIso;
+      else if (dateRange === "7d") matchDate = Number(t.timeMillis || 0) >= nowMs - 7 * 24 * 60 * 60 * 1000;
+      else if (dateRange === "30d") matchDate = Number(t.timeMillis || 0) >= nowMs - 30 * 24 * 60 * 60 * 1000;
+      return matchService && matchDate;
+    });
+  }, [transactions, serviceFilter, dateRange]);
+
+  const useAllStats = serviceFilter === "All" && dateRange === "all";
+  const totalVolNum = useAllStats ? (summary.totalVolume ?? 0) : filteredTx.reduce((a, t) => a + (t.faceValue || t.rawAmount || 0), 0);
+  const totalFees = useAllStats ? (summary.totalFeesCollected ?? 0) : filteredTx.reduce((a, t) => a + (t.feeCharged || 0), 0);
+  const totalCommission = useAllStats ? (summary.totalCommission ?? 0) : filteredTx.reduce((a, t) => a + (t.commission || 0), 0);
+  const totalProviderCost = useAllStats ? (summary.clubkonnectReconciliationTotal ?? 0) : filteredTx.reduce((a, t) => a + (t.providerCost || 0), 0);
+  const totalCashbackGiven = useAllStats ? (summary.totalCashbackGiven ?? 0) : filteredTx.reduce((a, t) => a + (t.cashbackGiven || 0), 0);
+  const totalGrossGain = useAllStats ? (summary.totalGrossGain ?? (totalFees + totalCommission)) : filteredTx.reduce((a, t) => a + (t.grossGain || 0), 0);
+  const totalGatewayCost = useAllStats ? (summary.totalGatewayCost ?? 0) : filteredTx.reduce((a, t) => a + (t.gatewayCost || 0), 0);
+  const netMarginNum = useAllStats ? (summary.totalNetEarning ?? summary.netPlatformMargin ?? 0) : filteredTx.reduce((a, t) => a + (t.netEarning || 0), 0);
+  const avgMarginRate = totalVolNum > 0 ? `${((netMarginNum / totalVolNum) * 100).toFixed(2)}%` : "0.0%";
+
+  const dataTx = filteredTx.filter((t) => String(t.service || "").toLowerCase().includes("data"));
+  const dataGain = dataTx.reduce((acc, t) => acc + (t.netEarning ?? t.rawGain ?? 0), 0);
   const dataShare = netMarginNum > 0 ? `${((dataGain / netMarginNum) * 100).toFixed(1)}%` : "0.0%";
-  const dataMarginRate = dataVol > 0 ? `${((dataGain / dataVol) * 100).toFixed(1)}%` : "30.0% (Configured)";
 
-  const airtimeTx = transactions.filter((t) => String(t.service || "").toLowerCase().includes("airtime"));
-  const airtimeVol = airtimeTx.reduce((acc, t) => acc + (t.rawAmount || 0), 0);
-  const airtimeGain = airtimeTx.reduce((acc, t) => acc + (t.rawGain || 0), 0);
+  const airtimeTx = filteredTx.filter((t) => String(t.service || "").toLowerCase().includes("airtime"));
+  const airtimeGain = airtimeTx.reduce((acc, t) => acc + (t.netEarning ?? t.rawGain ?? 0), 0);
   const airtimeShare = netMarginNum > 0 ? `${((airtimeGain / netMarginNum) * 100).toFixed(1)}%` : "0.0%";
-  const airtimeMarginRate = airtimeVol > 0 ? `${((airtimeGain / airtimeVol) * 100).toFixed(1)}%` : "3.0% (Configured)";
 
-  const billsTx = transactions.filter((t) => {
+  const billsTx = filteredTx.filter((t) => {
     const s = String(t.service || "").toLowerCase();
     return s.includes("elect") || s.includes("cable") || s.includes("tv") || s.includes("bill");
   });
-  const billsVol = billsTx.reduce((acc, t) => acc + (t.rawAmount || 0), 0);
-  const billsGain = billsTx.reduce((acc, t) => acc + (t.rawGain || 0), 0);
+  const billsGain = billsTx.reduce((acc, t) => acc + (t.netEarning ?? t.rawGain ?? 0), 0);
   const billsShare = netMarginNum > 0 ? `${((billsGain / netMarginNum) * 100).toFixed(1)}%` : "0.0%";
 
   return (
@@ -1106,52 +1280,84 @@ function LedgerTab({ onNavigate, transactions = [], summary = {} }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            Platform Margins & Settlement
+            Platform Earnings, Cashback Liability &amp; ClubKonnect Reconciliation
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Reconciliation breakdown of gross processed turnover versus earned platform margins.
+            Exact reconciliation of face value, provider wholesale costs, commissions (actual vs fallback), fees, user cashback owed, and net profits.
           </p>
         </div>
-        <button
-          onClick={() => onNavigate("Pricing")}
-          className="flex items-center gap-2 h-9 px-3.5 rounded-lg bg-primary text-xs font-bold text-primary-foreground hover:brightness-95 shadow-sm"
-        >
-          <Database size={14} />
-          Adjust Pricing Rules
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={serviceFilter}
+            onChange={(e) => setServiceFilter(e.target.value)}
+            className="h-9 rounded-lg border border-border bg-card px-3 text-xs text-foreground"
+          >
+            <option value="All">All Services</option>
+            <option value="Electricity">Electricity</option>
+            <option value="Cable">Cable TV</option>
+            <option value="Data">Data Bundles</option>
+            <option value="Airtime">Airtime VTU</option>
+          </select>
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="h-9 rounded-lg border border-border bg-card px-3 text-xs text-foreground"
+          >
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+          </select>
+          <button
+            onClick={() => onNavigate("Pricing")}
+            className="flex items-center gap-2 h-9 px-3.5 rounded-lg bg-primary text-xs font-bold text-primary-foreground hover:brightness-95 shadow-sm"
+          >
+            <Database size={14} />
+            Adjust Bill &amp; Data Rules
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* PRIMARY FINANCIAL TOTALS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          label="Gross Processed Volume"
-          value={totalVolNum > 0 ? `₦${totalVolNum.toLocaleString()}` : "₦0.00"}
-          change={transactions.length > 0 ? `${transactions.length} tx processed` : "Live Ledger"}
+          label="Exact Net Platform Profit"
+          value={`₦${Number(netMarginNum || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          change={avgMarginRate}
+          positive={netMarginNum >= 0}
+          icon={CircleDollarSign}
+          subtitle={`Gross Gain (₦${totalGrossGain.toLocaleString()}) - Cashback - Gateway`}
+        />
+        <MetricCard
+          label="Current Cashback Owed to Users"
+          value={`₦${Number(summary.totalUserCashbackLiability || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          change={`Given: ₦${Number(totalCashbackGiven || 0).toLocaleString()}`}
           positive
           icon={Wallet}
-          subtitle="Cumulative platform turnover"
+          subtitle={`Spent: ₦${Number(summary.totalCashbackSpentInApp || 0).toLocaleString()} • Moved ₦1k+: ₦${Number(summary.totalCashbackTransferredToWallet || 0).toLocaleString()}`}
         />
         <MetricCard
-          label="Net Margin Earnings"
-          value={netMarginNum > 0 ? `₦${netMarginNum.toLocaleString()}` : "₦0.00"}
-          change={avgMarginRate}
-          positive
-          icon={CircleDollarSign}
-          subtitle="Net platform retained gain"
-        />
-        <MetricCard
-          label="Average Margin Rate"
-          value={avgMarginRate}
-          change={totalVolNum > 0 ? "Weighted" : "Live"}
+          label="ClubKonnect Cost Reconciliation"
+          value={`₦${Number(totalProviderCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          change={`Comm: ₦${Number(totalCommission || 0).toLocaleString()}`}
           positive
           icon={BarChart3}
-          subtitle="Weighted across all services"
+          subtitle={`Actual: ${summary.actualCommissionCount || 0} • Fallback: ${summary.fallbackCommissionCount || 0}`}
+        />
+        <MetricCard
+          label="Processing Fees Collected"
+          value={`₦${Number(totalFees || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          change={`Face: ₦${Number(totalVolNum || 0).toLocaleString()}`}
+          positive
+          icon={TrendingUp}
+          subtitle={`Gateway Cost Recorded: ₦${Number(totalGatewayCost || 0).toLocaleString()}`}
         />
       </div>
 
       {/* SERVICE MARGIN BREAKDOWN */}
       <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-5">
         <h3 className="text-sm font-semibold text-foreground">
-          Margin Distribution by Service
+          Net Profit Distribution by Service
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2">
@@ -1159,10 +1365,10 @@ function LedgerTab({ onNavigate, transactions = [], summary = {} }) {
               Data Bundles (MTN, Glo, Airtel, 9mobile)
             </p>
             <p className="text-xl font-bold text-foreground">
-              {dataGain > 0 ? `₦${dataGain.toLocaleString()}` : "₦0.00"}
+              ₦{Number(dataGain || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             <p className="text-[11px] font-semibold text-primary">
-              {dataShare} of total earnings (Avg. {dataMarginRate})
+              {dataShare} of filtered net profit ({dataTx.length} tx)
             </p>
           </div>
           <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2">
@@ -1170,32 +1376,24 @@ function LedgerTab({ onNavigate, transactions = [], summary = {} }) {
               Airtime VTU Top-ups
             </p>
             <p className="text-xl font-bold text-foreground">
-              {airtimeGain > 0 ? `₦${airtimeGain.toLocaleString()}` : "₦0.00"}
+              ₦{Number(airtimeGain || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             <p className="text-[11px] font-semibold text-primary">
-              {airtimeShare} of total earnings (Avg. {airtimeMarginRate})
+              {airtimeShare} of filtered net profit ({airtimeTx.length} tx)
             </p>
           </div>
           <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2">
             <p className="text-xs text-muted-foreground font-medium">
-              Electricity & Cable TV Bills
+              Electricity &amp; Cable TV Bills
             </p>
             <p className="text-xl font-bold text-foreground">
-              {billsGain > 0 ? `₦${billsGain.toLocaleString()}` : "₦0.00"}
+              ₦{Number(billsGain || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             <p className="text-[11px] font-semibold text-primary">
-              {billsShare} of total earnings (Fixed convenience fee)
+              {billsShare} of filtered net profit ({billsTx.length} tx)
             </p>
           </div>
         </div>
-
-        {transactions.length === 0 && (
-          <div className="rounded-lg border border-border bg-muted/20 p-4 text-center">
-            <p className="text-xs text-muted-foreground">
-              Ledger reconciliation is actively connected to Firestore. As transactions are executed across mobile, web, and vendor endpoints, settled revenue and retained margin splits will calculate in real-time.
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1211,6 +1409,10 @@ function DataPricingTab({
   setMargins,
   onSave,
   isSaving,
+  billPricingConfig = DEFAULT_BILL_PRICING_CONFIG,
+  setBillPricingConfig,
+  onSaveBillPricing,
+  billPricingSaving = false,
 }) {
   const updateMargin = (index, field, value) => {
     setMargins((prev) => {
@@ -1218,6 +1420,22 @@ function DataPricingTab({
       next[index] = { ...next[index], [field]: value };
       return next;
     });
+  };
+
+  const updateElecTier = (tierKey, field, rawValue) => {
+    setBillPricingConfig((prev) => ({
+      ...prev,
+      electricity: {
+        ...prev.electricity,
+        tiers: {
+          ...prev.electricity.tiers,
+          [tierKey]: {
+            ...prev.electricity.tiers[tierKey],
+            [field]: Number(rawValue || 0),
+          },
+        },
+      },
+    }));
   };
 
   return (
@@ -1255,24 +1473,22 @@ function DataPricingTab({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                backendStatus === "connected"
+              className={`h-2.5 w-2.5 rounded-full ${backendStatus === "connected"
                   ? "bg-emerald-500 animate-pulse"
                   : backendStatus === "mid-implementation"
-                  ? "bg-amber-500"
-                  : "bg-blue-500 animate-ping"
-              }`}
+                    ? "bg-amber-500"
+                    : "bg-blue-500 animate-ping"
+                }`}
             />
             <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
               Pricing Engine Callable Status
             </h3>
           </div>
           <span
-            className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-              backendStatus === "connected"
+            className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${backendStatus === "connected"
                 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                 : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-            }`}
+              }`}
           >
             {backendStatus === "connected"
               ? "Live Firestore Connected"
@@ -1283,10 +1499,9 @@ function DataPricingTab({
         <p className="text-xs text-muted-foreground leading-relaxed">
           {backendStatus === "connected"
             ? "Successfully communicating with adminGetPricingConfig. Changes saved here update the system_settings/pricing_config Firestore document directly."
-            : `Backend status note: ${
-                backendError ||
-                "Callable functions are undergoing deployment verification. The pricing interface below provides active local configuration preview."
-              }`}
+            : `Backend status note: ${backendError ||
+            "Callable functions are undergoing deployment verification. The pricing interface below provides active local configuration preview."
+            }`}
         </p>
       </div>
 
@@ -1334,9 +1549,8 @@ function DataPricingTab({
               <div>
                 <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-muted text-muted-foreground border border-border">
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      item.status === "Live" ? "bg-emerald-500" : "bg-amber-500"
-                    }`}
+                    className={`h-1.5 w-1.5 rounded-full ${item.status === "Live" ? "bg-emerald-500" : "bg-amber-500"
+                      }`}
                   />
                   {item.status} Pricing
                 </span>
@@ -1367,6 +1581,211 @@ function DataPricingTab({
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* BILL PAYMENT FEES & CASHBACK RULES EDITOR */}
+      <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
+        <div className="px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-foreground">
+                Bill Payment Fees &amp; Cashback Rules Engine
+              </h3>
+              <span className="rounded bg-primary/15 px-2 py-0.5 text-[10px] font-mono font-bold text-primary border border-primary/20">
+                {billPricingConfig?.ruleVersion || "v1.0.0"}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Configure Electricity processing fees, Cable TV commission shares, Airtime cashback rate, and Cashback-to-Wallet threshold.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onSaveBillPricing}
+            disabled={billPricingSaving}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white transition-all shadow-sm disabled:opacity-50 shrink-0"
+          >
+            {billPricingSaving ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+            {billPricingSaving ? "Saving Bill Rules..." : "Save Bill Rules"}
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Electricity Tier Grid */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Electricity Processing Fees &amp; Cashback Tiers (Fallback Comm: {((billPricingConfig?.electricity?.fallbackCommissionRate ?? 0.005) * 100).toFixed(2)}%)
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {["tierA", "tierB", "tierC"].map((tKey) => {
+                const t = billPricingConfig?.electricity?.tiers?.[tKey] || {};
+                const isPct = t.cashbackMode === "percentage_of_gross";
+                return (
+                  <div key={tKey} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+                    <div className="text-xs font-bold text-foreground">{t.label || tKey}</div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-muted-foreground mb-1">
+                          Processing Fee (₦)
+                        </label>
+                        <input
+                          type="number"
+                          value={t.feeNaira ?? 0}
+                          onChange={(e) => updateElecTier(tKey, "feeNaira", e.target.value)}
+                          className="w-full h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                        />
+                      </div>
+                      {isPct ? (
+                        <div>
+                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">
+                            Cashback (% Gross Gain)
+                          </label>
+                          <input
+                            type="number"
+                            step="1"
+                            value={Math.round((t.cashbackShareOfGross ?? 0.5) * 100)}
+                            onChange={(e) =>
+                              updateElecTier(tKey, "cashbackShareOfGross", Number(e.target.value || 0) / 100)
+                            }
+                            className="w-full h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">
+                            Flat Cashback (₦)
+                          </label>
+                          <input
+                            type="number"
+                            value={t.flatCashbackNaira ?? 0}
+                            onChange={(e) => updateElecTier(tKey, "flatCashbackNaira", e.target.value)}
+                            className="w-full h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Cable TV, Airtime & Vault Rules */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-3 border-t border-border">
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                Cable Processing Fee (₦)
+              </label>
+              <input
+                type="number"
+                value={billPricingConfig?.cable?.feeNaira ?? 0}
+                onChange={(e) =>
+                  setBillPricingConfig((prev) => ({
+                    ...prev,
+                    cable: { ...prev.cable, feeNaira: Number(e.target.value || 0) },
+                  }))
+                }
+                className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                Cable Cashback (% Commission)
+              </label>
+              <input
+                type="number"
+                step="1"
+                value={Math.round((billPricingConfig?.cable?.cashbackShareOfCommission ?? 0.5) * 100)}
+                onChange={(e) =>
+                  setBillPricingConfig((prev) => ({
+                    ...prev,
+                    cable: { ...prev.cable, cashbackShareOfCommission: Number(e.target.value || 0) / 100 },
+                  }))
+                }
+                className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                Default Airtime Cashback (% Face)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={Number(((billPricingConfig?.airtime?.cashbackRate ?? 0.015) * 100).toFixed(2))}
+                onChange={(e) =>
+                  setBillPricingConfig((prev) => ({
+                    ...prev,
+                    airtime: { ...prev.airtime, cashbackRate: Number(e.target.value || 0) / 100 },
+                  }))
+                }
+                className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                Min Cashback Transfer (₦)
+              </label>
+              <input
+                type="number"
+                value={billPricingConfig?.minCashbackTransferNaira ?? 1000}
+                onChange={(e) =>
+                  setBillPricingConfig((prev) => ({
+                    ...prev,
+                    minCashbackTransferNaira: Number(e.target.value || 1000),
+                  }))
+                }
+                className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+              />
+            </div>
+          </div>
+
+          {/* Per-Network Airtime Cashback Rates (ClubKonnect Rates: MTN 3%, Airtel 3%, Glo 8%, 9mobile 7%) */}
+          <div className="pt-3 border-t border-border">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+              Per-Network Airtime Cashback (% Face — ClubKonnect Comm: MTN 3%, Airtel 3%, Glo 8%, 9mobile 7%)
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { key: "mtn", label: "MTN Cashback (%)" },
+                { key: "airtel", label: "Airtel Cashback (%)" },
+                { key: "glo", label: "Glo Cashback (%)" },
+                { key: "9mobile", label: "9mobile Cashback (%)" },
+              ].map(({ key, label }) => {
+                const rate = Number(
+                  billPricingConfig?.airtime?.cashbackRates?.[key] ??
+                    billPricingConfig?.airtime?.cashbackRate ??
+                    0.015,
+                );
+                return (
+                  <div key={key}>
+                    <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                      {label}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={Number((rate * 100).toFixed(2))}
+                      onChange={(e) =>
+                        setBillPricingConfig((prev) => ({
+                          ...prev,
+                          airtime: {
+                            ...prev.airtime,
+                            cashbackRates: {
+                              ...(prev.airtime?.cashbackRates || {}),
+                              [key]: Number(e.target.value || 0) / 100,
+                            },
+                          },
+                        }))
+                      }
+                      className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1469,6 +1888,7 @@ function UsersTab({ users = [], onSelectUser, onToggleStatus, onOpenInvite }) {
                 <th className="px-4 py-3">KYC Tier</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Wallet Balance</th>
+                <th className="px-4 py-3">Cashback Owed</th>
                 <th className="px-4 py-3">Joined Date</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-5 py-3 text-right">Actions</th>
@@ -1477,7 +1897,7 @@ function UsersTab({ users = [], onSelectUser, onToggleStatus, onOpenInvite }) {
             <tbody className="divide-y divide-border">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center">
+                  <td colSpan={8} className="px-5 py-12 text-center">
                     <Users className="w-8 h-8 mx-auto text-muted-foreground/40 mb-2" />
                     <p className="text-xs font-semibold text-foreground">No accounts found</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -1489,12 +1909,12 @@ function UsersTab({ users = [], onSelectUser, onToggleStatus, onOpenInvite }) {
                 filteredUsers.map((u) => {
                   const initials = u.name
                     ? u.name
-                        .split(" ")
-                        .filter(Boolean)
-                        .map((x) => x[0])
-                        .join("")
-                        .slice(0, 2)
-                        .toUpperCase()
+                      .split(" ")
+                      .filter(Boolean)
+                      .map((x) => x[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()
                     : "U";
                   return (
                     <tr key={u.id} className="hover:bg-muted/30 transition-colors">
@@ -1526,21 +1946,22 @@ function UsersTab({ users = [], onSelectUser, onToggleStatus, onOpenInvite }) {
                       <td className="px-4 py-3.5 text-xs font-bold text-foreground">
                         ₦{Number(u.walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
+                      <td className="px-4 py-3.5 text-xs font-bold text-emerald-500">
+                        ₦{Number(u.cashbackBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
                       <td className="px-4 py-3.5 text-xs text-muted-foreground">
                         {u.joined || "—"}
                       </td>
                       <td className="px-4 py-3.5">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            u.status === "Active"
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${u.status === "Active"
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                               : "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20"
-                          }`}
+                            }`}
                         >
                           <span
-                            className={`h-1.5 w-1.5 rounded-full ${
-                              u.status === "Active" ? "bg-emerald-500" : "bg-red-500"
-                            }`}
+                            className={`h-1.5 w-1.5 rounded-full ${u.status === "Active" ? "bg-emerald-500" : "bg-red-500"
+                              }`}
                           />
                           {u.status || "Active"}
                         </span>
@@ -1622,11 +2043,10 @@ function AuditLogTab({ logs }) {
             <button
               key={cat}
               onClick={() => setFilterCategory(cat)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                filterCategory === cat
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${filterCategory === cat
                   ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                   : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+                }`}
             >
               {cat}
             </button>
@@ -1657,8 +2077,8 @@ function AuditLogTab({ logs }) {
                   {log.actor === "System Engine" || log.actor === "System Scheduled Sync"
                     ? "SYS"
                     : log.actor === "Settlement Service"
-                    ? "SET"
-                    : "DA"}
+                      ? "SET"
+                      : "DA"}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1783,14 +2203,12 @@ function SettingsTab() {
                       : "Maintenance mode enabled."
                   );
                 }}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  maintenanceMode ? "bg-amber-500" : "bg-muted"
-                }`}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${maintenanceMode ? "bg-amber-500" : "bg-muted"
+                  }`}
               >
                 <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    maintenanceMode ? "translate-x-5" : "translate-x-0"
-                  }`}
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${maintenanceMode ? "translate-x-5" : "translate-x-0"
+                    }`}
                 />
               </button>
             </div>
@@ -1862,11 +2280,10 @@ function MetricCard({ label, value, change, positive, icon: Icon, subtitle }) {
             {value}
           </strong>
           <span
-            className={`inline-flex items-center gap-0.5 text-xs font-bold ${
-              positive
+            className={`inline-flex items-center gap-0.5 text-xs font-bold ${positive
                 ? "text-emerald-600 dark:text-emerald-400"
                 : "text-red-600 dark:text-red-400"
-            }`}
+              }`}
           >
             {positive ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
             {change}
@@ -1915,12 +2332,12 @@ function TransactionsTable({ rows = [], onSelectTx }) {
               tx.initials ||
               (tx.name
                 ? tx.name
-                    .split(" ")
-                    .filter(Boolean)
-                    .map((x) => x[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase()
+                  .split(" ")
+                  .filter(Boolean)
+                  .map((x) => x[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()
                 : "TX");
             return (
               <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
@@ -1942,10 +2359,22 @@ function TransactionsTable({ rows = [], onSelectTx }) {
                   <p className="text-[10px] text-muted-foreground">{tx.provider}</p>
                 </td>
                 <td className="px-4 py-3.5 text-xs font-bold text-foreground">
-                  {tx.amount}
+                  <p>{tx.amount}</p>
+                  {(tx.feeCharged > 0 || tx.cashbackApplied > 0) && (
+                    <p className="text-[10px] font-normal text-muted-foreground">
+                      {tx.feeCharged > 0 ? `Fee ₦${tx.feeCharged}` : ""}
+                      {tx.feeCharged > 0 && tx.cashbackApplied > 0 ? " • " : ""}
+                      {tx.cashbackApplied > 0 ? `CB Used ₦${tx.cashbackApplied}` : ""}
+                    </p>
+                  )}
                 </td>
-                <td className="px-4 py-3.5 text-xs font-semibold text-primary">
-                  {tx.gain}
+                <td className={`px-4 py-3.5 text-xs font-semibold ${tx.isNegativeNet ? "text-red-500" : "text-primary"}`}>
+                  <p>{tx.gain}</p>
+                  {tx.cashbackGiven > 0 && (
+                    <p className="text-[10px] font-normal text-muted-foreground">
+                      CB: -₦{tx.cashbackGiven}
+                    </p>
+                  )}
                 </td>
                 <td className="px-4 py-3.5">
                   <StatusBadge status={tx.status} />
@@ -1975,24 +2404,26 @@ function StatusBadge({ status }) {
   const styles = {
     Success:
       "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    Pending:
+      "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
     Failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
     Refunded:
       "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-        styles[status] || "bg-muted text-muted-foreground border-border"
-      }`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${styles[status] || "bg-muted text-muted-foreground border-border"
+        }`}
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          status === "Success"
+        className={`h-1.5 w-1.5 rounded-full ${status === "Success"
             ? "bg-emerald-500"
-            : status === "Failed"
-            ? "bg-red-500"
-            : "bg-amber-500"
-        }`}
+            : status === "Pending"
+              ? "bg-blue-500"
+              : status === "Failed"
+                ? "bg-red-500"
+                : "bg-amber-500"
+          }`}
       />
       {status}
     </span>
@@ -2034,12 +2465,48 @@ function TransactionDetailModal({ tx, onClose }) {
             </span>
           </div>
           <div className="flex justify-between py-1 border-b border-border">
-            <span className="text-muted-foreground">Payment Amount</span>
+            <span className="text-muted-foreground">Face / Product Value</span>
             <span className="font-bold text-foreground text-sm">{tx.amount}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-border">
-            <span className="text-muted-foreground">Platform Net Margin</span>
-            <span className="font-bold text-primary">{tx.gain}</span>
+            <span className="text-muted-foreground">Provider Cost (ClubKonnect)</span>
+            <span className="font-mono font-semibold text-foreground">
+              ₦{Number(tx.providerCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Commission ({tx.commissionSource || "fallback"})</span>
+            <span className="font-mono font-semibold text-foreground">
+              ₦{Number(tx.commission || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Processing Fee Charged</span>
+            <span className="font-mono font-semibold text-foreground">
+              ₦{Number(tx.feeCharged || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Cashback Given</span>
+            <span className="font-mono font-semibold text-amber-500">
+              -₦{Number(tx.cashbackGiven || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Funding Split ({tx.fundingSource || "WALLET_ONLY"})</span>
+            <span className="font-mono text-foreground">
+              ₦{Number(tx.walletContribution ?? tx.rawAmount ?? 0).toLocaleString()} Wallet / ₦{Number(tx.cashbackApplied || 0).toLocaleString()} CB
+            </span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Exact Net Platform Profit</span>
+            <span className={`font-bold ${tx.isNegativeNet ? "text-red-500" : "text-primary"}`}>
+              {tx.gain} {tx.isNegativeNet ? "(NEGATIVE NET)" : ""}
+            </span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Pricing Rule Version</span>
+            <span className="font-mono text-[11px] text-foreground">{tx.ruleVersion || "—"}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-border">
             <span className="text-muted-foreground">Payment Gateway Ref</span>
@@ -2073,12 +2540,12 @@ function TransactionDetailModal({ tx, onClose }) {
 function UserDetailModal({ user, onClose, onToggleStatus }) {
   const initials = user?.name
     ? user.name
-        .split(" ")
-        .filter(Boolean)
-        .map((x) => x[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase()
+      .split(" ")
+      .filter(Boolean)
+      .map((x) => x[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase()
     : "U";
 
   return (
@@ -2127,6 +2594,12 @@ function UserDetailModal({ user, onClose, onToggleStatus }) {
               ₦{Number(user.walletBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
+          <div className="flex justify-between py-1 border-b border-border">
+            <span className="text-muted-foreground">Cashback Owed (Vault)</span>
+            <span className="font-bold text-emerald-500">
+              ₦{Number(user.cashbackBalance || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
           {user.accountNumber && user.accountNumber !== "—" && (
             <div className="flex justify-between py-1 border-b border-border">
               <span className="text-muted-foreground">Virtual Dedicated Account</span>
@@ -2142,9 +2615,8 @@ function UserDetailModal({ user, onClose, onToggleStatus }) {
           <div className="flex justify-between py-1">
             <span className="text-muted-foreground">Account Status</span>
             <span
-              className={`font-bold ${
-                user.status === "Active" ? "text-emerald-500" : "text-red-500"
-              }`}
+              className={`font-bold ${user.status === "Active" ? "text-emerald-500" : "text-red-500"
+                }`}
             >
               {user.status || "Active"}
             </span>
@@ -2157,11 +2629,10 @@ function UserDetailModal({ user, onClose, onToggleStatus }) {
               onToggleStatus(user.id);
               onClose();
             }}
-            className={`h-9 px-4 rounded-lg text-xs font-bold transition-colors ${
-              user.status === "Active"
+            className={`h-9 px-4 rounded-lg text-xs font-bold transition-colors ${user.status === "Active"
                 ? "border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20"
                 : "border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-            }`}
+              }`}
           >
             {user.status === "Active" ? "Suspend Account" : "Reactivate Account"}
           </button>

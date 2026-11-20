@@ -1,183 +1,256 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ModalPortal from "@/components/ui/ModalPortal";
+import TransactionsModal from "@/components/TransactionsModal";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, Copy, Check, Smartphone, Tv, Zap, Wifi, ArrowRight } from "lucide-react";
+import { Share2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { formatNaira, formatCashback } from "@/lib/format";
+import {
+  ReceiptAmount,
+  ReceiptAnimatedCheck,
+  ReceiptCashbackChip,
+  ReceiptCopyButton,
+  ReceiptPerforation,
+  ReceiptRow,
+  ReceiptRows,
+  ReceiptStatusPill,
+  ReceiptStrip,
+  ReceiptWordmark,
+} from "@/components/receipts/ReceiptParts";
 
 export default function PaymentSuccessfulModal({
   isOpen,
   onClose,
   data = {},
 }) {
-  const [copiedToken, setCopiedToken] = useState(false);
-  const [copiedRef, setCopiedRef] = useState(false);
   const navigate = useNavigate();
+  const [isShareReceiptOpen, setIsShareReceiptOpen] = useState(false);
 
   const {
     category = "Transaction",
     productName = "Service",
     network = "Default",
     amount = 0,
+    feeCharged = 0,
+    totalPayable = 0,
+    cashbackApplied = 0,
+    walletContribution = 0,
+    cashbackEarned = 0,
     customerId = "",
     tx_ref = "",
     token = "",
     bonusToEarn = "",
   } = data;
 
-  const copyToClipboard = (text, isRef = false) => {
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    if (isRef) {
-      setCopiedRef(true);
-      setTimeout(() => setCopiedRef(false), 2000);
-      toast.success("Transaction Reference copied!");
-    } else {
-      setCopiedToken(true);
-      setTimeout(() => setCopiedToken(false), 2000);
-      toast.success("Electricity Token copied!");
+  // Short success haptic respecting reduced motion
+  useEffect(() => {
+    if (!isOpen) return;
+    setIsShareReceiptOpen(false);
+    try {
+      const reduced =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      if (!reduced && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        navigator.vibrate(25);
+      }
+    } catch {
+      // ignore haptic errors on unsupported browsers
     }
-  };
+  }, [isOpen]);
 
-  const getCategoryIcon = () => {
-    const catLower = String(category || productName || "").toLowerCase();
-    if (catLower.includes("airtime") || catLower.includes("data")) {
-      return <Smartphone className="h-6 w-6 text-emerald-500" />;
-    }
-    if (catLower.includes("elec") || catLower.includes("power")) {
-      return <Zap className="h-6 w-6 text-amber-500" />;
-    }
-    if (catLower.includes("cable") || catLower.includes("tv")) {
-      return <Tv className="h-6 w-6 text-purple-500" />;
-    }
-    return <Wifi className="h-6 w-6 text-emerald-500" />;
+  const resolvedTotal = Number(
+    totalPayable || Number(amount || 0) + Number(feeCharged || 0),
+  );
+
+  const receiptSubtitle = useMemo(() => {
+    const lower = String(category || productName || "").toLowerCase();
+    if (lower.includes("data")) return "MOBILE DATA RECEIPT";
+    if (lower.includes("airtime")) return "AIRTIME TOP-UP RECEIPT";
+    if (lower.includes("elec")) return "UTILITY ELECTRICITY VOUCHER";
+    if (lower.includes("cable")) return "CABLE TV SUBSCRIPTION";
+    return "TRANSACTION RECEIPT";
+  }, [category, productName]);
+
+  const normalizedTxForReceipt = useMemo(() => {
+    const lower = String(category || productName || "").toLowerCase();
+    const isData = lower.includes("data");
+    const isAirtime = lower.includes("airtime");
+    const isElec = lower.includes("elec");
+    const isCable = lower.includes("cable");
+
+    return {
+      id: tx_ref || `pwk_${Date.now()}`,
+      tx_ref: tx_ref || `pwk_${Date.now()}`,
+      reference: tx_ref,
+      type: "debit",
+      status: "completed",
+      category: isElec
+        ? "Electricity"
+        : isData
+          ? "Mobile Data"
+          : isAirtime
+            ? "Airtime"
+            : isCable
+              ? "Cable TV"
+              : category,
+      title: productName || category,
+      network: network && network !== "Default" ? network : undefined,
+      company: isElec ? network : undefined,
+      cableTV: isCable ? network : undefined,
+      phone: isData || isAirtime ? customerId : undefined,
+      meterNo: isElec ? customerId : undefined,
+      smartCardNo: isCable ? customerId : undefined,
+      customerId,
+      planName: isData ? productName : undefined,
+      packageName: isCable ? productName : undefined,
+      amount: Number(amount || 0),
+      feeCharged: Number(feeCharged || 0),
+      totalPayable: resolvedTotal,
+      tokenPin: token || undefined,
+      token: token || undefined,
+      created_at: new Date().toISOString(),
+    };
+  }, [tx_ref, category, productName, network, customerId, amount, feeCharged, resolvedTotal, token]);
+
+  const handleShareReceipt = () => {
+    setIsShareReceiptOpen(true);
   };
 
   return (
-    <ModalPortal
-      isOpen={isOpen}
-      onClose={onClose}
-      maxWidthClass="max-w-[440px]"
-      className="p-6 relative overflow-hidden"
-    >
-      {/* Decorative Top Gradient Header */}
-      <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-500" />
+    <>
+      <ModalPortal
+        isOpen={isOpen && !isShareReceiptOpen}
+        onClose={onClose}
+        variant="sheet"
+        noPadding
+        maxWidthClass="max-w-[388px]"
+        ariaLabel="Payment Successful Receipt"
+      >
+        <ReceiptStrip />
 
-      <div className="flex flex-col items-center text-center pt-2">
-        <div className="relative mb-3">
-          <div className="h-16 w-16 rounded-full bg-emerald-500/15 flex items-center justify-center animate-bounce duration-1000">
-            <CheckCircle2 className="h-10 w-10 text-emerald-500" />
-          </div>
-        </div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">
-          Payment Successful!
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Your {category || "bill"} request has been processed and delivered instantly.
-        </p>
-      </div>
-
-      {/* Token / PIN Highlight Banner (for electricity / vouchers) */}
-      {token && (
-        <div className="my-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200">
-          <div className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-            Electricity Meter Token / PIN
-          </div>
-          <div className="flex items-center justify-between gap-2 mt-1">
-            <span className="font-mono text-xl font-extrabold tracking-widest break-all">
-              {token}
-            </span>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => copyToClipboard(token, false)}
-              className="h-8 w-8 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400"
-            >
-              {copiedToken ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Receipt Details Box */}
-      <div className="my-3 p-4 rounded-xl bg-muted/40 border border-border/50 space-y-2.5 text-sm">
-        <div className="flex justify-between items-center">
-          <span className="text-muted-foreground font-medium">Service / Plan</span>
-          <span className="font-semibold text-foreground flex items-center gap-1.5">
-            {getCategoryIcon()}
-            {productName || category}
-          </span>
+        {/* Mini-receipt Header */}
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3.5 border-b border-border shrink-0">
+          <ReceiptWordmark subtitle={receiptSubtitle} />
+          <ReceiptStatusPill status="success" label="SUCCESSFUL" />
         </div>
 
-        {network && network !== "Default" && (
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground font-medium">Network / Provider</span>
-            <span className="font-semibold text-foreground">{network}</span>
-          </div>
-        )}
+        {/* Scrollable Mini-Receipt Body */}
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-3.5 flex-1">
+          <ReceiptAnimatedCheck />
 
-        <div className="flex justify-between items-center">
-          <span className="text-muted-foreground font-medium">Recipient / ID</span>
-          <span className="font-semibold text-foreground font-mono">{customerId || "N/A"}</span>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-muted-foreground font-medium">Amount Paid</span>
-          <span className="font-bold text-base text-emerald-600 dark:text-emerald-400">
-            ₦{Number(amount || 0).toLocaleString()}
-          </span>
-        </div>
-
-        {bonusToEarn && (
-          <div className="flex justify-between items-center text-xs">
-            <span className="text-muted-foreground">Bonus / Cashback</span>
-            <span className="font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-              {bonusToEarn}
-            </span>
-          </div>
-        )}
-
-        <Separator className="my-1.5 opacity-60" />
-
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-muted-foreground font-medium">Transaction Reference</span>
-          <div className="flex items-center gap-1">
-            <span className="font-mono text-muted-foreground max-w-[140px] truncate" title={tx_ref}>
-              {tx_ref || "N/A"}
-            </span>
-            {tx_ref && (
-              <button
-                type="button"
-                onClick={() => copyToClipboard(tx_ref, true)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
-              >
-                {copiedRef ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-              </button>
+          <div className="pw-panel p-4 space-y-2">
+            <p className="text-sm font-bold text-foreground text-center truncate">
+              {productName || category}
+            </p>
+            <ReceiptAmount label="AMOUNT PAID" amount={resolvedTotal} />
+            {Number(cashbackEarned || 0) > 0 && (
+              <div className="flex justify-center pt-1">
+                <ReceiptCashbackChip
+                  amount={cashbackEarned}
+                  label={`${formatCashback(cashbackEarned)} cashback credited`}
+                />
+              </div>
+            )}
+            {!Number(cashbackEarned || 0) && bonusToEarn && bonusToEarn !== "₦0 Cashback" && (
+              <div className="flex justify-center pt-1">
+                <ReceiptCashbackChip label={bonusToEarn} />
+              </div>
             )}
           </div>
-        </div>
-      </div>
 
-      <div className="mt-4 flex flex-col gap-2">
-        <Button
-          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl shadow-lg shadow-emerald-600/20"
-          onClick={onClose}
-        >
-          Done
-        </Button>
-        <Button
-          variant="outline"
-          className="w-full font-medium py-2.5 rounded-xl border-border/70 hover:bg-accent flex items-center justify-center gap-2"
-          onClick={() => {
-            onClose();
-            navigate("/Transactions");
-          }}
-        >
-          View Transaction History
-          <ArrowRight className="h-4 w-4" />
-        </Button>
-      </div>
-    </ModalPortal>
+          {/* Electricity Meter Token Block */}
+          {token && (
+            <div className="p-3.5 rounded-panel border-2 border-dashed border-brand-400/50 bg-brand-tint text-center space-y-1.5">
+              <span className="pw-label text-brand-400 block">
+                PREPAID METER TOKEN
+              </span>
+              <div className="flex items-center justify-center gap-2">
+                <span className="pw-num text-lg font-black tracking-widest text-foreground break-all">
+                  {token}
+                </span>
+                <ReceiptCopyButton value={token} label="Meter Token" />
+              </div>
+            </div>
+          )}
+
+          {/* Beneficiary / Recipient Block */}
+          <div className="pw-panel p-3.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="pw-label block">BENEFICIARY</span>
+              <p className="pw-num text-sm font-bold text-foreground truncate mt-0.5">
+                {customerId || "N/A"}
+              </p>
+              {network && network !== "Default" && (
+                <p className="text-caption text-muted-foreground truncate">
+                  {network}
+                </p>
+              )}
+            </div>
+            <ReceiptStatusPill status="success" label="DELIVERED" />
+          </div>
+
+          <ReceiptPerforation />
+
+          <ReceiptRows>
+            <ReceiptRow label="Product Value" value={formatNaira(amount)} mono />
+            {Number(feeCharged || 0) > 0 && (
+              <ReceiptRow label="Processing Fee" value={formatNaira(feeCharged)} mono />
+            )}
+            {Number(cashbackApplied || 0) > 0 && (
+              <ReceiptRow
+                label="Funding Split"
+                value={`${formatNaira(cashbackApplied)} CB / ${formatNaira(walletContribution)} Wallet`}
+                mono
+              />
+            )}
+            <ReceiptRow
+              label="Reference"
+              value={tx_ref || "N/A"}
+              code
+              copyValue={tx_ref}
+              copyLabel="Reference"
+            />
+          </ReceiptRows>
+        </div>
+
+        {/* Actions */}
+        <div className="p-4 pt-3 border-t border-border/70 pb-safe space-y-2 shrink-0 bg-card/75 backdrop-blur-xl">
+          <Button
+            type="button"
+            className="w-full h-12"
+            onClick={handleShareReceipt}
+          >
+            <Share2 className="h-4 w-4" />
+            <span>Share receipt</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full h-11"
+            onClick={onClose}
+          >
+            Done
+          </Button>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate("/billhistory");
+            }}
+            className="w-full min-h-11 text-caption font-semibold text-brand-400 hover:underline text-center"
+          >
+            View history
+          </button>
+        </div>
+      </ModalPortal>
+
+      {isShareReceiptOpen && (
+        <TransactionsModal
+          transaction={normalizedTxForReceipt}
+          isOpen={isShareReceiptOpen}
+          onClose={() => setIsShareReceiptOpen(false)}
+        />
+      )}
+    </>
   );
 }

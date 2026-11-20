@@ -59,10 +59,26 @@ export const AuthProvider = ({ children }) => {
                     data.account_reference ||
                     data.flw_ref ||
                     null,
+                  barter_id: data.barter_id || data.barterId || data.barterID || null,
+                  barterID: data.barter_id || data.barterId || data.barterID || null,
                   walletBalance:
-                    data.walletBalance !== undefined
+                    data.walletBalance !== undefined && data.walletBalance !== null
                       ? Number(data.walletBalance)
                       : null,
+                  walletBalanceKobo:
+                    data.walletBalanceKobo !== undefined && data.walletBalanceKobo !== null
+                      ? Number(data.walletBalanceKobo)
+                      : data.walletBalance !== undefined && data.walletBalance !== null
+                        ? Math.round(Number(data.walletBalance) * 100)
+                        : null,
+                  cashbackBalance:
+                    data.cashbackBalance !== undefined && data.cashbackBalance !== null
+                      ? Number(data.cashbackBalance)
+                      : 0,
+                  cashbackBalanceKobo:
+                    data.cashbackBalanceKobo !== undefined && data.cashbackBalanceKobo !== null
+                      ? Number(data.cashbackBalanceKobo)
+                      : 0,
                   hasTransactionPin: !!data.hasTransactionPin,
                   lastLogin: data?.lastLogin?.toDate?.()?.toISOString() ?? null,
                   lastBalanceCheck:

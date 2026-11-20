@@ -1,50 +1,59 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogOverlay,
-} from "@/components/ui/alert-dialog";
-import { XCircle, Check } from "lucide-react";
+import React from "react";
+import ModalPortal from "@/components/ui/ModalPortal";
 import { Button } from "@/components/ui/button";
+import { Check, XCircle } from "lucide-react";
+import { ReceiptStrip } from "@/components/receipts/ReceiptParts";
 
 export default function FeedbackAlert({ message, isOpen, isClose }) {
+  const isSuccess = Boolean(message?.status);
+
   return (
-    <AlertDialog open={isOpen} onOpenChange={isClose} className="">
-      <AlertDialogOverlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70]" />
+    <ModalPortal
+      isOpen={Boolean(isOpen)}
+      onClose={() => isClose?.(false)}
+      noPadding
+      maxWidthClass="max-w-md"
+      ariaLabel={message?.statusMsg || "Notification"}
+    >
+      {isSuccess ? (
+        <ReceiptStrip />
+      ) : (
+        <div className="h-1.5 w-full bg-destructive shrink-0" />
+      )}
 
-      <AlertDialogContent className="rounded-2xl shadow-xl max-w-md h-2/6 max-h-[80vh] w-full p-10 text-center absolute inset-0 m-auto top-[-40%] [@media(max-height:500px)]:top-[-42rem] [@media(min-height:600px)_and_(max-height:900px)]:top-[-15rem] [@media(min-height:600px)_and_(max-width:950px)]:top-[-8rem] z-[70]">
-        <AlertDialogHeader className="flex flex-col items-center">
-          {message.status ? (
-            <Check className="text-green-500 h-12 w-12 mb-4" />
+      <div className="p-6 text-center space-y-4">
+        <div
+          className={`mx-auto h-14 w-14 rounded-pill border flex items-center justify-center ${
+            isSuccess
+              ? "bg-brand-tint border-brand-400/30 text-brand-400"
+              : "bg-destructive/10 border-destructive/30 text-destructive"
+          }`}
+        >
+          {isSuccess ? (
+            <Check className="h-7 w-7" />
           ) : (
-            <XCircle className="text-red-600 h-12 w-12 mb-4" />
+            <XCircle className="h-7 w-7" />
           )}
+        </div>
 
-          <AlertDialogTitle
-            className={`text-xl font-semibold ${message.status ? "text-green-600" : "text-red-700"
-              }`}
-          >
-            {message?.statusMsg || "An error occurred"}
-          </AlertDialogTitle>
-
-          <AlertDialogDescription className="text-muted-foreground">
+        <div className="space-y-1.5">
+          <h2 className="text-section-title text-foreground">
+            {message?.statusMsg || (isSuccess ? "Success" : "An error occurred")}
+          </h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
             {message?.message || "Something went wrong. Please try again."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+          </p>
+        </div>
 
-        <AlertDialogFooter className="flex justify-center mt-4">
-          <AlertDialogCancel asChild>
-            <Button variant="outline">Dismiss</Button>
-          </AlertDialogCancel>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        <Button
+          type="button"
+          variant={isSuccess ? "default" : "outline"}
+          className="w-full"
+          onClick={() => isClose?.(false)}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </ModalPortal>
   );
 }

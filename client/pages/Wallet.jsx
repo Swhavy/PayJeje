@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import StateView from "@/components/ui/StateView";
+import {
+  ReceiptCopyButton,
+  ReceiptRow,
+  ReceiptRows,
+  ReceiptStatusPill,
+  ReceiptStrip,
+} from "@/components/receipts/ReceiptParts";
 import { useDispatch, useSelector } from "react-redux";
 import { selectedPrice } from "@/Features/userSlice";
 import {
@@ -13,7 +22,6 @@ import {
   TrendingDown,
   Clock,
   Plus,
-  Download,
   Search,
   ArrowUpRight,
   ArrowDownLeft,
@@ -21,10 +29,15 @@ import {
   DollarSign,
   Building2,
   Check,
-  Copy,
   Eye,
   EyeOff,
   ChevronsUpDown,
+  Send,
+  UserCheck,
+  Loader2,
+  Sparkles,
+  ArrowRightLeft,
+  Receipt,
 } from "lucide-react";
 import {
   Command,
@@ -41,14 +54,25 @@ import {
 import { cn } from "@/lib/utils";
 import DashboardLayout from "@/components/DashboardLayout";
 import AccountDetailsCard from "@/components/AccountDetailsCard";
+import FormattedAmountInput from "@/components/ui/FormattedAmountInput";
+import WithdrawalConfirmationModal from "@/components/withdrawalModal";
+import TransactionPinModal from "@/components/TransactionPinModal";
+import TransactionsModal from "@/components/TransactionsModal";
 import useCloudfunc from "@/components/useCloudfunc";
 import { toast } from "sonner";
 import { useSpinner } from "@/components/SpinnerProvider";
-import { motion, AnimatePresence } from "framer-motion";
 import { httpsCallable } from "firebase/functions";
-import { functions } from "@/firebaseConfig";
-import { set } from "react-hook-form";
+import { functions, db } from "@/firebaseConfig";
+import { collection, query, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import {
+  formatTransactionDate,
+  getTransactionDisplayTitle,
+  getTransactionReference,
+  getTransactionStatusInfo,
+  isInboundTransaction,
+} from "@/lib/receiptUtils";
+import { formatNaira, formatPlanPrice, formatSignedNaira } from "@/lib/format";
 
 const Wallet = () => {
   const bankz = useSelector((state) => state.user.transactions) || {};
@@ -58,24 +82,33 @@ const Wallet = () => {
     localStorage.getItem("hideBalance") === "true",
   );
   const bankData = banks;
-  const { appContext, setAppContext } = useSpinner();
+  const { setAppContext } = useSpinner();
   const dispatch = useDispatch();
   const userDetails = useSelector((state) => state?.user?.user) || {};
   const {
     walletBalance,
+    cashbackBalance = 0,
     bankName,
     accountReference,
     accountNumber: account,
   } = userDetails;
   const { user } = useAuth();
-  const [search, setSearch] = useState("");
+  const [search] = useState("");
   const [open, setOpen] = useState(false);
   const [selectedValue, setSelectedValue] = useState("");
   const [isChecked, setIsChecked] = useState(false);
-  const [selectedBank, setSelectedBank] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
   const [accountPopup, setAccountPopup] = useState(false);
-  const { fetchBanks, withdraw } = useCloudfunc();
+  const [activeTab, setActiveTab] = useState("overview");
+  const {
+    fetchBanks,
+    withdraw,
+    resolvePaywakaRecipient,
+    transferPaywakaP2P,
+    transferCashbackToWallet,
+  } = useCloudfunc();
+  const [cashbackTransferAmount, setCashbackTransferAmount] = useState("");
+  const [isCashbackPinModalOpen, setIsCashbackPinModalOpen] = useState(false);
+  const [isTransferringCashback, setIsTransferringCashback] = useState(false);
   const [spin, setSpin] = useState(false);
   const [accountDetails, setAccountDetails] = useState({
     accountNumber: "",
@@ -83,77 +116,70 @@ const Wallet = () => {
   });
   const [accountName, setAccountName] = useState(null);
 
-  const visibility = () => {
-    setHide(!hide);
-    localStorage.setItem("hideBalance", !hide);
+  const [withdrawalMode, setWithdrawalMode] = useState("bank");
+  const [p2pDetails, setP2pDetails] = useState({
+    recipientIdentifier: "",
+    resolvedRecipient: null,
+    isResolving: false,
+    narration: "",
+  });
+
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+  const [selectedTxForModal, setSelectedTxForModal] = useState(null);
+  const [, setIsExecutingTransfer] = useState(false);
+
+  const [realTransactions, setRealTransactions] = useState([]);
+  const [historySearch, setHistorySearch] = useState("");
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, "users", user.uid, "Transactions"),
+      orderBy("createdAt", "desc"),
+      limit(50),
+    );
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const list = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setRealTransactions(list);
+      },
+      (err) => {
+        console.warn("Transactions real-time listener notice:", err);
+      },
+    );
+    return () => unsub();
+  }, [user?.uid]);
+
+  const toggleBalanceVisibility = () => {
+    const next = !hide;
+    setHide(next);
+    localStorage.setItem("hideBalance", String(next));
   };
 
   const handleInput = (e) => {
-    if (
-      e.target.name === "amount" &&
-      (e.target.value === "" || Number(e.target.value) >= 0)
-    ) {
-      setAccountDetails((prev) => ({
-        ...prev,
-        [e.target.name]: e.target.value,
-      }));
-    } else {
-      setAccountDetails((prev) => ({
-        ...prev,
-        [e.target.name]: e.target.value,
-      }));
+    const { name, value } = e.target;
+    if (name === "accountNumber") {
+      const digits = value.replace(/\D/g, "").slice(0, 10);
+      setAccountDetails((prev) => ({ ...prev, accountNumber: digits }));
+      setIsChecked(false);
+      setAccountName(null);
+      return;
     }
+    setAccountDetails((prev) => ({ ...prev, [name]: value }));
   };
 
-  const confirmAccountDetails = httpsCallable(
-    functions,
-    "confirmAccountDetails",
-  );
+  const confirmAccountDetails = httpsCallable(functions, "confirmAccountDetails");
 
-  // Mock transaction data
-  const transactions = [
-    {
-      id: 1,
-      type: "credit",
-      description: "Referral bonus",
-      amount: 2500,
-      date: "2024-01-15",
-      time: "14:30",
-      status: "completed",
-    },
-    {
-      id: 2,
-      type: "debit",
-      description: "Airtime purchase - MTN",
-      amount: 1000,
-      date: "2024-01-15",
-      time: "12:15",
-      status: "completed",
-    },
-    {
-      id: 3,
-      type: "credit",
-      description: "Task completion",
-      amount: 500,
-      date: "2024-01-14",
-      time: "16:45",
-      status: "completed",
-    },
-    {
-      id: 4,
-      type: "debit",
-      description: "Bill payment - EKEDC",
-      amount: 5000,
-      date: "2024-01-14",
-      time: "09:20",
-      status: "completed",
-    },
-  ];
-
-  const totalBalance = walletBalance;
-  const totalEarned = user?.monthlyEarnings
-    ? user.monthlyEarnings * 3.6
-    : 45000; // Simulated total earned
+  const totalBalance = Number(walletBalance || 0);
+  const totalEarned = userDetails?.monthlyEarnings
+    ? userDetails.monthlyEarnings * 3.6
+    : 45000;
   const totalSpent = 32500;
   const pending = 0;
 
@@ -163,15 +189,18 @@ const Wallet = () => {
     }
   }, [search]);
 
+  useEffect(() => {
+    if (!bankData || !Array.isArray(bankData) || bankData.length === 0) {
+      handleFetchBanks();
+    }
+  }, []);
+
   const handleSelect = async (bank) => {
     setSpin(true);
     setIsChecked(false);
     setAccountName(null);
     setSelectedValue(bank.name);
-    setSelectedBank(bank);
     setOpen(false);
-    console.log("Selected Bank:", bank);
-    console.log("Bank Code:", bank.code);
     dispatch(selectedPrice({ bankCode: bank.code }));
     await confirmAccountDetails({
       account_number: accountDetails.accountNumber,
@@ -179,7 +208,6 @@ const Wallet = () => {
     })
       .then((result) => {
         setSpin(false);
-        console.log("Account details confirmed:", result);
         setIsChecked(true);
         setAccountName(result.data.account_name);
       })
@@ -187,505 +215,653 @@ const Wallet = () => {
         setSpin(false);
         setAccountName(null);
         setIsChecked(false);
-        toast.error("Couldn't verify the account, please verify the account ");
+        toast.error("Couldn't verify the account, please check account number.");
         console.error("Error confirming account details:", error);
       });
   };
 
-  // Function to handle fund withdrawal
-  const withdrawFunds = async () => {
-    const numericAmount = Number(accountDetails.amount);
-
-    if (!numericAmount || isNaN(numericAmount) || numericAmount <= 0) {
-      toast.error("Enter a valid amount greater than 0");
-      return;
+  const handleResolveRecipient = async () => {
+    const identifier = p2pDetails.recipientIdentifier.trim();
+    if (!identifier) {
+      return toast.error("Please enter recipient's Barter ID, username, or phone number.");
     }
-
-    if (numericAmount > walletBalance) {
-      toast.error("Insufficient funds");
-      return;
-    }
-
-    setAppContext((prev) => ({ ...prev, spinner: true }));
-
+    setP2pDetails((p) => ({ ...p, isResolving: true, resolvedRecipient: null }));
     try {
-      const transfer = await withdraw({
-        account_bank: bankCode,
-        account_number: accountDetails.accountNumber,
-        amount: numericAmount,
-        debit_subaccount: accountReference,
-        narration: `Withdrawal to ${selectedValue} - ${accountDetails.accountNumber}`,
-      });
-
-      console.log("Withdrawal response:", transfer);
-
-      if (transfer.data.status === "success") {
-        toast.success(transfer.data.message);
-        navigate("/withdrawState", {
-          state: {
-            amount: numericAmount,
-            bankName: selectedValue,
-            accountNumber: accountDetails.accountNumber,
-            accountHolder: accountName ?? null,
-            reference: transfer.data.reference, // needed for the listener
-          },
-        });
+      const res = await resolvePaywakaRecipient({ identifier });
+      const isSuccess = res?.success || res?.status === "success";
+      if (isSuccess && res.recipient) {
+        setP2pDetails((p) => ({ ...p, isResolving: false, resolvedRecipient: res.recipient }));
+        const recipientName =
+          res.recipient.fullName ||
+          `${res.recipient.firstName || ""} ${res.recipient.lastName || ""}`.trim() ||
+          res.recipient.userName ||
+          "PayWaka User";
+        toast.success(`Recipient verified: ${recipientName}`);
       } else {
-        toast.error(transfer.data.message);
-        console.log("details: ", transfer);
+        setP2pDetails((p) => ({ ...p, isResolving: false, resolvedRecipient: null }));
+        toast.error(res?.message || "PayWaka recipient not found. Please check Barter ID or username.");
       }
     } catch (err) {
-      console.error("Withdrawal failed:", err);
-      toast.error("Something went wrong. Please try again.");
+      console.error("Recipient resolution error:", err);
+      setP2pDetails((p) => ({ ...p, isResolving: false, resolvedRecipient: null }));
+      const friendlyMsg = err?.message?.includes("internal")
+        ? "Unable to verify recipient right now. Please check the Barter ID or try again shortly."
+        : err.message || "Failed to resolve recipient.";
+      toast.error(friendlyMsg);
+    }
+  };
+
+  const numericAmount = Number(accountDetails.amount) || 0;
+  const isP2PTransfer = withdrawalMode === "p2p";
+  const transferFee = isP2PTransfer
+    ? 0
+    : numericAmount <= 5000
+      ? 10
+      : numericAmount <= 50000
+        ? 25
+        : 50;
+  const totalDeduction = numericAmount + transferFee;
+
+  const handleStartTransferFlow = () => {
+    if (!numericAmount || numericAmount <= 0) {
+      return toast.error("Please enter a valid amount greater than ₦0.");
+    }
+    if (numericAmount < 100) {
+      return toast.error("Minimum transfer amount is ₦100.");
+    }
+    if (totalDeduction > (walletBalance || 0)) {
+      return toast.error(
+        `Insufficient balance. Total deduction including fee is ${formatNaira(totalDeduction)}. You have ${formatNaira(walletBalance || 0)}.`,
+      );
+    }
+
+    if (withdrawalMode === "bank") {
+      if (!accountDetails.accountNumber || !selectedValue || !accountName) {
+        return toast.error("Please select a bank and verify account number before continuing.");
+      }
+    } else {
+      if (!p2pDetails.resolvedRecipient) {
+        return toast.error("Please enter and verify the PayWaka recipient before continuing.");
+      }
+    }
+
+    setIsConfirmModalOpen(true);
+  };
+
+  const handleConfirmModalProceed = () => {
+    setIsConfirmModalOpen(false);
+    setIsPinModalOpen(true);
+  };
+
+  const handleExecuteTransfer = async (pin) => {
+    setIsExecutingTransfer(true);
+    setAppContext((prev) => ({ ...prev, spinner: true }));
+
+    const senderFullName =
+      `${userDetails.firstName || ""} ${userDetails.lastName || ""}`.trim() ||
+      userDetails.userName ||
+      "PayWaka User";
+
+    try {
+      if (withdrawalMode === "bank") {
+        const res = await withdraw({
+          account_bank: bankCode,
+          account_number: accountDetails.accountNumber,
+          bankName: selectedValue,
+          accountHolder: accountName,
+          amount: numericAmount,
+          debit_subaccount: accountReference,
+          narration: `Withdrawal to ${selectedValue} - ${accountDetails.accountNumber}`,
+          pin,
+        });
+
+        const resData = res?.data || res || {};
+        if (resData?.status === "success" || resData?.status === "pending") {
+          toast.success(resData.message || "Transfer Queued Successfully");
+          setIsPinModalOpen(false);
+          navigate("/withdrawState", {
+            state: {
+              amount: numericAmount,
+              fee: transferFee,
+              bankName: selectedValue,
+              accountNumber: accountDetails.accountNumber,
+              accountHolder: accountName,
+              senderName: senderFullName,
+              reference: resData.reference,
+              narration: resData.narration || resData.reference,
+              gatewayStatus: resData.gatewayStatus || "PENDING",
+              isP2P: false,
+            },
+          });
+        } else {
+          toast.error(resData?.message || "Transfer failed");
+        }
+      } else {
+        const userP2PNarration = String(p2pDetails.narration || "").trim();
+        const resolvedRecipient = p2pDetails.resolvedRecipient || {};
+        const resolvedName =
+          resolvedRecipient.fullName ||
+          `${resolvedRecipient.firstName || ""} ${resolvedRecipient.lastName || ""}`.trim() ||
+          resolvedRecipient.userName ||
+          "PayWaka User";
+
+        const res = await transferPaywakaP2P({
+          recipientBarterId: resolvedRecipient.barter_id,
+          recipientUid: resolvedRecipient.uid,
+          amount: numericAmount,
+          narration: userP2PNarration,
+          pin,
+        });
+
+        const resData = res?.data || res || {};
+        if (resData?.status === "success") {
+          toast.success("P2P Transfer Completed Successfully!");
+          setIsPinModalOpen(false);
+          navigate("/withdrawState", {
+            state: {
+              amount: numericAmount,
+              fee: 0,
+              bankName: "PayWaka Wallet",
+              accountNumber: resolvedRecipient.barter_id,
+              accountHolder: resData.recipientName || resolvedName,
+              recipientUserName: resData.recipientUserName || resolvedRecipient.userName || "",
+              senderName: resData.senderName || senderFullName,
+              reference: resData.reference,
+              narration: resData.narration || userP2PNarration || resData.reference,
+              gatewayStatus: "SUCCESSFUL",
+              isP2P: true,
+            },
+          });
+        } else {
+          toast.error(resData?.message || "P2P Transfer failed");
+        }
+      }
+    } catch (err) {
+      console.error("Transfer execution error:", err);
+      toast.error(err.message || "Transfer could not be processed. Please try again.");
     } finally {
+      setIsExecutingTransfer(false);
       setAppContext((prev) => ({ ...prev, spinner: false }));
     }
   };
 
   const handleFetchBanks = async () => {
-    console.log("Fetching banks...");
-    console.log("Current bank data:", bankData);
-    if (bankData === null) {
-      setAppContext({ ...appContext, spinner: true });
-      const response = await fetchBanks();
-      if (response.data.status === "success") {
-        let bankDetails = response.data.bankDetails;
-        console.log("Fetched Banks successfully:");
-        dispatch(selectedPrice({ banks: bankDetails }));
-        setAppContext({ ...appContext, spinner: false });
-      } else {
-        setAppContext({ ...appContext, spinner: false });
-        toast.error("An error occurred. Please try again.");
-        console.error("Error fetching banks:", response.data.message);
+    if (!bankData || !Array.isArray(bankData) || bankData.length === 0) {
+      try {
+        const response = await fetchBanks();
+        const banksList = response?.data?.bankDetails || response?.bankDetails;
+        if (Array.isArray(banksList) && banksList.length > 0) {
+          dispatch(selectedPrice({ banks: banksList }));
+        }
+      } catch (err) {
+        console.error("handleFetchBanks error:", err);
       }
     }
   };
 
-  // Safe parsing helper to guarantee no null or NaN values are displayed to users
-  const formatAmount = (val) => {
-    if (val === null || val === undefined) return "0";
-    if (typeof val === "string") {
-      if (val.includes(",")) return val;
-      const num = parseFloat(val);
-      return isNaN(num) ? "0" : num.toLocaleString();
-    }
-    return typeof val === "number" ? val.toLocaleString() : "0";
-  };
+  const availableBal = Math.max(0, totalBalance - pending);
 
-  const currentBalNum =
-    parseFloat(String(totalBalance || "0").replace(/,/g, "")) || 0;
-  const availableBal = Math.max(0, currentBalNum - pending);
+  const filteredHistory = realTransactions.filter((tx) => {
+    if (!historySearch.trim()) return true;
+    const queryStr = historySearch.toLowerCase();
+    return (
+      getTransactionDisplayTitle(tx).toLowerCase().includes(queryStr) ||
+      String(tx.narration || "").toLowerCase().includes(queryStr) ||
+      String(tx.senderName || "").toLowerCase().includes(queryStr) ||
+      String(tx.recipientName || "").toLowerCase().includes(queryStr) ||
+      String(tx.sessionId || "").toLowerCase().includes(queryStr) ||
+      String(tx.reference || tx.tx_ref || "").toLowerCase().includes(queryStr) ||
+      String(tx.category || "").toLowerCase().includes(queryStr) ||
+      String(tx.bankName || "").toLowerCase().includes(queryStr)
+    );
+  });
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="space-y-5">
+        {/* Unified Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
-              My Wallet
-            </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              Manage your earnings and transactions
+            <h1 className="pw-page-title">My Wallet</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              Manage your balance, virtual account, and transfers.
             </p>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Button
-              onClick={() => setAccountPopup(true)}
-              className="flex-1 sm:flex-none bg-paywaka-500 hover:bg-paywaka-600 text-foreground font-bold"
-            >
-              <Plus className="h-4 w-4 mr-2 shrink-0" />
-              Add Funds
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1 sm:flex-none border-border text-foreground hover:text-foreground"
-            >
-              <Download className="h-4 w-4 mr-2 shrink-0" />
-              Export
-            </Button>
-          </div>
+          <Button
+            type="button"
+            onClick={() => setAccountPopup(true)}
+            className="w-full sm:w-auto"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Funds</span>
+          </Button>
         </div>
 
-        {/* Balance Card */}
-        <Card className="bg-gradient-to-br from-[#0c2217] via-[#05110b] to-[#010604] border border-green-500/25 text-foreground shadow-2xl relative overflow-hidden rounded-3xl">
-          {/* Subtle elegant backdrop ambient glows */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl -ml-16 -mb-16 pointer-events-none" />
+        {/* Sticky Frosted Glass Segmented Tabs */}
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-5"
+        >
+          <div className="sticky top-14 z-20 bg-background/75 backdrop-blur-xl py-2 -mx-4 px-4 md:mx-0 md:px-0">
+            <TabsList className="pw-segmented grid w-full max-w-md grid-cols-3 h-auto">
+              <TabsTrigger
+                value="overview"
+                className="min-h-9 rounded-pill text-xs sm:text-sm font-semibold data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger
+                value="withdraw"
+                onClick={() => handleFetchBanks()}
+                className="min-h-9 rounded-pill text-xs sm:text-sm font-semibold data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm"
+              >
+                Withdraw
+              </TabsTrigger>
+              <TabsTrigger
+                value="history"
+                className="min-h-9 rounded-pill text-xs sm:text-sm font-semibold data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm"
+              >
+                History
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <CardContent className="p-5 sm:p-7 relative">
-            {/* Main row: Total Balance + Available */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 mb-6 pb-6 border-b border-green-500/10">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-500/10 rounded-2xl shrink-0 border border-green-500/20 text-primary dark:text-green-400">
-                  <WalletIcon className="h-6 w-6" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-muted-foreground text-[11px] sm:text-xs font-semibold uppercase tracking-wider">
-                    Total Balance
-                  </p>
-                  <div className="flex flex-row-reverse items-center gap-4">
-                    {" "}
-                    {hide ? (
-                      <EyeOff className="h-5 w-5" onClick={visibility} />
-                    ) : (
-                      <Eye
-                        className="h-5 w-5 text-green-500"
-                        onClick={visibility}
-                      />
-                    )}
-                    <h2
-                      className={`text-3xl sm:text-4xl font-black font-display ${hide ? "blur-md" : ""} tracking-tight mt-1 text-foreground`}
-                      onClick={visibility}
-                    >
-                      ₦{formatAmount(totalBalance)}
+          {/* OVERVIEW TAB */}
+          <TabsContent value="overview" className="space-y-5 mt-0">
+            {/* Balance Card — Reference Image 1 Flagship Obsidian-Emerald & Pearl Glass Stack */}
+            <div className="pw-glass-hero p-4 sm:p-5 space-y-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="pw-tile h-11 w-11 rounded-2xl">
+                    <WalletIcon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="pw-label">TOTAL BALANCE</span>
+                      <button
+                        type="button"
+                        onClick={toggleBalanceVisibility}
+                        aria-label={hide ? "Show balance" : "Hide balance"}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-pill hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {hide ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <h2 className="pw-num text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground truncate">
+                      {hide ? "₦••••••" : formatNaira(totalBalance)}
                     </h2>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between sm:flex-col sm:items-end bg-muted/40 sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-border/60 sm:border-0">
-                <p className="text-muted-foreground text-[11px] sm:text-xs font-semibold uppercase tracking-wider px-2 sm:px-0">
-                  Available Balance
+              <div className="pw-panel px-3.5 py-2.5 flex items-center justify-between gap-3">
+                <span className="pw-label">AVAILABLE BALANCE</span>
+                <p className="pw-num text-base sm:text-lg font-extrabold text-brand-400">
+                  {hide ? "₦••••••" : formatNaira(availableBal)}
                 </p>
-                <p
-                  className={`text-xl sm:text-2xl font-bold font-display ${hide ? "blur-md" : ""} text-primary dark:text-green-400 tracking-tight mt-1 px-2 sm:px-0`}
-                  onClick={visibility}
-                >
-                  ₦{formatAmount(availableBal)}
-                </p>
+              </div>
+
+              <div className="border-t border-border/60 pt-3.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="pw-panel p-3 flex items-center gap-3 min-w-0">
+                  <div className="pw-tile h-9 w-9">
+                    <TrendingUp className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="pw-label block truncate">TOTAL EARNED</span>
+                    <p className="pw-num text-[15px] sm:text-base font-extrabold text-foreground truncate mt-0.5">
+                      {hide ? "₦••••" : formatNaira(totalEarned)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pw-panel p-3 flex items-center gap-3 min-w-0">
+                  <div className="pw-tile-ruby h-9 w-9">
+                    <TrendingDown className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="pw-label block truncate">TOTAL SPENT</span>
+                    <p className="pw-num text-[15px] sm:text-base font-extrabold text-foreground truncate mt-0.5">
+                      {hide ? "₦••••" : formatNaira(totalSpent)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pw-panel p-3 flex items-center gap-3 min-w-0">
+                  <div className="pw-tile-gold h-9 w-9">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="pw-label block truncate">PENDING</span>
+                    <p className="pw-num text-[15px] sm:text-base font-extrabold text-foreground truncate mt-0.5">
+                      {hide ? "₦••••" : formatNaira(pending)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pw-panel p-3 flex items-center gap-3 min-w-0 border-brand-400/25 bg-brand-tint/75">
+                  <div className="pw-tile h-9 w-9">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="pw-label text-brand-400 block truncate">CASHBACK</span>
+                    <p className="pw-num text-[15px] sm:text-base font-extrabold text-brand-400 truncate mt-0.5">
+                      {hide ? "₦••••" : formatNaira(cashbackBalance)}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Sub stats: Total Earned, Total Spent, Pending */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 md:gap-5">
-              {/* Total Earned */}
-              <div className="flex items-center gap-3.5 bg-card/45 border border-border/80 p-3.5 rounded-2xl min-w-0 hover:bg-muted/20 transition-colors duration-200">
-                <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-primary dark:text-green-400 shrink-0">
-                  <TrendingUp className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-muted-foreground text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
-                    Total Earned
-                  </span>
-                  <p
-                    className={`font-bold text-base sm:text-lg font-display text-foreground tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
-                  >
-                    ₦{formatAmount(totalEarned)}
-                  </p>
-                </div>
+            {/* Virtual Bank Account Card */}
+            <div className="pw-glass-hero p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5 min-w-0">
+                <span className="pw-chip-brand">
+                  <Building2 className="h-3 w-3" />
+                  Dedicated Virtual Account
+                </span>
+                <h3 className="text-section-title text-foreground">
+                  {bankName || "PayWaka Virtual Bank"}
+                </h3>
+                <p className="text-caption text-muted-foreground">
+                  Transfer from any bank app or USSD to credit your wallet in real time.
+                </p>
               </div>
 
-              {/* Total Spent */}
-              <div className="flex items-center gap-3.5 bg-card/45 border border-border/80 p-3.5 rounded-2xl min-w-0 hover:bg-muted/20 transition-colors duration-200">
-                <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 shrink-0">
-                  <TrendingDown className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-muted-foreground text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
-                    Total Spent
+              <div className="pw-panel p-3 flex items-center justify-between gap-3 shrink-0">
+                <div>
+                  <span className="pw-label block">ACCOUNT NUMBER</span>
+                  <span className="pw-code text-base sm:text-lg font-black text-foreground tracking-wider block mt-0.5">
+                    {account || "••••••••••"}
                   </span>
-                  <p
-                    className={`font-bold text-base sm:text-lg font-display text-foreground tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
-                  >
-                    ₦{formatAmount(totalSpent)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pending */}
-              <div className="flex items-center gap-3.5 bg-card/45 border border-border/80 p-3.5 rounded-2xl min-w-0 hover:bg-muted/20 transition-colors duration-200">
-                <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 shrink-0">
-                  <Clock className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-muted-foreground text-[10px] sm:text-[11px] font-semibold block uppercase tracking-wider">
-                    Pending
-                  </span>
-                  <p
-                    className={`font-bold text-base sm:text-lg font-display text-foreground tracking-tight mt-0.5 truncate ${hide ? "blur-md" : ""}`}
-                  >
-                    ₦{formatAmount(pending)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="space-y-6"
-        >
-          <TabsList className="grid w-full grid-cols-3 bg-card/40 p-1 border border-border rounded-2xl">
-            <TabsTrigger
-              value="overview"
-              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400"
-            >
-              Overview
-            </TabsTrigger>
-            <TabsTrigger
-              value="withdraw"
-              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400"
-              onClick={() => handleFetchBanks()}
-            >
-              Withdraw
-            </TabsTrigger>
-            <TabsTrigger
-              value="history"
-              className="data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400"
-            >
-              History
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="space-y-6">
-            {/* Dedicated Virtual Bank Account Card */}
-            <div className="rounded-3xl bg-gradient-to-tr from-[#0b1c2e] via-card to-[#0c2217] border border-green-500/20 p-5 sm:p-6 shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/10 rounded-full blur-3xl pointer-events-none" />
-              
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-green-400 animate-ping" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-primary dark:text-green-400">
-                      Dedicated Virtual Account
-                    </span>
-                  </div>
-                  <h3 className="text-xl font-bold text-foreground tracking-tight flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-primary dark:text-green-400" />
-                    <span>{bankName || "PayWaka Virtual Bank"}</span>
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Use this dedicated account number to fund your wallet instantly from any bank app or USSD
-                  </p>
-                </div>
-
-                <div className="flex flex-col sm:items-end gap-2 bg-muted/60 sm:bg-transparent p-3 sm:p-0 rounded-2xl border border-border sm:border-0">
-                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
-                    Account Number
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl sm:text-2xl font-mono font-black text-foreground tracking-wider">
-                      {account || "•••• ••••"}
-                    </span>
-                    {account && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(account);
-                            toast.success("Account number copied to clipboard!");
-                          } catch {
-                            toast.error("Failed to copy account number");
-                          }
-                        }}
-                        className="p-2 bg-green-500/15 hover:bg-green-500/30 text-primary dark:text-green-400 rounded-xl border border-green-500/30 transition-all active:scale-95"
-                        title="Copy Account Number"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
                   {accountReference && (
-                    <span className="text-[10px] font-mono text-muted-foreground">
+                    <span className="pw-code text-[11px] text-muted-foreground block mt-0.5">
                       Ref: {accountReference}
                     </span>
                   )}
                 </div>
+                {account && (
+                  <ReceiptCopyButton value={account} label="Account Number" />
+                )}
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Card
+            {/* Quick Actions (Brand + Neutral only) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
                 onClick={() => setAccountPopup(true)}
-                className="p-5 cursor-pointer hover:border-blue-500/30 hover:bg-blue-500/[0.02] transition-all duration-300 ease-in-out hover:scale-[1.02] active:scale-[0.98]"
+                className="pw-card pw-pressable p-4 text-left flex items-center gap-3.5 hover:border-brand-400/50"
               >
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-blue-500/10 border border-blue-500/25 rounded-2xl text-blue-400 shrink-0">
-                    <CreditCard className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-foreground text-sm sm:text-base">
-                      Add Money
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Top up your wallet
-                    </p>
-                  </div>
+                <div className="pw-tile h-11 w-11">
+                  <CreditCard className="h-5 w-5" />
                 </div>
-              </Card>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Add Money</h3>
+                  <p className="text-caption text-muted-foreground">
+                    Top up via bank transfer
+                  </p>
+                </div>
+              </button>
 
-              <Card className="p-5 relative overflow-hidden group hover:scale-[1.02] transition-all duration-300">
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex items-center justify-center text-xs font-bold text-foreground tracking-wider uppercase">
-                  Coming Soon
-                </div>
-                <div className="flex items-center gap-4 opacity-40">
-                  <div className="p-3 bg-green-500/10 border border-green-500/25 rounded-2xl text-primary dark:text-green-400 shrink-0">
-                    <ArrowUpRight className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-foreground text-sm sm:text-base">
-                      Send Money
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Transfer to friends
-                    </p>
-                  </div>
-                </div>
-              </Card>
-
-              <Card
+              <button
+                type="button"
                 onClick={() => {
                   setActiveTab("withdraw");
+                  setWithdrawalMode("p2p");
+                }}
+                className="pw-card pw-pressable p-4 text-left flex items-center gap-3.5 hover:border-brand-400/50"
+              >
+                <div className="pw-tile h-11 w-11">
+                  <Send className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Send P2P</h3>
+                  <p className="text-caption text-muted-foreground">
+                    Instant PayWaka · ₦0 fee
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("withdraw");
+                  setWithdrawalMode("bank");
                   handleFetchBanks();
                 }}
-                className="p-5 cursor-pointer hover:border-purple-500/30 hover:bg-purple-500/[0.02] transition-all duration-300 ease-in-out hover:scale-[1.02] active:scale-[0.98]"
+                className="pw-card pw-pressable p-4 text-left flex items-center gap-3.5 hover:border-brand-400/50"
               >
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-2xl text-purple-400 shrink-0">
-                    <DollarSign className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-foreground text-sm sm:text-base">
-                      Withdraw
+                <div className="pw-tile-neutral h-11 w-11">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">Withdraw</h3>
+                  <p className="text-caption text-muted-foreground">
+                    Cash out to bank account
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* Cashback Vault Transfer Card */}
+            <Card>
+              <CardContent className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-2 flex-1">
+                  <span className="pw-label text-brand-400 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    CASHBACK VAULT
+                  </span>
+                  <div className="flex items-baseline gap-2.5">
+                    <h3 className="pw-num text-xl font-black text-foreground">
+                      {formatNaira(cashbackBalance)}
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Cash out to bank
-                    </p>
+                    <span className="text-caption text-muted-foreground">
+                      {Number(cashbackBalance || 0) >= 1000 ? "Transfer ready" : "Min ₦1,000 to transfer"}
+                    </span>
+                  </div>
+                  <p className="text-caption text-muted-foreground leading-relaxed max-w-xl">
+                    Spend cashback anytime at checkout or transfer whole Naira into your Main Wallet once you reach{" "}
+                    <strong className="text-foreground pw-num">₦1,000</strong>.
+                  </p>
+                  <div className="pt-1 max-w-md space-y-1">
+                    <div className="flex justify-between text-[11px] font-semibold text-muted-foreground pw-num">
+                      <span>Threshold</span>
+                      <span>
+                        {formatPlanPrice(Math.min(1000, Math.floor(Number(cashbackBalance || 0))))} / ₦1,000
+                      </span>
+                    </div>
+                    <div className="h-2 w-full rounded-pill bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-pill bg-brand-500 transition-all duration-300"
+                        style={{
+                          width: `${Math.min(100, (Number(cashbackBalance || 0) / 1000) * 100)}%`,
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </Card>
-            </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder={`Max ${formatPlanPrice(Math.floor(Number(cashbackBalance || 0)))}`}
+                    value={cashbackTransferAmount}
+                    onChange={(e) => setCashbackTransferAmount(e.target.value.replace(/[^\d]/g, ""))}
+                    disabled={Number(cashbackBalance || 0) < 1000 || isTransferringCashback}
+                    className="sm:w-36 pw-num"
+                  />
+                  <Button
+                    type="button"
+                    disabled={Number(cashbackBalance || 0) < 1000 || isTransferringCashback}
+                    onClick={() => {
+                      const maxWhole = Math.floor(Number(cashbackBalance || 0));
+                      const reqAmt = cashbackTransferAmount
+                        ? Number(cashbackTransferAmount)
+                        : maxWhole;
+                      if (!reqAmt || reqAmt < 1000 || reqAmt % 1 !== 0) {
+                        return toast.warning("Enter a whole Naira amount of at least ₦1,000.");
+                      }
+                      if (reqAmt > maxWhole) {
+                        return toast.warning(
+                          `Amount exceeds your spendable whole-Naira cashback (${formatPlanPrice(maxWhole)}).`,
+                        );
+                      }
+                      if (!cashbackTransferAmount) {
+                        setCashbackTransferAmount(String(maxWhole));
+                      }
+                      setIsCashbackPinModalOpen(true);
+                    }}
+                  >
+                    <ArrowRightLeft className="h-4 w-4" />
+                    <span>Move to Wallet</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
-          <TabsContent value="withdraw" className="space-y-6">
-            <Card className="border-border bg-card/20">
-              <CardContent className="p-5 sm:p-6">
-                <h3 className="text-lg font-bold text-foreground tracking-tight mb-4">
-                  Withdraw Funds
-                </h3>
-                <div className="space-y-5">
-                  <div>
-                    <Label htmlFor="amount">Amount</Label>
-                    <div className="relative mt-1.5">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">
-                        ₦
-                      </span>
-                      <Input
-                        id="amount"
-                        min="0"
-                        onKeyDown={(e) => {
-                          if (e.key === "-" || e.key === "e" || e.key === "+")
-                            e.preventDefault();
-                        }} // Prevents negative and exponential input
-                        name="amount"
-                        onWheel={(e) => e.currentTarget.blur()} // Prevents number input scroll
-                        value={accountDetails.amount}
-                        onChange={handleInput}
-                        type="number"
-                        placeholder="Enter amount to withdraw"
-                        className="pl-8"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1.5">
-                      Available:{" "}
-                      <span className="text-primary dark:text-green-400 font-semibold">
-                        ₦{formatAmount(availableBal)}
-                      </span>
-                    </p>
+          {/* WITHDRAW TAB (2-col on desktop: 560px form left, sticky fee summary right) */}
+          <TabsContent value="withdraw" className="mt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,560px)_1fr] gap-5 items-start">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Transfer & Withdraw</CardTitle>
+                  <CardDescription>
+                    Send funds to any Nigerian bank or another PayWaka user
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="pw-segmented grid grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawalMode("bank")}
+                      className={cn(
+                        "min-h-9 rounded-pill text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5",
+                        withdrawalMode === "bank"
+                          ? "bg-card text-foreground shadow-sm border border-border/80"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Building2 className="h-3.5 w-3.5" />
+                      <span>Bank Account</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawalMode("p2p")}
+                      className={cn(
+                        "min-h-9 rounded-pill text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5",
+                        withdrawalMode === "p2p"
+                          ? "bg-card text-brand-400 shadow-sm border border-brand-400/30"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      <span>PayWaka P2P</span>
+                    </button>
                   </div>
 
-                  <div>
-                    <Label htmlFor="accountNumber">Account Number</Label>
-                    <div className="mt-1.5">
-                      <Input
-                        id="accountNumber"
-                        onWheel={(e) => e.currentTarget.blur()} // Prevents number input scroll
-                        name="accountNumber"
-                        value={accountDetails.accountNumber}
-                        onChange={handleInput}
-                        type="number"
-                        placeholder="Enter Account Number to withdraw to"
-                      />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="withdrawal-amount" className="pw-label block">
+                      Transfer Amount
+                    </Label>
+                    <FormattedAmountInput
+                      id="withdrawal-amount"
+                      name="amount"
+                      value={accountDetails.amount}
+                      onChange={(cleanVal) =>
+                        setAccountDetails((prev) => ({ ...prev, amount: cleanVal }))
+                      }
+                      placeholder="Enter amount (min 100)"
+                    />
+                    <div className="flex justify-between items-center text-caption pt-1 text-muted-foreground">
+                      <span>Available Balance</span>
+                      <span className="pw-num font-bold text-brand-400">
+                        {formatNaira(availableBal)}
+                      </span>
                     </div>
                   </div>
 
-                  <div>
-                    <div className="w-full space-y-2">
-                      <Label htmlFor="bank">Select Your Bank</Label>
-                      <div className="mt-1.5">
-                        <Popover open={open} onOpenChange={setOpen}>
+                  {withdrawalMode === "bank" ? (
+                    <div className="space-y-3.5">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="accountNumber" className="pw-label block">
+                          Destination Account Number
+                        </Label>
+                        <Input
+                          id="accountNumber"
+                          name="accountNumber"
+                          value={accountDetails.accountNumber}
+                          onChange={handleInput}
+                          type="tel"
+                          inputMode="numeric"
+                          maxLength={10}
+                          placeholder="10-digit account number"
+                          className="pw-code text-[13px] sm:text-sm h-11"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="bank" className="pw-label block">
+                          Destination Bank
+                        </Label>
+                        <Popover
+                          open={open}
+                          onOpenChange={(isOpen) => {
+                            setOpen(isOpen);
+                            if (isOpen && (!bankData || !Array.isArray(bankData) || bankData.length === 0)) {
+                              handleFetchBanks();
+                            }
+                          }}
+                        >
                           <PopoverTrigger asChild>
                             <Button
                               id="bank"
                               variant="outline"
                               role="combobox"
                               aria-expanded={open}
-                              className="w-full h-12 justify-between text-sm sm:text-base border-border bg-muted/60 text-foreground hover:text-foreground"
+                              className="w-full h-11 justify-between font-normal text-sm"
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                                <span
-                                  className={cn(
-                                    "truncate",
-                                    !selectedValue && "text-muted-foreground",
-                                  )}
-                                >
-                                  {selectedValue || "Select your bank"}
+                                <span className={cn("truncate", !selectedValue && "text-muted-foreground")}>
+                                  {selectedValue || "Select destination bank"}
                                 </span>
                               </div>
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50 text-muted-foreground" />
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent
-                            className="w-full p-0 bg-card border-border"
-                            align="start"
-                          >
+                          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-card border-border" align="start">
                             <Command>
-                              <CommandInput
-                                placeholder="Search bank..."
-                                className="h-12 text-sm sm:text-base border-b border-border"
-                              />
+                              <CommandInput placeholder="Search bank..." className="h-10 text-sm" />
                               <CommandEmpty>No bank found.</CommandEmpty>
                               <CommandGroup className="max-h-[220px] overflow-auto">
                                 {bankData && bankData.length > 0 ? (
                                   bankData.map((bank) => (
                                     <CommandItem
-                                      key={bank.id}
+                                      key={bank.id || bank.code}
                                       value={bank.name}
                                       onSelect={() => handleSelect(bank)}
-                                      className={cn(
-                                        "text-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer text-xs sm:text-sm p-3 rounded-lg flex items-center justify-between",
-                                        selectedValue === bank.name &&
-                                          "bg-muted text-foreground font-bold",
-                                      )}
+                                      className="text-foreground hover:bg-muted cursor-pointer text-sm p-2.5 flex items-center justify-between"
                                     >
                                       <div className="flex items-center gap-2 min-w-0">
                                         <Check
                                           className={cn(
-                                            "h-4 w-4 text-primary dark:text-green-400 shrink-0",
-                                            selectedValue === bank.name
-                                              ? "opacity-100"
-                                              : "opacity-0",
+                                            "h-4 w-4 text-brand-400 shrink-0",
+                                            selectedValue === bank.name ? "opacity-100" : "opacity-0",
                                           )}
                                         />
-                                        <span className="truncate">
-                                          {bank.name}
-                                        </span>
+                                        <span className="truncate">{bank.name}</span>
                                       </div>
-                                      <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border shrink-0">
+                                      <span className="pw-num text-[11px] text-muted-foreground shrink-0">
                                         {bank.code}
                                       </span>
                                     </CommandItem>
                                   ))
                                 ) : (
-                                  <div className="p-3 text-center text-xs text-muted-foreground">
-                                    No banks available. Tap "Withdraw" tab to
-                                    reload.
+                                  <div className="p-3 text-center text-caption text-muted-foreground">
+                                    Loading banks...
                                   </div>
                                 )}
                               </CommandGroup>
@@ -693,171 +869,365 @@ const Wallet = () => {
                           </PopoverContent>
                         </Popover>
                       </div>
-                    </div>
 
-                    {selectedBank && (
-                      <div
-                        className="p-4 rounded-xl bg-muted/40 border border-border/60 mt-4 space-y-1 animate-in fade-in duration-200"
-                        onClick={() => setIsChecked(!isChecked)}
-                      >
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                          Selected Bank Details:
-                        </p>
-                        <p className="text-sm font-semibold text-foreground">
-                          Name:{" "}
-                          <span className="text-foreground font-normal">
-                            {selectedBank.name}
-                          </span>
-                        </p>
-                        <p className="text-sm font-semibold text-foreground">
-                          Code:{" "}
-                          <span className="text-muted-foreground font-mono font-normal">
-                            {selectedBank.code}
-                          </span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                      {spin && (
+                        <div className="flex items-center justify-center gap-2 py-2 text-caption text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+                          <span>Verifying account details...</span>
+                        </div>
+                      )}
 
-                  <AnimatePresence>
-                    {spin ? (
-                      <div className="flex w-full items-center justify-center py-4">
-                        <div className="w-20 h-20 border-2 rounded-full border-green-500 border-t-transparent animate-spin" />
-                      </div>
-                    ) : (
-                      isChecked &&
-                      accountName && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.3, ease: "easeInOut" }}
-                          className="overflow-hidden"
-                        >
-                          <motion.div
-                            initial={{ y: -8, scale: 0.98 }}
-                            animate={{ y: 0, scale: 1 }}
-                            exit={{ y: -8, scale: 0.98 }}
-                            transition={{ duration: 0.25, ease: "easeOut" }}
-                            className="w-full h-28 bg-green-400/50 rounded-lg flex flex-col justify-center items-center"
-                          >
-                            <span className="text-sm text-foreground font-medium p-3 block">
-                              Note: Withdrawals are processed within 24 hours.
-                              Ensure your account details are correct to avoid
-                              delays.
-                            </span>
-                            <div className="flex items-center justify-center gap-1 bg-green-500/20 border text-foreground border-green-500/90 rounded-full p-1 mr-2">
-                              <Check className="h-5 w-5 text-green-500" />
-                              <span className="font-extralight text-foreground">
-                                {" "}
-                                Account Name:{" "}
-                              </span>{" "}
-                              <span className="font-bold">{accountName}</span>
+                      {!spin && isChecked && accountName && (
+                        <div className="pw-panel border-brand-400/30 bg-brand-tint p-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="pw-tile h-9 w-9">
+                              <UserCheck className="h-4 w-4" />
                             </div>
-                          </motion.div>
-                        </motion.div>
-                      )
-                    )}
-                  </AnimatePresence>
+                            <div className="min-w-0">
+                              <span className="pw-label block">VERIFIED BENEFICIARY</span>
+                              <span className="text-sm font-bold text-foreground truncate block">
+                                {accountName}
+                              </span>
+                            </div>
+                          </div>
+                          <ReceiptStatusPill status="success" label="VALID" />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3.5">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="p2p-recipient" className="pw-label block">
+                          Barter ID, @username, or Phone
+                        </Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="p2p-recipient"
+                            value={p2pDetails.recipientIdentifier}
+                            onChange={(e) =>
+                              setP2pDetails((p) => ({
+                                ...p,
+                                recipientIdentifier: e.target.value,
+                                resolvedRecipient: null,
+                              }))
+                            }
+                            placeholder="15-digit Barter ID or @username"
+                            className="flex-1 pw-code text-[13px] sm:text-sm h-11"
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleResolveRecipient}
+                            disabled={p2pDetails.isResolving || !p2pDetails.recipientIdentifier.trim()}
+                            className="shrink-0 h-11 text-xs sm:text-sm"
+                          >
+                            {p2pDetails.isResolving ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Verify"
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-caption text-muted-foreground">
+                          ₦0 fee applies to all PayWaka wallet-to-wallet transfers.
+                        </p>
+                      </div>
+
+                      {p2pDetails.resolvedRecipient && (
+                        <div className="pw-panel border-brand-400/30 bg-brand-tint p-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="pw-tile h-9 w-9">
+                              <UserCheck className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-sm font-bold text-foreground block truncate">
+                                {p2pDetails.resolvedRecipient.fullName ||
+                                  `${p2pDetails.resolvedRecipient.firstName || ""} ${p2pDetails.resolvedRecipient.lastName || ""
+                                    }`.trim() ||
+                                  p2pDetails.resolvedRecipient.userName ||
+                                  "PayWaka User"}
+                              </span>
+                              <span className="pw-num text-caption text-brand-400 block truncate">
+                                @{p2pDetails.resolvedRecipient.userName || "paywaka"} ·{" "}
+                                {p2pDetails.resolvedRecipient.barter_id}
+                              </span>
+                            </div>
+                          </div>
+                          <ReceiptStatusPill status="success" label="VERIFIED" />
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="p2p-narration" className="pw-label block">
+                          Narration (Optional)
+                        </Label>
+                        <Input
+                          id="p2p-narration"
+                          value={p2pDetails.narration}
+                          onChange={(e) =>
+                            setP2pDetails((p) => ({ ...p, narration: e.target.value }))
+                          }
+                          placeholder="Add a note"
+                          maxLength={60}
+                          className="h-11 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <Button
-                    onClick={withdrawFunds}
+                    type="button"
+                    onClick={handleStartTransferFlow}
                     disabled={
-                      !accountDetails.accountNumber ||
-                      !accountDetails.amount ||
-                      !accountName ||
-                      !isChecked ||
-                      !selectedValue
+                      numericAmount < 100 ||
+                      totalDeduction > (walletBalance || 0) ||
+                      (withdrawalMode === "bank" &&
+                        (!accountDetails.accountNumber || !accountName || !selectedValue)) ||
+                      (withdrawalMode === "p2p" && !p2pDetails.resolvedRecipient)
                     }
-                    className={`w-full ${walletBalance > accountDetails.amount ? "bg-paywaka-800 hover:bg-paywaka-600" : "bg-red-700 hover:bg-red-500 cursor-not-allowed"} disabled:cursor-not-allowed text-foreground font-bold h-12`}
+                    className="w-full h-11 text-sm"
                   >
-                    {walletBalance > accountDetails.amount
-                      ? "Withdraw Funds"
-                      : "Insufficient Funds"}
+                    {numericAmount < 100
+                      ? "Minimum Transfer is ₦100"
+                      : totalDeduction > (walletBalance || 0)
+                        ? "Insufficient Wallet Balance"
+                        : withdrawalMode === "p2p"
+                          ? `Send ${formatNaira(numericAmount)} to User`
+                          : `Withdraw ${formatNaira(numericAmount)}`}
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+
+              {/* Sticky Transfer Summary on Desktop */}
+              <Card className="lg:sticky lg:top-32">
+                <CardHeader className="pb-3">
+                  <CardTitle>Transfer Summary</CardTitle>
+                  <CardDescription>Live fee & deduction preview</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ReceiptRows>
+                    <ReceiptRow
+                      label="Method"
+                      value={isP2PTransfer ? "PayWaka P2P" : "NIP Bank Transfer"}
+                    />
+                    <ReceiptRow
+                      label="Recipient"
+                      value={
+                        isP2PTransfer
+                          ? p2pDetails.resolvedRecipient?.userName
+                            ? `@${p2pDetails.resolvedRecipient.userName}`
+                            : "Not verified"
+                          : accountName || "Not verified"
+                      }
+                    />
+                    <ReceiptRow
+                      label="Transfer Amount"
+                      value={formatNaira(numericAmount)}
+                      mono
+                    />
+                    <ReceiptRow
+                      label="Processor Fee"
+                      value={transferFee > 0 ? formatNaira(transferFee) : "₦0.00 (Free)"}
+                      mono
+                      accent={transferFee === 0}
+                    />
+                    <ReceiptRow
+                      label="Total Debit"
+                      value={formatNaira(totalDeduction)}
+                      mono
+                      accent
+                    />
+                  </ReceiptRows>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
-          <TabsContent value="history" className="space-y-6">
-            <Card className="border-border bg-card/20">
-              <CardContent className="p-5 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-                  <h3 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
-                    Transaction History
-                  </h3>
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <div className="relative flex-1 sm:flex-none">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search transactions..."
-                        className="pl-9 h-10 text-xs w-full sm:w-64 border-border"
-                      />
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-10 text-xs border-border text-foreground"
-                    >
-                      Filter
-                    </Button>
+          {/* HISTORY TAB */}
+          <TabsContent value="history" className="mt-0">
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>Transaction History</CardTitle>
+                    <CardDescription>
+                      Tap any item to view or share its PayWaka receipt
+                    </CardDescription>
+                  </div>
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      type="search"
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      placeholder="Search history..."
+                      className="pl-10"
+                    />
                   </div>
                 </div>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                {filteredHistory.length > 0 ? (
+                  filteredHistory.map((transaction) => {
+                    const displayTitle = getTransactionDisplayTitle(transaction);
+                    const isCredit = isInboundTransaction(transaction);
+                    const statusInfo = getTransactionStatusInfo(transaction);
+                    const ref = getTransactionReference(transaction);
 
-                <div className="space-y-2.5">
-                  {transactions.map((transaction) => (
-                    <div
-                      key={transaction.id}
-                      className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card/30 hover:bg-card/60 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3.5 min-w-0">
-                        <div
-                          className={cn(
-                            "p-2.5 rounded-xl shrink-0 border",
-                            transaction.type === "credit"
-                              ? "bg-green-500/10 border-green-500/20 text-primary dark:text-green-400"
-                              : "bg-red-500/10 border-red-500/20 text-red-400",
-                          )}
-                        >
-                          {transaction.type === "credit" ? (
-                            <ArrowDownLeft className="h-4.5 w-4.5" />
-                          ) : (
-                            <ArrowUpRight className="h-4.5 w-4.5" />
-                          )}
+                    return (
+                      <button
+                        key={transaction.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTxForModal(transaction);
+                          setIsTxModalOpen(true);
+                        }}
+                        className="pw-pressable pw-panel w-full text-left flex items-center justify-between gap-3 p-3.5 hover:bg-muted/60 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div
+                            className={cn(
+                              "h-10 w-10",
+                              isCredit ? "pw-tile" : "pw-tile-ruby",
+                            )}
+                          >
+                            {isCredit ? (
+                              <ArrowDownLeft className="h-4 w-4" />
+                            ) : (
+                              <ArrowUpRight className="h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-foreground truncate">
+                              {displayTitle}
+                            </p>
+                            <p className="pw-num text-caption text-muted-foreground truncate">
+                              {formatTransactionDate(transaction)} · {ref}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-xs sm:text-sm text-foreground truncate">
-                            {transaction.description}
+
+                        <div className="text-right shrink-0 space-y-1">
+                          <p
+                            className={cn(
+                              "pw-num text-sm font-bold",
+                              isCredit ? "text-brand-400" : "text-foreground",
+                            )}
+                          >
+                            {formatSignedNaira(transaction.amount || 0, isCredit)}
                           </p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            {transaction.date} • {transaction.time}
-                          </p>
+                          <ReceiptStatusPill
+                            status={statusInfo.key}
+                            label={statusInfo.label}
+                            className="text-[9px] px-2 py-0.5"
+                          />
                         </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p
-                          className={cn(
-                            "font-bold text-xs sm:text-sm",
-                            transaction.type === "credit"
-                              ? "text-primary dark:text-green-400"
-                              : "text-red-400",
-                          )}
-                        >
-                          {transaction.type === "credit" ? "+" : "-"}₦
-                          {transaction.amount.toLocaleString()}
-                        </p>
-                        <p className="text-[9px] text-green-500 font-bold bg-green-500/5 border border-green-500/10 px-1.5 py-0.5 rounded-md mt-1 uppercase tracking-wider inline-block">
-                          {transaction.status}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <StateView
+                    icon={Receipt}
+                    title="No transactions recorded"
+                    description="Fund your wallet or make a transfer to see your ledger history."
+                    actionLabel="Add Funds"
+                    onAction={() => setAccountPopup(true)}
+                  />
+                )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
+
+        <WithdrawalConfirmationModal
+          isOpen={isConfirmModalOpen}
+          onClose={() => setIsConfirmModalOpen(false)}
+          onConfirm={handleConfirmModalProceed}
+          amount={numericAmount}
+          bankName={withdrawalMode === "p2p" ? "PayWaka P2P Wallet" : selectedValue}
+          accountNumber={
+            withdrawalMode === "p2p"
+              ? p2pDetails.resolvedRecipient?.barter_id || ""
+              : accountDetails.accountNumber
+          }
+          accountHolder={
+            withdrawalMode === "p2p"
+              ? p2pDetails.resolvedRecipient?.fullName ||
+              `${p2pDetails.resolvedRecipient?.firstName || ""} ${p2pDetails.resolvedRecipient?.lastName || ""
+                }`.trim() ||
+              p2pDetails.resolvedRecipient?.userName ||
+              "PayWaka User"
+              : accountName
+          }
+          isP2P={withdrawalMode === "p2p"}
+          transferFee={transferFee}
+        />
+
+        <TransactionPinModal
+          isOpen={isPinModalOpen}
+          onClose={() => setIsPinModalOpen(false)}
+          onConfirm={handleExecuteTransfer}
+          amount={numericAmount}
+          recipient={
+            withdrawalMode === "p2p"
+              ? `@${p2pDetails.resolvedRecipient?.userName || "paywaka_user"}`
+              : `${selectedValue} (${accountDetails.accountNumber})`
+          }
+          serviceName={withdrawalMode === "p2p" ? "PayWaka P2P Transfer" : "Bank Withdrawal"}
+          onBack={() => {
+            setIsPinModalOpen(false);
+            setIsConfirmModalOpen(true);
+          }}
+        />
+
+        <TransactionPinModal
+          isOpen={isCashbackPinModalOpen}
+          onClose={() => setIsCashbackPinModalOpen(false)}
+          onConfirm={async (pin) => {
+            setIsTransferringCashback(true);
+            try {
+              const transferAmt = Number(
+                cashbackTransferAmount || Math.floor(Number(cashbackBalance || 0)),
+              );
+              const res = await transferCashbackToWallet({
+                amount: transferAmt,
+                pin,
+              });
+              if (res?.status === "success") {
+                toast.success(
+                  res.message ||
+                  `${formatPlanPrice(transferAmt)} moved from Cashback Vault to your Main Wallet!`,
+                );
+                setCashbackTransferAmount("");
+                setIsCashbackPinModalOpen(false);
+                return true;
+              }
+              toast.error(res?.message || "Cashback transfer failed.");
+              return false;
+            } catch (err) {
+              toast.error(err?.message || "Failed to transfer cashback to main wallet.");
+              if (/pin|lockout|attempt/i.test(err?.message || "")) {
+                throw err;
+              }
+              return false;
+            } finally {
+              setIsTransferringCashback(false);
+            }
+          }}
+          amount={Number(cashbackTransferAmount || Math.floor(Number(cashbackBalance || 0)))}
+          recipient="Main PayWaka Wallet"
+          serviceName="Cashback Vault Transfer (₦0 Fee)"
+        />
+
+        {selectedTxForModal && (
+          <TransactionsModal
+            transaction={selectedTxForModal}
+            isOpen={isTxModalOpen}
+            onClose={() => {
+              setIsTxModalOpen(false);
+              setSelectedTxForModal(null);
+            }}
+          />
+        )}
 
         {accountPopup && (
           <AccountDetailsCard

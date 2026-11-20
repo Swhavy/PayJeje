@@ -23,11 +23,11 @@ const Placeholder = ({
       <Card className="max-w-2xl mx-auto">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 bg-paywaka-100 rounded-full flex items-center justify-center">
-              <Icon className="h-8 w-8 text-paywaka-600" />
+            <div className="pw-tile h-16 w-16 rounded-pill">
+              <Icon className="h-8 w-8" />
             </div>
           </div>
-          <CardTitle className="text-2xl">Coming Soon</CardTitle>
+          <CardTitle>Coming Soon</CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
           <p className="text-muted-foreground">{description}</p>
@@ -39,7 +39,6 @@ const Placeholder = ({
               Return to Dashboard
             </Button>
             <Button 
-              className="bg-paywaka-500 hover:bg-paywaka-600"
               onClick={() => {
                 // This would typically open a feedback form
                 alert('Thank you for your interest! We\'ll notify you when this feature is available.');

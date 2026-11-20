@@ -393,7 +393,7 @@ export default function MealsPage() {
 
   return (
     <DashboardLayout>
-      <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-16 sm:pb-20 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-4 sm:p-6 lg:p-8 shadow-2xl">
+      <div className="w-full bg-[#111317] text-[#e2e2e8] font-sans pb-16 sm:pb-20 rounded-2xl sm:rounded-3xl border border-[#282a2e]/60 p-3 sm:p-5 lg:p-7 shadow-2xl overflow-hidden">
         {/* TOP STATUS BAR ROW & IN-FLOW SUB-NAVIGATION */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#282a2e]/70">
           <div className="flex items-center gap-3">
@@ -528,7 +528,7 @@ export default function MealsPage() {
           `}</style>
 
           <div
-            className="relative overflow-hidden rounded-xl sm:rounded-2xl lg:rounded-3xl p-4 sm:p-6 lg:p-10 border transition-all"
+            className="relative overflow-hidden rounded-xl sm:rounded-2xl lg:rounded-3xl p-3.5 sm:p-5 lg:p-8 border transition-all"
             style={{
               background:
                 "radial-gradient(ellipse at 16% 18%, rgba(0, 201, 110, 0.18) 0%, rgba(0, 201, 110, 0.05) 45%, transparent 70%), radial-gradient(ellipse at 86% 84%, rgba(255, 107, 0, 0.28) 0%, rgba(255, 136, 46, 0.12) 42%, transparent 72%), linear-gradient(145deg, #07120e 0%, #0b1412 35%, #101515 65%, #19140e 100%)",
@@ -642,21 +642,21 @@ export default function MealsPage() {
                 </div>
               </div>
 
-              {/* Bottom Card Actions — Compact Single Row Horizontal Alignment */}
-              <div className="w-full max-w-md sm:max-w-lg flex flex-row items-center justify-between gap-2 pt-2.5 sm:pt-3 border-t border-white/[0.08]">
+              {/* Bottom Card Actions — Clean Wrap & Alignment on Compact Phones */}
+              <div className="w-full max-w-md sm:max-w-lg flex flex-wrap items-center justify-center sm:justify-between gap-2 pt-2.5 sm:pt-3 border-t border-white/[0.08]">
                 <button
                   type="button"
                   onClick={() => setShowHowItWorksModal(true)}
-                  className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-[11px] sm:text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0"
+                  className="flex items-center gap-1.5 min-h-9 px-2 text-zinc-400 hover:text-white text-[11px] sm:text-xs font-medium transition-colors whitespace-nowrap shrink-0"
                 >
-                  <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#44e092] flex-shrink-0" />
+                  <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#44e092] shrink-0" />
                   <span className="whitespace-nowrap">How Meal Rewards Work</span>
                 </button>
                 <Link
                   to="/earn"
-                  className="flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#004729]/50 hover:bg-[#004729]/80 border border-[#44e092]/40 text-[#44e092] hover:text-white text-[11px] sm:text-xs font-bold transition-all shadow-sm whitespace-nowrap flex-shrink-0"
+                  className="flex items-center gap-1.5 min-h-9 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#004729]/50 hover:bg-[#004729]/80 border border-[#44e092]/40 text-[#44e092] hover:text-white text-[11px] sm:text-xs font-bold transition-all shadow-sm whitespace-nowrap shrink-0"
                 >
-                  <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#44e092] flex-shrink-0" />
+                  <Award className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#44e092] shrink-0" />
                   <span className="whitespace-nowrap">Earn More Points</span>
                 </Link>
               </div>
@@ -724,7 +724,7 @@ export default function MealsPage() {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-[#0b1c14] via-[#0b1c14]/40 to-transparent" />
 
-                      <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                      <div className="absolute top-3 left-3 right-3 flex flex-wrap items-center justify-between gap-1.5">
                         <span className={`px-3.5 py-1.5 rounded-full text-xs font-bold shadow-sm flex items-center gap-1.5 border whitespace-nowrap backdrop-blur-md ${getBadgeClass(featuredOffer.availability.badgeStyle)}`}>
                           <Sparkles className="w-3.5 h-3.5" />
                           {featuredOffer.availability.badgeLabel}

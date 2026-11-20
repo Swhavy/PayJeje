@@ -464,22 +464,24 @@ export default function LoginPage() {
 
   if (mfaResolver) {
     return (
-      <div className="fixed inset-0 bg-black/10 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-card border border-[#1a2f4a] rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+      <div className="fixed inset-0 bg-black/65 backdrop-blur-md flex items-center justify-center p-4 z-50">
+        <div className="pw-glass-hero p-6 sm:p-8 max-w-sm w-full shadow-2xl space-y-5">
           {/* Icon */}
-          <div className="flex justify-center mb-6">
-            <div className="w-14 h-14 bg-[#00FF41]/10 border border-[#00FF41]/20 rounded-full flex items-center justify-center">
-              <Shield className="w-7 h-7 text-[#00FF41]" />
+          <div className="flex justify-center">
+            <div className="pw-tile h-14 w-14 rounded-pill">
+              <Shield className="w-7 h-7" />
             </div>
           </div>
 
           {/* Heading */}
-          <h2 className="text-xl font-bold text-foreground text-center mb-2">
-            Two-Factor Authentication
-          </h2>
-          <p className="text-[#8aa6b8] text-sm text-center mb-8">
-            Enter the 6-digit code from your authenticator app to continue
-          </p>
+          <div className="text-center space-y-1.5">
+            <h2 className="text-section-title text-foreground">
+              Two-Factor Authentication
+            </h2>
+            <p className="text-caption text-muted-foreground">
+              Enter the 6-digit code from your authenticator app to continue
+            </p>
+          </div>
 
           {/* OTP Input */}
           <input
@@ -487,42 +489,46 @@ export default function LoginPage() {
             inputMode="numeric"
             maxLength={6}
             placeholder="000000"
+            aria-label="6-digit authentication code"
             value={otpCode}
             onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-            className="w-full px-4 py-4 bg-[#111f35] border border-[#1a2f4a] rounded-xl text-foreground text-center text-3xl tracking-[0.5em] font-mono placeholder-[#2a4a62] focus:outline-none focus:border-[#00FF41] focus:ring-1 focus:ring-[#00FF41] transition-all mb-4"
+            className="pw-input pw-code h-14 text-center text-2xl sm:text-3xl tracking-[0.45em]"
             autoFocus
           />
 
           {/* Error */}
           {mfaError && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 mb-4">
-              <p className="text-red-400 text-sm text-center">{mfaError}</p>
+            <div className="bg-destructive/10 border border-destructive/25 rounded-panel px-4 py-3">
+              <p className="text-destructive text-caption font-semibold text-center">{mfaError}</p>
             </div>
           )}
 
           {/* Verify Button */}
-          <button
+          <Button
+            type="button"
             onClick={handleMfaVerify}
             disabled={otpCode.length !== 6 || mfaVerifying}
-            className="w-full py-4 bg-[#00FF41] text-[#0a1628] font-bold rounded-xl hover:bg-[#00e63a] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full h-12"
           >
             {mfaVerifying ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Verifying...
+                <span>Verifying...</span>
               </>
             ) : (
               "Verify & Sign In"
             )}
-          </button>
+          </Button>
 
           {/* Back link */}
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={() => setMfaResolver(null)}
-            className="w-full mt-4 text-[#8aa6b8] text-sm hover:text-foreground transition-colors"
+            className="w-full text-muted-foreground"
           >
             ← Back to sign in
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -530,46 +536,31 @@ export default function LoginPage() {
 
   return (
     <div
-      className={`min-h-screen bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] flex items-center justify-center p-4 overflow-hidden ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
+      className={`min-h-screen pw-app-canvas flex items-center justify-center pt-20 pb-8 px-4 ${isLoading || appContext.spinner ? "h-screen overflow-hidden" : ""}`}
     >
-      <div className="w-full max-w-md overflow-hidden">
-        <Navbar />
-        {/*  <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-3 mb-6">
-            <img
-              src="/logo.png"
-              alt="Paywaka Logo"
-              width={120}
-              height={120}
-              className="rounded-full"
-            />
-            <span className="text-2xl font-bold text-foreground">
-              Pay
-              <span className="text-green-600 dark:text-green-400">waka</span>
-            </span>
-          </Link>
-        </div> */}
-
-        <Card className="bg-gradient-to-br from-[#001a2e] via-[#0a1f3a] to-[#001a2e] border-border shadow-xl">
-          <CardHeader className="text-center">
-            <CardTitle className="text-foreground">Welcome Back</CardTitle>
-            <CardDescription className="text-muted-foreground">
+      <Navbar />
+      <div className="w-full max-w-md">
+        <div className="pw-glass-hero p-5 sm:p-6 space-y-5">
+          <div className="text-center space-y-1">
+            <h1 className="pw-page-title text-foreground">Welcome Back</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Sign in to your account to continue
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-3">
+            </p>
+          </div>
+
+          <div className="space-y-5">
+            <div className="space-y-2.5">
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border  bg-[#1a3a52] border-[#2a4a62] hover:bg-accent"
+                className="w-full h-10 text-sm"
                 onClick={() =>
                   handleOAuthLogin(new GoogleAuthProvider(), "Google")
                 }
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "Google" ? (
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <GoogleIcon />
                 )}
@@ -578,14 +569,14 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border bg-[#1a3a52] border-[#2a4a62] hover:bg-accent"
+                className="w-full h-10 text-sm"
                 onClick={() =>
                   handleOAuthLogin(new FacebookAuthProvider(), "Facebook")
                 }
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "Facebook" ? (
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <FacebookIcon />
                 )}
@@ -594,16 +585,16 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border bg-[#1a3a52] border-[#2a4a62] hover:bg-accent"
+                className="w-full h-10 text-sm"
                 onClick={() => handleOAuthLogin("twitter")}
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "twitter" ? (
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <XIcon />
                 )}
-                <span className="ml-2 ">Continue with X</span>
+                <span className="ml-2">Continue with X</span>
               </Button>
             </div>
 
@@ -612,50 +603,51 @@ export default function LoginPage() {
                 <Separator className="w-full" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="px-2 text-muted-foreground">
+                <span className="px-3 rounded-pill bg-card text-muted-foreground pw-label">
                   Or continue with email
                 </span>
               </div>
             </div>
 
             <form onSubmit={(e) => handleSubmit(e)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="pw-label block">
                   Email
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="email"
                     value={field.email}
                     onChange={(e) => controlledInput(e)}
                     type="email"
                     placeholder="Enter your email"
-                    className="pl-10 bg-[#0a1f3a] border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="password" className="pw-label block">
                   Password
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="password"
                     value={field.password}
                     onChange={(e) => controlledInput(e)}
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
-                    className="pl-10 pr-10 bg-[#0a1f3a] border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10 pr-12"
                     required
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                     className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                     onClick={() => setShowPassword(!showPassword)}
                   >
@@ -668,23 +660,23 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center space-x-2">
                   <input
                     id="remember"
                     type="checkbox"
-                    className="rounded border-border text-green-600 focus:ring-green-500"
+                    className="h-4 w-4 rounded border-border accent-brand-500"
                   />
                   <Label
                     htmlFor="remember"
-                    className="text-sm text-muted-foreground"
+                    className="text-caption text-muted-foreground cursor-pointer"
                   >
                     Remember me
                   </Label>
                 </div>
                 <Link
                   to="/auth/forgot-password"
-                  className="text-sm text-green-600 dark:text-green-400 hover:underline"
+                  className="text-caption font-semibold text-brand-400 hover:underline"
                 >
                   Forgot password?
                 </Link>
@@ -692,7 +684,7 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-foreground"
+                className="w-full h-11"
                 disabled={isLoading || oauthLoading !== null}
               >
                 {isLoading ? "Signing in..." : "Sign In"}
@@ -700,18 +692,18 @@ export default function LoginPage() {
             </form>
 
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">
-                Don't have an account?{" "}
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                Don&apos;t have an account?{" "}
                 <Link
                   to="/auth/register"
-                  className="text-green-600 dark:text-green-400 hover:underline"
+                  className="font-semibold text-brand-400 hover:underline"
                 >
                   Sign up
                 </Link>
               </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

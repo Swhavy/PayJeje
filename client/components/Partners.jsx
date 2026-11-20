@@ -86,26 +86,26 @@ export default function Partners() {
   return (
     <section
       id="partners"
-      className="bg-card border-y border-[#1d3a6a]/30 py-8 relative overflow-hidden"
+      className="bg-[#060C09]/90 backdrop-blur-xl border-y border-white/[0.07] py-8 relative overflow-hidden"
     >
       <div className="max-w-7xl mx-auto px-6 mb-4">
-        <h3 className="text-center text-xs font-bold tracking-widest text-[#3d5a80]/80 uppercase">
+        <h3 className="text-center text-xs font-bold tracking-widest text-slate-400 uppercase">
           TRUSTED BY THESE NIGERIAN & GLOBAL INFRASTRUCTURE PARTNERS
         </h3>
       </div>
 
       {/* Marquee Outer Container with horizontal edge-fade overlay masks */}
       <div className="relative w-full overflow-hidden py-4">
-        {/* Edge gradient mask overlay (desktop-only CSS style layer) */}
-        <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#0a1628] to-transparent z-10 pointer-events-none" />
-        <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#0a1628] to-transparent z-10 pointer-events-none" />
+        {/* Edge gradient mask overlay */}
+        <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#060C09] to-transparent z-10 pointer-events-none" />
+        <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#060C09] to-transparent z-10 pointer-events-none" />
 
         {/* Marquee Inner Track */}
         <div className="flex w-max items-center gap-16 animate-marquee hover:[animation-play-state:paused] cursor-pointer">
           {doubledPartners.map((partner, index) => (
             <div
               key={`${partner}-${index}`}
-              className="text-[#e8f0ff]/40 hover:text-[#e8f0ff] transition-all duration-300 transform hover:scale-105 select-none flex items-center justify-center shrink-0"
+              className="text-white/50 hover:text-white transition-all duration-300 transform hover:scale-105 select-none flex items-center justify-center shrink-0"
               title={partner}
             >
               {getPartnerLogo(partner)}

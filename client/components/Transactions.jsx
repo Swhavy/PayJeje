@@ -1,203 +1,152 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-
+import StateView from "@/components/ui/StateView";
+import { ReceiptStatusPill } from "@/components/receipts/ReceiptParts";
 import {
-  Star,
-  Smartphone,
-  Zap,
-  Gift,
-  Users,
-  Wallet,
-  TrendingUp,
   ArrowUpRight,
   ArrowDownLeft,
   ArrowLeft,
-  Plus,
-  Eye,
-  Calendar,
-  CheckCircle,
   RotateCcw,
+  Receipt,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useSelector } from "react-redux";
 import useTransactionFetch from "@/components/useTransactionFetch";
 import TransactionsModal from "@/components/TransactionsModal";
+import {
+  formatTransactionDate,
+  getTransactionDisplayTitle,
+  getTransactionStatusInfo,
+  isInboundTransaction,
+  isRefundTransaction,
+} from "@/lib/receiptUtils";
+import { formatSignedNaira } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const Transactions = () => {
-  const [transactions, setTransactions] = useState();
+  const [selectedTx, setSelectedTx] = useState(null);
   const [modalOpen, setIsModalOpen] = useState(false);
   const { trxn, loadMore } = useTransactionFetch();
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setTransactions(null);
+    setSelectedTx(null);
   };
 
   const handleTransactionClick = (transaction) => {
-    setTransactions(transaction);
+    setSelectedTx(transaction);
     setIsModalOpen(true);
   };
 
   return (
-    <div className=" absolute w-[30rem] h-fit m-auto inset-0">
-      {/* Recent Transactions */}
-      <Card className="lg:col-span-2 bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-foreground">
-              Recent Transactions
-            </CardTitle>
-            <Link to="/dashboard">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground text-yellow-400 hover:text-foreground flex-row-reverse"
-              >
-                Back
-                <ArrowLeft className="h-4 w-4 ml-1" />
-              </Button>
-            </Link>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={loadMore}
-            >
-              More
-            </Button>
+    <DashboardLayout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="pw-page-title">Recent Activity</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Tap any transaction to view or share its PayWaka receipt.
+            </p>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4 h-[60vh] overflow-y-auto">
+          <Link to="/dashboard">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back</span>
+            </Button>
+          </Link>
+        </div>
+
+        <Card>
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <CardTitle>Transactions</CardTitle>
+            <Button variant="ghost" size="sm" onClick={loadMore} className="text-brand-400">
+              Load more
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
             {trxn && trxn.length > 0 ? (
-              trxn.map((transaction, index) => {
-                const narrationLower = String(transaction.narration || "").toLowerCase();
-                const statusLower = String(transaction.status || "").toLowerCase();
-                const typeLower = String(transaction.type || "").toLowerCase();
-                const categoryLower = String(transaction.category || "").toLowerCase();
-
-                const isRefund =
-                  narrationLower.includes("refund") ||
-                  statusLower === "refunded" ||
-                  transaction.refunded === true;
-
-                const isCredit =
-                  isRefund ||
-                  typeLower === "credit" ||
-                  typeLower === "inflow" ||
-                  typeLower === "income" ||
-                  narrationLower === "credit" ||
-                  categoryLower === "deposit" ||
-                  categoryLower === "cashback" ||
-                  categoryLower === "earning" ||
-                  categoryLower === "referral";
-
-                let txDate = null;
-                if (transaction?.createdAt?.toDate) txDate = transaction.createdAt.toDate();
-                else if (transaction?.createdAt?.seconds) txDate = new Date(transaction.createdAt.seconds * 1000);
-                else if (transaction?.created_at) txDate = new Date(transaction.created_at);
-                else if (transaction?.timestamp?.toDate) txDate = transaction.timestamp.toDate();
-                else if (transaction?.timestamp) txDate = new Date(transaction.timestamp);
-                else if (transaction?.date) txDate = new Date(transaction.date);
-                else txDate = new Date();
-
-                const formattedDate = isNaN(txDate.getTime())
-                  ? "Recently"
-                  : txDate.toLocaleString("en-NG", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    });
+              trxn.map((transaction) => {
+                const isRefund = isRefundTransaction(transaction);
+                const isCredit = isInboundTransaction(transaction);
+                const displayTitle = getTransactionDisplayTitle(transaction);
+                const statusInfo = getTransactionStatusInfo(transaction);
 
                 return (
-                  <div
+                  <button
                     key={transaction.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/70 cursor-pointer transition-colors"
+                    type="button"
                     onClick={() => handleTransactionClick(transaction)}
+                    className="pw-pressable w-full text-left flex items-center justify-between gap-3 p-3 rounded-panel border border-border bg-panel hover:bg-muted/60 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div
-                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
-                          isRefund
-                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                            : isCredit
-                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-                              : "bg-red-500/15 text-red-400 border border-red-500/20"
-                        }`}
+                        className={cn(
+                          "h-10 w-10 rounded-panel border inline-flex items-center justify-center shrink-0",
+                          isCredit
+                            ? "bg-brand-tint border-brand-400/25 text-brand-400"
+                            : "bg-destructive/10 border-destructive/20 text-destructive",
+                        )}
                       >
                         {isRefund ? (
-                          <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                          <RotateCcw className="h-4 w-4" />
                         ) : isCredit ? (
-                          <ArrowDownLeft className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
+                          <ArrowDownLeft className="h-4 w-4" />
                         ) : (
-                          <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5 text-red-400" />
+                          <ArrowUpRight className="h-4 w-4" />
                         )}
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground text-sm sm:text-base">
-                          {transaction.narration || "Transaction"}
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="text-sm font-semibold text-foreground truncate"
+                          title={displayTitle}
+                        >
+                          {displayTitle}
                         </p>
-                        <p className="text-xs sm:text-sm text-muted-foreground">
-                          {formattedDate}
+                        <p className="text-caption text-muted-foreground truncate">
+                          {formatTransactionDate(transaction)}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
+
+                    <div className="text-right shrink-0 space-y-1">
                       <p
-                        className={`font-semibold text-sm sm:text-base ${
-                          isCredit
-                            ? "text-emerald-400"
-                            : "text-red-400"
-                        }`}
+                        className={cn(
+                          "pw-num text-sm font-bold",
+                          isCredit ? "text-brand-400" : "text-foreground",
+                        )}
                       >
-                        {isCredit ? "+" : "-"}₦
-                        {Number(transaction.amount || 0).toLocaleString()}
+                        {formatSignedNaira(transaction.amount || 0, isCredit)}
                       </p>
-                      {isRefund ? (
-                        <Badge
-                          className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs"
-                        >
-                          <RotateCcw className="h-3 w-3 mr-1" />
-                          Refunded
-                        </Badge>
-                      ) : statusLower === "failed" ? (
-                        <Badge
-                          variant="destructive"
-                          className="text-xs"
-                        >
-                          Failed
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="secondary"
-                          className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs"
-                        >
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Done
-                        </Badge>
-                      )}
+                      <ReceiptStatusPill
+                        status={statusInfo.key}
+                        label={statusInfo.label}
+                        className="text-[9px] px-2 py-0.5"
+                      />
                     </div>
-                  </div>
+                  </button>
                 );
               })
             ) : (
-              <p className="text-xs text-muted-foreground py-6 text-center">
-                No transactions found.
-              </p>
+              <StateView
+                icon={Receipt}
+                title="No transactions found"
+                description="Your recent PayWaka transactions will appear here."
+              />
             )}
-          </div>
-        </CardContent>
-      </Card>
-      {transactions && (
+          </CardContent>
+        </Card>
+      </div>
+
+      {selectedTx && (
         <TransactionsModal
-          transaction={transactions}
+          transaction={selectedTx}
           isOpen={modalOpen}
           onClose={handleCloseModal}
         />
       )}
-    </div>
+    </DashboardLayout>
   );
 };
+
 export default Transactions;

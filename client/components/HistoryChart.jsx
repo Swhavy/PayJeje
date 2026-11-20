@@ -1,3 +1,4 @@
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -11,10 +12,10 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import useGetMonthlyTrx from "./useGetMonthlyTrx";
-import { useEffect, useState } from "react";
+import { useTheme } from "./ThemeProvider";
+import { formatNaira } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
-
-// Register ChartJS components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -27,20 +28,11 @@ ChartJS.register(
 );
 
 const TransactionChart = () => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const [range, setRange] = useState("30D"); // "7D" | "30D"
   const [isMobile, setIsMobile] = useState(false);
-  const [max, setMax] = useState(null)
-  const { inflow, expenses, dateLabel } = useGetMonthlyTrx()
-
-  useEffect(() => {
-    if ((!inflow || inflow.length === 0) && (!expenses || expenses.length === 0)) {
-      setMax(100);
-      return;
-    }
-    const allValues = [...(inflow || []), ...(expenses || [])];
-    const calc = allValues.length > 0 ? Math.max(...allValues, 0) : 0;
-    const maxVal = Math.ceil(calc * 1.5);
-    setMax(maxVal > 0 ? maxVal : 100);
-  }, [inflow, expenses, dateLabel]);
+  const { inflow = [], expenses = [], dateLabel = [] } = useGetMonthlyTrx();
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -49,51 +41,102 @@ const TransactionChart = () => {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  const sliced = useMemo(() => {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const monthShort = now.toLocaleDateString("en-US", { month: "short" });
+    const fallbackLabels = Array.from(
+      { length: daysInMonth },
+      (_, idx) => `${monthShort}-${idx + 1}`,
+    );
+    const activeLabels = dateLabel.length > 0 ? dateLabel : fallbackLabels;
+    const totalLen = activeLabels.length;
+    const activeInflow =
+      inflow.length === totalLen ? inflow : Array(totalLen).fill(0);
+    const activeExpenses =
+      expenses.length === totalLen ? expenses : Array(totalLen).fill(0);
 
+    if (range === "7D") {
+      const todayDay = now.getDate();
+      const endIdx = Math.min(totalLen, Math.max(7, todayDay));
+      const startIdx = Math.max(0, endIdx - 7);
+      return {
+        labels: activeLabels.slice(startIdx, endIdx),
+        incomeSeries: activeInflow.slice(startIdx, endIdx),
+        expenseSeries: activeExpenses.slice(startIdx, endIdx),
+      };
+    }
 
+    return {
+      labels: activeLabels,
+      incomeSeries: activeInflow,
+      expenseSeries: activeExpenses,
+    };
+  }, [dateLabel, inflow, expenses, range]);
 
-  // Sample transaction data - replace with your actual data
+  const yMax = useMemo(() => {
+    const allValues = [...sliced.incomeSeries, ...sliced.expenseSeries];
+    const peak = allValues.length > 0 ? Math.max(...allValues, 0) : 0;
+    const padded = Math.ceil(peak * 1.25);
+    return padded > 0 ? padded : 1000;
+  }, [sliced]);
+
+  const palette = isDark
+    ? {
+        incomeLine: "#34D399",
+        incomeFill: "rgba(52, 211, 153, 0.12)",
+        expenseLine: "#F87171",
+        expenseFill: "rgba(248, 113, 113, 0.10)",
+        tickText: "#94A3B8",
+        grid: "rgba(148, 163, 184, 0.12)",
+        tooltipBg: "#0B1411",
+        tooltipText: "#F8FAFC",
+        tooltipBorder: "#1B3329",
+        pointBorder: "#0B1411",
+      }
+    : {
+        incomeLine: "#047857",
+        incomeFill: "rgba(4, 120, 87, 0.10)",
+        expenseLine: "#C81E1E",
+        expenseFill: "rgba(200, 30, 30, 0.08)",
+        tickText: "#475569",
+        grid: "rgba(15, 23, 42, 0.08)",
+        tooltipBg: "#FFFFFF",
+        tooltipText: "#0F172A",
+        tooltipBorder: "#E2E8F0",
+        pointBorder: "#FFFFFF",
+      };
+
   const transactionData = {
-    // labels: [
-    //   "Jan 1",
-    //   "Jan 5",
-    //   "Jan 10",
-    //   "Jan 15",
-    //   "Jan 20",
-    //   "Jan 25",
-    //   "Jan 30",
-    // ],
-    labels: dateLabel,
+    labels: sliced.labels,
     datasets: [
       {
         label: "Income",
-        //data: [2500, 3200, 2800, 4100, 3500, 4200, 3800],
-        data: inflow,
-        borderColor: "#10b981",
-        backgroundColor: "rgba(16, 185, 129, 0.1)",
-        borderWidth: 2.5,
+        data: sliced.incomeSeries,
+        borderColor: palette.incomeLine,
+        backgroundColor: palette.incomeFill,
+        borderWidth: 2.25,
         fill: true,
-        tension: 0.4,
-        pointRadius: isMobile ? 3 : 5,
-        pointBackgroundColor: "#10b981",
-        pointBorderColor: "#fff",
-        pointBorderWidth: 2,
-        pointHoverRadius: isMobile ? 5 : 7,
+        tension: 0.35,
+        pointRadius: (ctx) => (Number(ctx.raw) > 0 ? (isMobile ? 3 : 4) : 0),
+        pointBackgroundColor: palette.incomeLine,
+        pointBorderColor: palette.pointBorder,
+        pointBorderWidth: 1.5,
+        pointHoverRadius: 6,
       },
       {
         label: "Expenses",
-        //data: [1200, 1500, 1800, 1300, 1600, 1400, 1700],
-        data: expenses,
-        borderColor: "#ef4444",
-        backgroundColor: "rgba(239, 68, 68, 0.1)",
-        borderWidth: 2.5,
+        data: sliced.expenseSeries,
+        borderColor: palette.expenseLine,
+        backgroundColor: palette.expenseFill,
+        borderWidth: 2,
         fill: true,
-        tension: 0.4,
-        pointRadius: isMobile ? 3 : 5,
-        pointBackgroundColor: "#ef4444",
-        pointBorderColor: "#fff",
-        pointBorderWidth: 2,
-        pointHoverRadius: isMobile ? 5 : 7,
+        tension: 0.35,
+        pointRadius: (ctx) => (Number(ctx.raw) > 0 ? (isMobile ? 3 : 4) : 0),
+        pointBackgroundColor: palette.expenseLine,
+        pointBorderColor: palette.pointBorder,
+        pointBorderWidth: 1.5,
+        pointHoverRadius: 6,
       },
     ],
   };
@@ -101,88 +144,123 @@ const TransactionChart = () => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: "index",
+      intersect: false,
+    },
     plugins: {
       legend: {
-        position: "top",
-        labels: {
-          color: "#e5e7eb",
-          font: {
-            size: isMobile ? 11 : 13,
-            weight: "500",
-            family: "'Geist', sans-serif",
-          },
-          padding: isMobile ? 10 : 20,
-          usePointStyle: true,
-          pointStyle: "circle",
-        },
+        display: false,
       },
       title: {
-        display: true,
-        text: "Transaction History",
-        color: "#f3f4f6",
-        font: {
-          size: isMobile ? 14 : 18,
-          weight: "bold",
-          family: "'Geist', sans-serif",
-        },
-        padding: {
-          bottom: isMobile ? 10 : 20,
-        },
+        display: false,
       },
       tooltip: {
-        backgroundColor: "rgba(0, 0, 0, 0.8)",
-        titleColor: "#fff",
-        bodyColor: "#e5e7eb",
-        borderColor: "#374151",
+        backgroundColor: palette.tooltipBg,
+        titleColor: palette.tooltipText,
+        bodyColor: palette.tooltipText,
+        borderColor: palette.tooltipBorder,
         borderWidth: 1,
-        padding: isMobile ? 8 : 12,
+        padding: 10,
         displayColors: true,
         callbacks: {
           label: (context) =>
-            `${context.dataset.label}: ₦${context.parsed.y.toLocaleString()}`,
+            `${context.dataset.label}: ${formatNaira(context.parsed.y)}`,
         },
       },
     },
     scales: {
       y: {
         beginAtZero: true,
-        max: max,
+        max: yMax,
+        border: { display: false },
         ticks: {
-          color: "#9ca3af",
+          color: palette.tickText,
+          maxTicksLimit: 5,
           font: {
-            size: isMobile ? 10 : 12,
-            family: "'Geist', sans-serif",
+            size: 11,
+            family: "'Plus Jakarta Sans', 'Inter', sans-serif",
+            weight: "600",
           },
-          callback: (value) => "₦" + value.toLocaleString(),
+          callback: (value) => `₦${Number(value).toLocaleString("en-NG")}`,
         },
         grid: {
-          color: "rgba(75, 85, 99, 0.2)",
-          drawBorder: false,
+          color: palette.grid,
         },
       },
       x: {
+        border: { display: false },
         ticks: {
-          color: "#9ca3af",
+          color: palette.tickText,
+          maxRotation: 0,
+          minRotation: 0,
+          autoSkip: false,
           font: {
-            size: isMobile ? 10 : 12,
-            family: "'Geist', sans-serif",
+            size: 11,
+            family: "'Plus Jakarta Sans', 'Inter', sans-serif",
+          },
+          callback: function (val, index) {
+            const label = sliced.labels[index];
+            if (!label) return "";
+            if (range === "7D") return label;
+            return index % 5 === 0 || index === sliced.labels.length - 1
+              ? label
+              : "";
           },
         },
         grid: {
           display: false,
-          drawBorder: false,
         },
       },
     },
   };
 
   return (
-    <div className="w-full h-full bg-gradient-to-br bg-teal-800/10 backdrop-blur-2xl rounded-lg p-3 sm:p-4 lg:p-6 border border-slate-700 flex flex-col">
-      <div className="flex-grow w-full min-h-0">
+    <div className="w-full h-full p-4 sm:p-5 flex flex-col gap-3">
+      {/* Header + Legend + 7D/30D Toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-card-title text-foreground">Transaction History</h3>
+          <div className="flex items-center gap-4 mt-1 text-caption text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-pill bg-brand-400" />
+              Income
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-pill bg-destructive" />
+              Expenses
+            </span>
+          </div>
+        </div>
+
+        <div
+          role="group"
+          aria-label="Chart range"
+          className="pw-segmented inline-flex"
+        >
+          {["7D", "30D"].map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => setRange(opt)}
+              className={cn(
+                "px-3.5 min-h-9 rounded-pill text-caption font-bold transition-all",
+                range === opt
+                  ? "bg-card text-foreground shadow-sm border border-border/80"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="h-56 sm:h-64 w-full min-h-0">
         <Line data={transactionData} options={options} />
       </div>
     </div>
   );
-}
+};
 
-export default TransactionChart
+export default TransactionChart;

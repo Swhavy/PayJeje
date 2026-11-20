@@ -13,30 +13,51 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["Space Grotesk", "sans-serif"],
+        sans: [
+          "Plus Jakarta Sans",
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "sans-serif",
+        ],
+        display: ["Plus Jakarta Sans", "Space Grotesk", "Inter", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
       },
+      fontSize: {
+        "page-title": [
+          "1.25rem",
+          { lineHeight: "1.65rem", fontWeight: "800", letterSpacing: "-0.02em" },
+        ],
+        "page-title-lg": [
+          "1.5rem",
+          { lineHeight: "2rem", fontWeight: "800", letterSpacing: "-0.025em" },
+        ],
+        "section-title": [
+          "1rem",
+          { lineHeight: "1.375rem", fontWeight: "700", letterSpacing: "-0.015em" },
+        ],
+        "card-title": [
+          "0.9375rem",
+          { lineHeight: "1.35rem", fontWeight: "700", letterSpacing: "-0.01em" },
+        ],
+        caption: ["0.75rem", { lineHeight: "1rem", fontWeight: "500" }],
+      },
       colors: {
-        navy: {
-          500: "#1d3a6a",
-          600: "#152c52",
-          700: "#0f2040",
-          800: "#0a1628",
-          900: "#060d1a",
+        brand: {
+          50: "hsl(var(--brand-50))",
+          400: "hsl(var(--brand-400))",
+          500: "hsl(var(--brand-500))",
+          950: "hsl(var(--brand-950))",
+          glow: "hsl(var(--brand-glow))",
+          tint: "hsl(var(--brand-tint))",
+          foreground: "hsl(var(--brand-500-foreground))",
         },
-        green: {
-          500: "#00c96e",
-          400: "#00e87d",
-          deep: "#003d20",
+        panel: "hsl(var(--panel))",
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
         },
-        "blue-accent": "#00a8ff",
-        "text-primary": "#e8f0ff",
-        "text-secondary": "#7a9cc8",
-        "text-muted": "#3d5a80",
-        danger: "#ff5c6c",
-        gold: "#f5a623",
-        /* end */
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -80,20 +101,7 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        // Paywaka brand colors
-        paywaka: {
-          50: "#f0fdf4",
-          100: "#dcfce7",
-          200: "#bbf7d0",
-          300: "#86efac",
-          400: "#4ade80",
-          500: "#22c55e", // Primary green
-          600: "#16a34a",
-          700: "#15803d",
-          800: "#166534",
-          900: "#14532d",
-        },
-        // Meal Rewards Obsidian Ember & Emerald tokens
+        // Meal Rewards Obsidian Ember & Emerald tokens (scoped to Meal pages)
         meal: {
           surface: "#111317",
           "surface-lowest": "#0c0e12",
@@ -112,9 +120,19 @@ export default {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
+        card: "var(--radius-card)",
+        panel: "var(--radius)",
+        pill: "9999px",
+        lg: "var(--radius-card)",
+        md: "var(--radius)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        sheet: "var(--shadow-sheet)",
+        glass: "var(--shadow-glass)",
+        hero: "var(--shadow-hero)",
+        "emerald-glow": "var(--shadow-emerald-glow)",
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",

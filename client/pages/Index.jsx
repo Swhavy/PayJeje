@@ -14,7 +14,7 @@ import "../index.css";
 
 export default function HomePage() {
   return (
-    <div className="dark bg-background min-h-screen text-foreground selection:bg-[#00c96e] selection:text-[#060d1a]">
+    <div className="dark pw-app-canvas min-h-screen text-foreground selection:bg-brand-500 selection:text-brand-foreground">
       {/* 1. Navigation */}
       <Navbar />
 

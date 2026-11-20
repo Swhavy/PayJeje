@@ -16,6 +16,9 @@ import {
   Zap,
   Search,
   AlertCircle,
+  Clock,
+  Tv,
+  Wifi,
 } from "lucide-react";
 import useCloudfunc from "@/components/useCloudfunc";
 import { toast } from "sonner";
@@ -53,7 +56,7 @@ export function computePlanPricingClient(plan, config) {
     const isHero = numComp !== null && !isNaN(numComp) && numComp > 0;
     const cashbackRate = isHero ? heroCashbackRate : standardCashbackRate;
     const margin = Math.max(0, numCustom - numCost);
-    const cashbackAmount = Math.round(margin * cashbackRate * 100) / 100;
+    const cashbackAmount = Math.round(Math.max(0, margin * cashbackRate) * 100) / 100;
     const profit = Math.round((numCustom - numCost - cashbackAmount) * 100) / 100;
 
     return {
@@ -102,7 +105,7 @@ export function computePlanPricingClient(plan, config) {
 
   const cashbackRate = isHero ? heroCashbackRate : standardCashbackRate;
   const margin = Math.max(0, displayPrice - numCost);
-  const cashbackAmount = Math.round(margin * cashbackRate * 100) / 100;
+  const cashbackAmount = Math.round(Math.max(0, margin * cashbackRate) * 100) / 100;
   const profit = Math.round((displayPrice - numCost - cashbackAmount) * 100) / 100;
 
   return {
@@ -123,6 +126,7 @@ export default function AdminDataPricing() {
     adminSyncClubKonnect,
     adminUpdatePricingConfig,
     adminUpdatePlanPrice,
+    adminUpdateCablePackagePrice,
     adminSeedPricingFromExcel,
   } = useCloudfunc();
 
@@ -132,8 +136,17 @@ export default function AdminDataPricing() {
   const [savingGlobal, setSavingGlobal] = useState(false);
   const [savingRowId, setSavingRowId] = useState(null);
 
+  const [catalogView, setCatalogView] = useState("data"); // "data" | "cable"
   const [activeNetwork, setActiveNetwork] = useState("MTN");
+  const [activeCableProvider, setActiveCableProvider] = useState("DSTV");
   const [searchQuery, setSearchQuery] = useState("");
+  const [syncMeta, setSyncMeta] = useState({
+    lastSyncedAtIso: null,
+    catalogVersion: null,
+    syncIntervalHours: 3,
+    liveProviderMetadata: null,
+  });
+  const [cablePackages, setCablePackages] = useState([]);
   const [config, setConfig] = useState({
     networks: {
       MTN: { marginRate: 0.30, cashbackRate: 0.025 },
@@ -165,6 +178,15 @@ export default function AdminDataPricing() {
           console.log(`✅ [AdminDataPricing] Loaded ${res.plans.length} plans successfully.`);
           setPlans(res.plans);
         }
+        if (Array.isArray(res.cablePackages)) {
+          setCablePackages(res.cablePackages);
+        }
+        setSyncMeta({
+          lastSyncedAtIso: res.lastSyncedAtIso || null,
+          catalogVersion: res.catalogVersion || null,
+          syncIntervalHours: res.syncIntervalHours || 3,
+          liveProviderMetadata: res.liveProviderMetadata || null,
+        });
       } else {
         const errorMsg = res?.message || "Failed to load pricing configuration.";
         console.error("❌ [AdminDataPricing] Non-success response:", res);
@@ -349,6 +371,63 @@ export default function AdminDataPricing() {
     );
   };
 
+  const handleCableFieldChange = (docId, field, value) => {
+    setCablePackages((prev) =>
+      prev.map((pkg) => {
+        if (pkg.id !== docId) return pkg;
+        const updated = { ...pkg, _dirty: true };
+        if (field === "customDisplayPrice") {
+          const parsed =
+            value !== "" && value !== null && value !== undefined
+              ? parseFloat(value)
+              : null;
+          updated.customDisplayPrice =
+            parsed !== null && !isNaN(parsed) && parsed > 0 ? parsed : null;
+          updated.displayPrice =
+            updated.customDisplayPrice || updated.faceAmount || 0;
+        } else {
+          updated[field] = value;
+        }
+        return updated;
+      }),
+    );
+  };
+
+  const handleUpdateCablePackage = async (pkg) => {
+    setSavingRowId(pkg.id);
+    try {
+      const res = await adminUpdateCablePackagePrice({
+        docId: pkg.id,
+        customDisplayPrice: pkg.customDisplayPrice,
+        isActive: pkg.isActive !== false,
+      });
+      if (res?.status === "success") {
+        toast.success(`Updated Cable TV package ${pkg.packageName}`);
+        setCablePackages((prev) =>
+          prev.map((p) => (p.id === pkg.id ? { ...p, _dirty: false } : p)),
+        );
+        await loadPricingData();
+      } else {
+        toast.error(res?.message || "Failed to update cable package.");
+      }
+    } catch (err) {
+      toast.error(err?.details?.message || err?.message || "Cable package update failed.");
+    } finally {
+      setSavingRowId(null);
+    }
+  };
+
+  const providerCablePackages = useMemo(() => {
+    return cablePackages.filter((pkg) => {
+      const matchProv = String(pkg.provider || "").toUpperCase() === activeCableProvider;
+      const matchSearch =
+        !searchQuery ||
+        String(pkg.packageName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(pkg.packageId || "").toLowerCase().includes(searchQuery.toLowerCase());
+      return matchProv && matchSearch;
+    });
+  }, [cablePackages, activeCableProvider, searchQuery]);
+
   const networkPlans = useMemo(() => {
     return plans.filter((p) => {
       const pNet = String(p.network || "").toUpperCase();
@@ -402,7 +481,7 @@ export default function AdminDataPricing() {
               className="bg-gray-900/80 border-gray-700 text-gray-200 hover:bg-gray-800 hover:text-white transition-all shadow-sm"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin text-orange-400" : ""}`} />
-              {syncing ? "Syncing Costs..." : "Sync ClubKonnect Costs"}
+              {syncing ? "Syncing All Bills..." : "Sync All ClubKonnect Bills"}
             </Button>
 
             <Button
@@ -487,31 +566,103 @@ export default function AdminDataPricing() {
           </Card>
         </div>
 
-        {/* Network Filter Tabs & Search */}
+        {/* 3-Hour Auto-Sync Status Banner & Catalog Switcher */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gray-900/70 border border-emerald-500/20 rounded-xl px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-300">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
+              <Clock className="w-3.5 h-3.5" />
+              Auto-Sync: Every {syncMeta.syncIntervalHours || 3} Hours
+            </span>
+            <span>
+              Last ClubKonnect Sync:{" "}
+              <strong className="text-white">
+                {syncMeta.lastSyncedAtIso
+                  ? new Date(syncMeta.lastSyncedAtIso).toLocaleString()
+                  : "Pending First Sync"}
+              </strong>
+            </span>
+            {syncMeta.catalogVersion && (
+              <span className="text-gray-400 font-mono">
+                Snapshot v{syncMeta.catalogVersion}
+              </span>
+            )}
+            <span className="text-gray-400">
+              • {plans.length} Data Plans • {cablePackages.length} Cable Packages •{" "}
+              {syncMeta.liveProviderMetadata?.electricityDiscos?.length || 12} Electricity Discos
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 bg-gray-950 p-1 rounded-lg border border-gray-800 self-start lg:self-auto">
+            <button
+              type="button"
+              onClick={() => setCatalogView("data")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${catalogView === "data"
+                  ? "bg-orange-500 text-white shadow"
+                  : "text-gray-400 hover:text-white"
+                }`}
+            >
+              <Wifi className="w-3.5 h-3.5" />
+              Data Bundles Catalog
+            </button>
+            <button
+              type="button"
+              onClick={() => setCatalogView("cable")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${catalogView === "cable"
+                  ? "bg-purple-600 text-white shadow"
+                  : "text-gray-400 hover:text-white"
+                }`}
+            >
+              <Tv className="w-3.5 h-3.5" />
+              Cable TV Packages ({cablePackages.length})
+            </button>
+          </div>
+        </div>
+
+        {/* Network / Provider Filter Tabs & Search */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-900/80 p-3 rounded-xl border border-gray-800">
-          <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-            {["MTN", "GLO", "AIRTEL", "9MOBILE"].map((net) => {
-              const active = activeNetwork === net;
-              return (
-                <button
-                  key={net}
-                  onClick={() => setActiveNetwork(net)}
-                  className={`px-5 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${active
+          {catalogView === "data" ? (
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+              {["MTN", "GLO", "AIRTEL", "9MOBILE"].map((net) => {
+                const active = activeNetwork === net;
+                return (
+                  <button
+                    key={net}
+                    onClick={() => setActiveNetwork(net)}
+                    className={`px-5 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${active
                       ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
                       : "text-gray-400 hover:text-white hover:bg-gray-800"
-                    }`}
-                >
-                  {net}
-                </button>
-              );
-            })}
-          </div>
+                      }`}
+                  >
+                    {net}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+              {["DSTV", "GOTV", "STARTIMES", "SHOWMAX"].map((prov) => {
+                const active = activeCableProvider === prov;
+                return (
+                  <button
+                    key={prov}
+                    onClick={() => setActiveCableProvider(prov)}
+                    className={`px-5 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${active
+                      ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/20"
+                      : "text-gray-400 hover:text-white hover:bg-gray-800"
+                      }`}
+                  >
+                    {prov}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
               type="text"
-              placeholder="Search plan name or code..."
+              placeholder={catalogView === "data" ? "Search plan name or code..." : "Search cable package or code..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 bg-gray-950 border-gray-800 text-white text-sm focus:border-orange-500"
@@ -519,199 +670,294 @@ export default function AdminDataPricing() {
           </div>
         </div>
 
-        {/* Interactive Pricing Grid */}
-        <Card className="bg-gray-900/80 border-gray-800 backdrop-blur-md overflow-hidden">
-          <CardHeader className="p-4 border-b border-gray-800">
-            <CardTitle className="text-lg font-semibold text-white flex items-center justify-between">
-              <span>{activeNetwork} Data Plan Pricing Catalog</span>
-              <span className="text-xs text-gray-400 font-normal">
-                Showing {networkPlans.length} plans
-              </span>
-            </CardTitle>
-          </CardHeader>
-          {networkPlans.some((p) => p.fallbackApplied) && (
-            <div className="bg-rose-500/10 border-b border-rose-500/20 px-4 py-2.5 text-xs text-rose-300 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>
-                  <strong>Sync Warning:</strong> {networkPlans.filter((p) => p.fallbackApplied).length} plans in {activeNetwork} have fallback defaults applied due to missing fields. Check logs or re-sync with ClubKonnect.
+        {/* Interactive Pricing Grid (Data Bundles or Cable TV Packages) */}
+        {catalogView === "cable" ? (
+          <Card className="bg-gray-900/80 border-gray-800 backdrop-blur-md overflow-hidden">
+            <CardHeader className="p-4 border-b border-gray-800">
+              <CardTitle className="text-lg font-semibold text-white flex items-center justify-between">
+                <span>{activeCableProvider} Cable TV Pricing Catalog (Live ClubKonnect Wholesale Costs)</span>
+                <span className="text-xs text-gray-400 font-normal">
+                  Showing {providerCablePackages.length} packages
                 </span>
-              </div>
-            </div>
-          )}
-          <CardContent className="p-0 overflow-x-auto">
-            {loading ? (
-              <div className="p-12 text-center text-gray-400">
-                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-orange-500 mb-3" />
-                Loading pricing configuration catalog...
-              </div>
-            ) : networkPlans.length === 0 ? (
-              <div className="p-12 text-center text-gray-400">
-                No data plans found for {activeNetwork}. Click "Sync ClubKonnect Costs" above.
-              </div>
-            ) : (
-              <table className="w-full text-left text-sm text-gray-300">
-                <thead className="bg-gray-950 text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
-                  <tr>
-                    <th className="px-4 py-3">Plan Details</th>
-                    <th className="px-4 py-3 text-right">Wholesale Cost</th>
-                    <th className="px-4 py-3 text-right">Competitor (₦)</th>
-                    <th className="px-4 py-3 text-right">Formula Price</th>
-                    <th className="px-4 py-3 text-right">Override Price (₦)</th>
-                    <th className="px-4 py-3 text-center">Mode</th>
-                    <th className="px-4 py-3 text-right">Net Profit</th>
-                    <th className="px-4 py-3 text-center">Status</th>
-                    <th className="px-4 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800/60">
-                  {networkPlans.map((plan) => {
-                    const isManual = plan.overrideMode === "MANUAL";
-                    const isHero = plan.isHero;
-                    const profitVal = Number(plan.profit || 0);
-
-                    return (
-                      <tr key={plan.id} className="hover:bg-gray-800/40 transition-colors">
-                        {/* Plan Title */}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto text-purple-500 mb-3" />
+                  Loading cable packages catalog...
+                </div>
+              ) : providerCablePackages.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">
+                  No packages found for {activeCableProvider}. Click "Sync All ClubKonnect Bills" above.
+                </div>
+              ) : (
+                <table className="w-full text-left text-sm text-gray-300">
+                  <thead className="bg-gray-950 text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
+                    <tr>
+                      <th className="px-4 py-3">Package Details</th>
+                      <th className="px-4 py-3 text-right">ClubKonnect Cost</th>
+                      <th className="px-4 py-3 text-right">Face Price (₦)</th>
+                      <th className="px-4 py-3 text-right">Custom Override (₦)</th>
+                      <th className="px-4 py-3 text-right">Cashback / Profit</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/60">
+                    {providerCablePackages.map((pkg) => (
+                      <tr key={pkg.id} className="hover:bg-gray-800/40 transition-colors">
                         <td className="px-4 py-3">
-                          <div className="font-semibold text-white">{plan.planName}</div>
-                          <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
-                            <span>Code: {plan.planId}</span>
-                            <span>•</span>
-                            <span>{plan.validity_period || plan.validity || "30 Days"}</span>
-                            {isHero && (
-                              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded font-bold">
-                                HERO
-                              </span>
-                            )}
-                            {plan.fallbackApplied && (
-                              <span
-                                className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] px-1.5 py-0.5 rounded font-bold cursor-help"
-                                title={`Fallback defaults applied: ${plan.fallbackReasons?.join("; ") || plan.fallbackFields?.join(", ")}`}
-                              >
-                                FALLBACK: {plan.fallbackFields?.join(", ")}
-                              </span>
-                            )}
-                          </div>
+                          <div className="font-semibold text-white">{pkg.packageName}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">Code: {pkg.packageId}</div>
                         </td>
-
-                        {/* Wholesale Cost */}
                         <td className="px-4 py-3 text-right font-mono text-gray-300">
-                          ₦{(plan.costPrice || 0).toLocaleString()}
+                          ₦{Number(pkg.costPrice || 0).toLocaleString()}
                         </td>
-
-                        {/* Competitor Price Input */}
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-white">
+                          ₦{Number(pkg.faceAmount || 0).toLocaleString()}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <Input
                             type="number"
                             onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="None"
-                            value={plan.competitorPrice ?? ""}
-                            onChange={(e) => handleFieldChange(plan.id, "competitorPrice", e.target.value)}
-                            className="w-24 text-right bg-gray-950 border-gray-800 text-white text-xs h-8 ml-auto focus:border-amber-500 transition-colors"
+                            placeholder="Default"
+                            value={pkg.customDisplayPrice ?? ""}
+                            onChange={(e) => handleCableFieldChange(pkg.id, "customDisplayPrice", e.target.value)}
+                            className="w-28 text-right bg-gray-950 border-gray-800 text-white text-xs h-8 ml-auto focus:border-purple-500"
                           />
                         </td>
-
-                        {/* Formula Calculated Selling Price */}
-                        <td className="px-4 py-3 text-right font-mono font-semibold">
-                          <div className="text-white">
-                            ₦{(plan.displayPrice || 0).toLocaleString()}
-                          </div>
-                          {isManual ? (
-                            <span className="inline-block text-[9px] font-semibold px-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              OVERRIDE
-                            </span>
-                          ) : isHero ? (
-                            <span className="inline-block text-[9px] font-semibold px-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              FORMULA
-                            </span>
-                          ) : null}
-                        </td>
-
-                        {/* Custom Display Price Override */}
-                        <td className="px-4 py-3 text-right">
-                          <Input
-                            type="number"
-                            onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="Auto"
-                            value={plan.customDisplayPrice ?? ""}
-                            onChange={(e) => handleFieldChange(plan.id, "customDisplayPrice", e.target.value)}
-                            className={`w-28 text-right bg-gray-950 text-xs h-8 ml-auto transition-all ${
-                              isManual
-                                ? "text-amber-300 font-bold border-amber-500/60 bg-amber-500/10 focus:border-amber-400"
-                                : "text-gray-300 border-gray-800 hover:border-gray-700 focus:border-orange-500"
-                            }`}
-                          />
-                        </td>
-
-                        {/* Mode Select */}
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() =>
-                              handleFieldChange(
-                                plan.id,
-                                "overrideMode",
-                                isManual ? "AUTOMATIC" : "MANUAL",
-                              )
-                            }
-                            title={isManual ? "Click to switch back to formula pricing" : "Click to activate manual override price"}
-                            className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition-all ${
-                              isManual
-                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30"
-                                : "bg-gray-800 text-gray-400 border-gray-700 hover:text-white hover:bg-gray-700"
-                            }`}
-                          >
-                            {isManual ? "MANUAL" : "AUTO"}
-                          </button>
-                        </td>
-
-                        {/* Net Profit */}
-                        <td className="px-4 py-3 text-right font-mono font-bold">
-                          <span className={profitVal >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                            ₦{profitVal.toLocaleString()}
+                        <td className="px-4 py-3 text-right font-mono">
+                          <span className={Number(pkg.profit || 0) >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                            ₦{Number(pkg.profit || 0).toLocaleString()}
                           </span>
-                          <div className="text-[10px] text-gray-400 font-normal">
-                            CB: ₦{(plan.cashbackAmount || 0).toLocaleString()} ({((plan.cashbackRate || 0) * 100).toFixed(1)}%)
+                          <div className="text-[10px] text-gray-400">
+                            CB: ₦{Number(pkg.cashbackAmount || 0).toLocaleString()}
                           </div>
                         </td>
-
-                        {/* Active Toggle */}
                         <td className="px-4 py-3 text-center">
                           <button
-                            onClick={() => handleFieldChange(plan.id, "isActive", !plan.isActive)}
-                            className={`text-xs font-semibold px-2 py-1 rounded transition-all ${plan.isActive !== false
+                            onClick={() => handleCableFieldChange(pkg.id, "isActive", pkg.isActive === false)}
+                            className={`text-xs font-semibold px-2 py-1 rounded transition-all ${pkg.isActive !== false
                                 ? "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
                                 : "text-gray-500 bg-gray-800 opacity-60 hover:opacity-100"
                               }`}
                           >
-                            {plan.isActive !== false ? "Active" : "Disabled"}
+                            {pkg.isActive !== false ? "Active" : "Disabled"}
                           </button>
                         </td>
-
-                        {/* Save Action */}
                         <td className="px-4 py-3 text-right">
                           <Button
                             size="sm"
-                            onClick={() => handleUpdatePlan(plan)}
-                            disabled={savingRowId === plan.id}
-                            className={`text-xs h-8 px-3 transition-all ${
-                              plan._dirty
-                                ? "bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md shadow-amber-500/25 border-transparent"
-                                : "bg-orange-500/20 hover:bg-orange-500 text-orange-300 hover:text-white border border-orange-500/40"
-                            }`}
+                            onClick={() => handleUpdateCablePackage(pkg)}
+                            disabled={savingRowId === pkg.id}
+                            className={`text-xs h-8 px-3 transition-all ${pkg._dirty
+                                ? "bg-purple-600 hover:bg-purple-500 text-white font-bold"
+                                : "bg-purple-500/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/40"
+                              }`}
                           >
                             <Save className="w-3.5 h-3.5 mr-1" />
-                            {savingRowId === plan.id ? "..." : plan._dirty ? "Save *" : "Save"}
+                            {savingRowId === pkg.id ? "..." : pkg._dirty ? "Save *" : "Save"}
                           </Button>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="bg-gray-900/80 border-gray-800 backdrop-blur-md overflow-hidden">
+            <CardHeader className="p-4 border-b border-gray-800">
+              <CardTitle className="text-lg font-semibold text-white flex items-center justify-between">
+                <span>{activeNetwork} Data Plan Pricing Catalog</span>
+                <span className="text-xs text-gray-400 font-normal">
+                  Showing {networkPlans.length} plans
+                </span>
+              </CardTitle>
+            </CardHeader>
+            {networkPlans.some((p) => p.fallbackApplied) && (
+              <div className="bg-rose-500/10 border-b border-rose-500/20 px-4 py-2.5 text-xs text-rose-300 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>
+                    <strong>Sync Warning:</strong> {networkPlans.filter((p) => p.fallbackApplied).length} plans in {activeNetwork} have fallback defaults applied due to missing fields. Check logs or re-sync with ClubKonnect.
+                  </span>
+                </div>
+              </div>
             )}
-          </CardContent>
-        </Card>
+            <CardContent className="p-0 overflow-x-auto">
+              {loading ? (
+                <div className="p-12 text-center text-gray-400">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto text-orange-500 mb-3" />
+                  Loading pricing configuration catalog...
+                </div>
+              ) : networkPlans.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">
+                  No data plans found for {activeNetwork}. Click "Sync ClubKonnect Costs" above.
+                </div>
+              ) : (
+                <table className="w-full text-left text-sm text-gray-300">
+                  <thead className="bg-gray-950 text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
+                    <tr>
+                      <th className="px-4 py-3">Plan Details</th>
+                      <th className="px-4 py-3 text-right">Wholesale Cost</th>
+                      <th className="px-4 py-3 text-right">Competitor (₦)</th>
+                      <th className="px-4 py-3 text-right">Formula Price</th>
+                      <th className="px-4 py-3 text-right">Override Price (₦)</th>
+                      <th className="px-4 py-3 text-center">Mode</th>
+                      <th className="px-4 py-3 text-right">Net Profit</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/60">
+                    {networkPlans.map((plan) => {
+                      const isManual = plan.overrideMode === "MANUAL";
+                      const isHero = plan.isHero;
+                      const profitVal = Number(plan.profit || 0);
+
+                      return (
+                        <tr key={plan.id} className="hover:bg-gray-800/40 transition-colors">
+                          {/* Plan Title */}
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-white">{plan.planName}</div>
+                            <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
+                              <span>Code: {plan.planId}</span>
+                              <span>•</span>
+                              <span>{plan.validity_period || plan.validity || "30 Days"}</span>
+                              {isHero && (
+                                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                                  HERO
+                                </span>
+                              )}
+                              {plan.fallbackApplied && (
+                                <span
+                                  className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] px-1.5 py-0.5 rounded font-bold cursor-help"
+                                  title={`Fallback defaults applied: ${plan.fallbackReasons?.join("; ") || plan.fallbackFields?.join(", ")}`}
+                                >
+                                  FALLBACK: {plan.fallbackFields?.join(", ")}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Wholesale Cost */}
+                          <td className="px-4 py-3 text-right font-mono text-gray-300">
+                            ₦{(plan.costPrice || 0).toLocaleString()}
+                          </td>
+
+                          {/* Competitor Price Input */}
+                          <td className="px-4 py-3 text-right">
+                            <Input
+                              type="number"
+                              onWheel={(e) => e.currentTarget.blur()}
+                              placeholder="None"
+                              value={plan.competitorPrice ?? ""}
+                              onChange={(e) => handleFieldChange(plan.id, "competitorPrice", e.target.value)}
+                              className="w-24 text-right bg-gray-950 border-gray-800 text-white text-xs h-8 ml-auto focus:border-amber-500 transition-colors"
+                            />
+                          </td>
+
+                          {/* Formula Calculated Selling Price */}
+                          <td className="px-4 py-3 text-right font-mono font-semibold">
+                            <div className="text-white">
+                              ₦{(plan.displayPrice || 0).toLocaleString()}
+                            </div>
+                            {isManual ? (
+                              <span className="inline-block text-[9px] font-semibold px-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                OVERRIDE
+                              </span>
+                            ) : isHero ? (
+                              <span className="inline-block text-[9px] font-semibold px-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                FORMULA
+                              </span>
+                            ) : null}
+                          </td>
+
+                          {/* Custom Display Price Override */}
+                          <td className="px-4 py-3 text-right">
+                            <Input
+                              type="number"
+                              onWheel={(e) => e.currentTarget.blur()}
+                              placeholder="Auto"
+                              value={plan.customDisplayPrice ?? ""}
+                              onChange={(e) => handleFieldChange(plan.id, "customDisplayPrice", e.target.value)}
+                              className={`w-28 text-right bg-gray-950 text-xs h-8 ml-auto transition-all ${isManual
+                                  ? "text-amber-300 font-bold border-amber-500/60 bg-amber-500/10 focus:border-amber-400"
+                                  : "text-gray-300 border-gray-800 hover:border-gray-700 focus:border-orange-500"
+                                }`}
+                            />
+                          </td>
+
+                          {/* Mode Select */}
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() =>
+                                handleFieldChange(
+                                  plan.id,
+                                  "overrideMode",
+                                  isManual ? "AUTOMATIC" : "MANUAL",
+                                )
+                              }
+                              title={isManual ? "Click to switch back to formula pricing" : "Click to activate manual override price"}
+                              className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition-all ${isManual
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30"
+                                  : "bg-gray-800 text-gray-400 border-gray-700 hover:text-white hover:bg-gray-700"
+                                }`}
+                            >
+                              {isManual ? "MANUAL" : "AUTO"}
+                            </button>
+                          </td>
+
+                          {/* Net Profit */}
+                          <td className="px-4 py-3 text-right font-mono font-bold">
+                            <span className={profitVal >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                              ₦{profitVal.toLocaleString()}
+                            </span>
+                            <div className="text-[10px] text-gray-400 font-normal">
+                              CB: ₦{(plan.cashbackAmount || 0).toLocaleString()} ({((plan.cashbackRate || 0) * 100).toFixed(1)}%)
+                            </div>
+                          </td>
+
+                          {/* Active Toggle */}
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() => handleFieldChange(plan.id, "isActive", !plan.isActive)}
+                              className={`text-xs font-semibold px-2 py-1 rounded transition-all ${plan.isActive !== false
+                                ? "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                : "text-gray-500 bg-gray-800 opacity-60 hover:opacity-100"
+                                }`}
+                            >
+                              {plan.isActive !== false ? "Active" : "Disabled"}
+                            </button>
+                          </td>
+
+                          {/* Save Action */}
+                          <td className="px-4 py-3 text-right">
+                            <Button
+                              size="sm"
+                              onClick={() => handleUpdatePlan(plan)}
+                              disabled={savingRowId === plan.id}
+                              className={`text-xs h-8 px-3 transition-all ${plan._dirty
+                                  ? "bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md shadow-amber-500/25 border-transparent"
+                                  : "bg-orange-500/20 hover:bg-orange-500 text-orange-300 hover:text-white border border-orange-500/40"
+                                }`}
+                            >
+                              <Save className="w-3.5 h-3.5 mr-1" />
+                              {savingRowId === plan.id ? "..." : plan._dirty ? "Save *" : "Save"}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Global Configuration Modal */}
         <Dialog open={isConfigModalOpen} onOpenChange={setIsConfigModalOpen}>

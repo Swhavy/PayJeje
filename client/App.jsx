@@ -85,11 +85,13 @@ const App = () => (
     <Provider store={store}>
       <PersistGate
         loading={
-          <div className="w-full h-full overflow-hidden bg-black/40 backdrop-blur-md absolute top-0 z-30 flex flex-auto gap-5">
-            <div className="w-32 h-32 absolute inset-0 m-auto rounded-full border-2 border-gray-500 border-t-orange-500 border-l-blue-500 border-b-green-400 animate-spin"></div>
-            <span className="sticky top-[50%] text-white m-auto inset-0 Z-index">
-              Please wait as rehydrate your data...
-            </span>
+          <div className="fixed inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+            <div className="pw-card px-6 py-5 flex flex-col items-center gap-3 max-w-xs w-full text-center">
+              <div className="w-10 h-10 rounded-full border-2 border-border border-t-brand-500 animate-spin" />
+              <span className="text-sm font-medium text-foreground">
+                Loading PayWaka...
+              </span>
+            </div>
           </div>
         }
         persistor={persistor}
@@ -97,9 +99,9 @@ const App = () => (
         <SpinnerProvider>
           <QueryClientProvider client={queryClient}>
             <TooltipProvider>
-              <Toaster />
-              <Sonner />
               <ThemeProvider>
+                <Toaster />
+                <Sonner />
                 <AuthProvider>
                   <Routes>
                     {/* Public Routes */}

@@ -25,19 +25,22 @@ function unlockBodyScroll() {
 }
 
 /**
- * Shared modal shell component that renders via React Portal directly into document.body.
- * This completely escapes transformed parent containers (sidebars, layouts, animations)
- * which break viewport-relative fixed positioning and cause bottom-left pinning bugs.
+ * Shared modal shell component rendered via React Portal into document.body.
+ * Escapes transformed parent containers so dialogs are always viewport-centered
+ * and mobile sheets dock cleanly at the bottom with a drag handle.
  */
 export default function ModalPortal({
   isOpen,
   onClose,
   children,
+  variant = "dialog", // "dialog" | "sheet"
+  noPadding = false,
   closeOnBackdrop = true,
   closeOnEscape = true,
   className = "",
   maxWidthClass = "max-w-md",
   cardClassName = "",
+  ariaLabel,
 }) {
   const [mounted, setMounted] = useState(false);
 
@@ -45,27 +48,21 @@ export default function ModalPortal({
     setMounted(true);
   }, []);
 
-  // Lock body scroll while modal is open, ref-counted across stacked modals
   useEffect(() => {
     if (!isOpen) return;
-
     lockBodyScroll();
-
     return () => {
       unlockBodyScroll();
     };
   }, [isOpen]);
 
-  // Handle Escape key to dismiss when allowed
   useEffect(() => {
     if (!isOpen || !closeOnEscape) return;
-
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
         onClose?.();
       }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, closeOnEscape, onClose]);
@@ -73,6 +70,8 @@ export default function ModalPortal({
   if (!mounted || typeof document === "undefined") {
     return null;
   }
+
+  const isSheet = variant === "sheet";
 
   return ReactDOM.createPortal(
     <AnimatePresence mode="wait">
@@ -83,11 +82,19 @@ export default function ModalPortal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label={ariaLabel}
+          className={cn(
+            "fixed inset-0 z-[100] flex justify-center overflow-hidden",
+            isSheet
+              ? "items-end sm:items-center p-0 sm:p-6"
+              : "items-center p-4 sm:p-6",
+          )}
         >
-          {/* Full-screen Backdrop Overlay */}
+          {/* Full-screen Frosted Backdrop Overlay */}
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/65 backdrop-blur-md"
             onClick={() => {
               if (closeOnBackdrop) {
                 onClose?.();
@@ -95,26 +102,46 @@ export default function ModalPortal({
             }}
           />
 
-          {/* Centered Modal Card */}
+          {/* Centered Dialog or Mobile Bottom Sheet Card */}
           <motion.div
             key="modal-card"
-            initial={{ opacity: 0, scale: 0.95, y: 12 }}
+            initial={
+              isSheet
+                ? { opacity: 0, y: 40, scale: 0.98 }
+                : { opacity: 0, scale: 0.95, y: 12 }
+            }
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 12 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
+            exit={
+              isSheet
+                ? { opacity: 0, y: 40, scale: 0.98 }
+                : { opacity: 0, scale: 0.95, y: 12 }
+            }
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "relative z-10 w-full mx-auto max-h-[90dvh] overflow-y-auto bg-card text-card-foreground border border-border shadow-2xl rounded-3xl p-6 focus:outline-none",
+              "relative z-10 w-full mx-auto pw-glass-hero text-card-foreground shadow-2xl focus:outline-none",
+              isSheet
+                ? "rounded-t-card rounded-b-none sm:rounded-card max-h-[92dvh] flex flex-col overflow-hidden shadow-sheet sm:shadow-hero"
+                : "rounded-card max-h-[90dvh] overflow-y-auto",
+              !noPadding && "p-5 sm:p-6",
               maxWidthClass,
               cardClassName,
-              className
+              className,
             )}
           >
+            {isSheet && (
+              <div
+                aria-hidden="true"
+                className="sm:hidden flex justify-center pt-2.5 pb-1 shrink-0"
+              >
+                <span className="h-1 w-10 rounded-pill bg-border" />
+              </div>
+            )}
             {children}
           </motion.div>
         </motion.div>
       )}
     </AnimatePresence>,
-    document.body
+    document.body,
   );
 }

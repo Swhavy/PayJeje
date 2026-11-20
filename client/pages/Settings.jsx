@@ -15,12 +15,10 @@ import {
   onAuthStateChanged,
   signOut,
 } from "firebase/auth";
-
-import { addUserCred, changeUserPhoto, clearState } from "@/Features/userSlice";
+import { addUserCred, clearState } from "@/Features/userSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { db, auth, functions } from "@/firebaseConfig";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -38,7 +36,6 @@ import {
   Phone,
   Bell,
   Shield,
-  CreditCard,
   Globe,
   Smartphone,
   Lock,
@@ -50,29 +47,28 @@ import {
   Calendar,
   KeyRound,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useSetting } from "@/components/customHook";
 import { toast } from "sonner";
 import { httpsCallable } from "firebase/functions";
 import PasswordResetModal from "@/components/confirmPasswordModal";
-import { setDoc, doc, collection, getDoc, updateDoc } from "firebase/firestore";
+import { setDoc, doc, getDoc, updateDoc } from "firebase/firestore";
 import TwoFactorSetupModal from "@/components/twoFactorSetup";
 import Disable2FA from "@/components/disable2FA";
 import ChangeTransactionPinModal from "@/components/ChangeTransactionPinModal";
 import TransactionPinSetupModal from "@/components/TransactionPinSetupModal";
 import ResetTransactionPinModal from "@/components/ResetTransactionPinModal";
-import { cn } from "@/lib/utils";
+import { ReceiptStatusPill } from "@/components/receipts/ReceiptParts";
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
   const [is2FAModalOpen, setIs2FAModalOpen] = useState(false);
   const [isChangePinOpen, setIsChangePinOpen] = useState(false);
   const [isSetupPinOpen, setIsSetupPinOpen] = useState(false);
   const [isResetPinOpen, setIsResetPinOpen] = useState(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
-  const [two2FA, setTwo2FA] = useState(false);
-  const { setContext, updateDB } = useSetting();
+  const { updateDB } = useSetting();
   const [credentialSet, setCredentialSet] = useState({
     currentPassword: "",
     newPassword: "",
@@ -83,32 +79,21 @@ export default function SettingsPage() {
   const [buttonLoading, setButtonLoading] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [user, setUser] = useState(null);
-  const [prefButton, setPrefButton] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [updatePasswordVisibilty, setUpdatePasswordVisibility] =
-    useState(false);
+  const [updatePasswordVisibilty, setUpdatePasswordVisibility] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const userData = useSelector((state) => state.user.user);
   const { userPhoto, uid, twoFactor: twoFactorStatus } = userData;
   const dispatch = useDispatch();
-  //call function to update referrer's referrals doc data for this particular user
   const userDPUpdate = httpsCallable(functions, "userDPUpdate");
 
   const [profile, setProfile] = useState({
-    firstName: userData
-      ? userData.firstName || userData.userName || "Divine"
-      : "Divine",
-    lastName: userData ? userData.lastName || "Anyanechi" : "Anyanechi",
-    email: userData
-      ? userData.userEmail || "divineanyanechi@gmail.com"
-      : "divineanyanechi@gmail.com",
-    phone: userData
-      ? userData.userPhone || "+234 801 234 5678"
-      : "+234 801 234 5678",
+    firstName: userData ? userData.firstName || userData.userName || "" : "",
+    lastName: userData ? userData.lastName || "" : "",
+    email: userData ? userData.userEmail || "" : "",
+    phone: userData ? userData.userPhone || "" : "",
     dateOfBirth: "1998-06-15",
-    location: userData
-      ? userData.userState || "Lagos, Nigeria"
-      : "Lagos, Nigeria",
+    location: userData ? userData.userState || "Lagos, Nigeria" : "Lagos, Nigeria",
   });
 
   const [notifications, setNotifications] = useState({
@@ -138,30 +123,34 @@ export default function SettingsPage() {
   const [savedSettings, setSavedSettings] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  //FETCH FROM FIRESTORE ON MOUNT
   useEffect(() => {
+    if (!uid) return;
     const fetchSettings = async () => {
-      const prefDocRef = doc(db, "users", uid, "preferences", uid);
-      const prefSnap = await getDoc(prefDocRef);
+      try {
+        const prefDocRef = doc(db, "users", uid, "preferences", uid);
+        const prefSnap = await getDoc(prefDocRef);
 
-      if (prefSnap.existsProp || prefSnap.exists?.()) {
-        const snapData = prefSnap.data();
-        const securityData = {
-          twoFactor: snapData.twoFactor ?? false,
-          loginAlerts: snapData.loginAlerts ?? false,
-          sessionTimeout: snapData.sessionTimeout ?? "15min",
-        };
-        const notificationData = {
-          email: snapData.email ?? true,
-          push: snapData.push ?? true,
-          sms: snapData.sms ?? false,
-          marketing: snapData.marketing ?? true,
-          surveys: snapData.surveys ?? true,
-          rewards: snapData.rewards ?? true,
-        };
-        setSecurity(securityData);
-        setNotifications(notificationData);
-        setSavedSettings({ ...securityData, ...notificationData }); // snapshot
+        if (prefSnap.existsProp || prefSnap.exists?.()) {
+          const snapData = prefSnap.data();
+          const securityData = {
+            twoFactor: snapData.twoFactor ?? false,
+            loginAlerts: snapData.loginAlerts ?? false,
+            sessionTimeout: snapData.sessionTimeout ?? "15min",
+          };
+          const notificationData = {
+            email: snapData.email ?? true,
+            push: snapData.push ?? true,
+            sms: snapData.sms ?? false,
+            marketing: snapData.marketing ?? true,
+            surveys: snapData.surveys ?? true,
+            rewards: snapData.rewards ?? true,
+          };
+          setSecurity(securityData);
+          setNotifications(notificationData);
+          setSavedSettings({ ...securityData, ...notificationData });
+        }
+      } catch (error) {
+        console.warn("Unable to load user preferences:", error?.message || error);
       }
     };
 
@@ -183,35 +172,43 @@ export default function SettingsPage() {
       notifications.surveys !== savedSettings.surveys ||
       notifications.rewards !== savedSettings.rewards);
 
-  const handleUserPref = useCallback(async (notification) => {
-    if (!notification && !hasSecurityChanges) return;
-    if (notification && !hasNotificationChanges) return;
-    setIsSaving(true);
-    let data = {}
+  const handleUserPref = useCallback(
+    async (notification) => {
+      if (!notification && !hasSecurityChanges) return;
+      if (notification && !hasNotificationChanges) return;
+      setIsSaving(true);
+      const data = notification ? { ...notifications } : { ...security };
 
-    try {
-      const prefDocRef = doc(db, "users", uid, "preferences", uid);
-      // Determine which data to save based on the notification flag
-      notification ? data = { ...notifications } : data = { ...security }
-    await updateDoc(prefDocRef, data);
-     await handleTimeoutChange(
-        security.sessionTimeout,
-        security.loginAlerts,
-        security.twoFactor,
-        notification,
-      );
-      setSavedSettings({ ...data }); // update snapshot so button disables again
-      notification ? toast.success("Notification settings saved.") : toast.success("Security settings saved.");
-    } catch (error) {
-      notification ? toast.error("Failed to save notification settings. Please try again.") : toast.error("Failed to save security settings. Please try again.");
-      console.error(error);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [security, notifications, hasSecurityChanges, hasNotificationChanges, uid]);
+      try {
+        const prefDocRef = doc(db, "users", uid, "preferences", uid);
+        await updateDoc(prefDocRef, data);
+        await handleTimeoutChange(
+          security.sessionTimeout,
+          security.loginAlerts,
+          security.twoFactor,
+          notification,
+        );
+        setSavedSettings((prev) => ({ ...(prev || {}), ...data }));
+        toast.success(
+          notification
+            ? "Notification settings saved."
+            : "Security settings saved.",
+        );
+      } catch (error) {
+        toast.error(
+          notification
+            ? "Failed to save notification settings. Please try again."
+            : "Failed to save security settings. Please try again.",
+        );
+        console.error(error);
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [security, notifications, hasSecurityChanges, hasNotificationChanges, uid],
+  );
 
   const SignOut = () => {
-    console.log("login out..");
     signOut(auth).then(() => {
       dispatch(clearState({}));
       navigate("/auth/Login");
@@ -237,70 +234,47 @@ export default function SettingsPage() {
         timeoutValue = null;
         break;
     }
-    // Update the Redux store with the new preferences
-    notification ? dispatch(
-      addUserCred({
-        emailNotifications: notifications.email,
-        pushNotifications: notifications.push,
-        smsNotifications: notifications.sms,
-        marketingNotifications: notifications.marketing,
-        surveyNotifications: notifications.surveys,
-        rewardNotifications: notifications.rewards,
-      }),
-    ) : dispatch(
-      addUserCred({
-        sessionTimeout: timeoutValue,
-        loginAlerts: loginAlert,
-        twoFactor: twoFA,
-        emailNotifications: notifications.email,
-        pushNotifications: notifications.push,
-        smsNotifications: notifications.sms,
-        marketingNotifications: notifications.marketing,
-        surveyNotifications: notifications.surveys,
-        rewardNotifications: notifications.rewards,
-      }),
-    );
+    notification
+      ? dispatch(
+          addUserCred({
+            emailNotifications: notifications.email,
+            pushNotifications: notifications.push,
+            smsNotifications: notifications.sms,
+            marketingNotifications: notifications.marketing,
+            surveyNotifications: notifications.surveys,
+            rewardNotifications: notifications.rewards,
+          }),
+        )
+      : dispatch(
+          addUserCred({
+            sessionTimeout: timeoutValue,
+            loginAlerts: loginAlert,
+            twoFactor: twoFA,
+            emailNotifications: notifications.email,
+            pushNotifications: notifications.push,
+            smsNotifications: notifications.sms,
+            marketingNotifications: notifications.marketing,
+            surveyNotifications: notifications.surveys,
+            rewardNotifications: notifications.rewards,
+          }),
+        );
   };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser); // null if signed out, user object if signed in
+      setUser(firebaseUser);
     });
-
-    return () => unsub(); // cleanup listener on unmount
+    return () => unsub();
   }, []);
 
-  const preferenceUpdate = useCallback(
-    async (notification, uid) => {
-      setPrefButton(true);
-      try {
-        const res = await setDoc(
-          doc(db, "users", uid, "preferences", uid),
-          { ...notification },
-          { merge: true },
-        );
-        toast.success("Notification preferences updated!");
-        console.log("preference update", res);
-      } catch (err) {
-        toast.error("An error occurred while updating preferences");
-        console.log("preference update error", err);
-      } finally {
-        setPrefButton(false);
-      }
-    },
-    [uid],
-  );
-
   useEffect(() => {
-    const unsubScribe = onAuthStateChanged(auth, (user) => {
-      // Allow change password always for this sleek dashboard flow
+    const unsubScribe = onAuthStateChanged(auth, () => {
       setUpdatePasswordVisibility(true);
     });
     return () => unsubScribe();
   }, []);
 
   const handlePasswordUpdate = async (currentPassword, newPassword) => {
-    console.log(`current: ${currentPassword} \nnew: ${newPassword}`);
     const User = auth?.currentUser;
     if (newPassword !== credentialSet.confirmPassword) {
       toast.error("New password and confirm password do not match");
@@ -312,12 +286,9 @@ export default function SettingsPage() {
         profile.email,
         currentPassword,
       );
-      const reauthResult = await reauthenticateWithCredential(
-        User,
-        userCredential,
-      );
-      const res = await firebaseUpdatePassword(User, newPassword);
-      toast.success("Password Successfully Reset");
+      await reauthenticateWithCredential(User, userCredential);
+      await firebaseUpdatePassword(User, newPassword);
+      toast.success("Password successfully updated");
     } catch (err) {
       if (err.code === "auth/wrong-password") {
         toast.error("Current password is incorrect");
@@ -329,28 +300,20 @@ export default function SettingsPage() {
     }
   };
 
-  //controlled Input
   const controlledInput = (e) => {
     const { name, value } = e.target;
     setCredentialSet((prev) => ({ ...prev, [name]: value }));
   };
 
-  //Programatically click an input field
   const handleButtonClick = () => {
-    fileInputRef.current.click(); // Programmatically click the hidden input
+    fileInputRef.current?.click();
   };
 
   const handleSaveProfile = () => {
-    console.log("Saving profile:", profile);
     toast.success("Profile updated successfully!");
   };
 
-  const handleSaveNotifications = async () => {
-    await preferenceUpdate(notifications, uid);
-  };
-
   const handleSavePreferences = () => {
-    console.log("Saving preferences:", preferences);
     toast.success("App preferences updated!");
   };
 
@@ -365,21 +328,17 @@ export default function SettingsPage() {
         },
       );
       const result = await res.json();
-      //stores the users profile pic in the DB
       const call = await userDPUpdate({ uid: userData.uid, DP: result.url });
-      console.log("call", call);
       if (call.data?.status === "success") {
         updateDB("userPhoto", result.url);
         dispatch(addUserCred({ userPhoto: result.url }));
         setUploading(false);
-        console.log("upload to cloudinary", result);
         return toast.success("Photo upload successful");
       } else {
         toast.error(call.data?.message || "Cloudinary error");
       }
     } catch (error) {
       setUploading(false);
-      // Fallback for mock environment
       const mockURL =
         "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=face";
       dispatch(addUserCred({ userPhoto: mockURL }));
@@ -388,17 +347,15 @@ export default function SettingsPage() {
     }
   };
 
-  //handles pic file upload
   const handlePic = (e) => {
     const pic = e.target.files[0];
     const max = 2 * 1024 * 1024;
-
     if (pic) {
       if (!pic.type.startsWith("image/")) {
-        toast.error("Please Select a valid Image File e.g PNG, GIF, JPEG etc.");
+        toast.error("Please select a valid image file (PNG, GIF, JPEG)");
         return;
       } else if (pic.size > max) {
-        toast.error("Please Upload An Image That Is Not Above 2MB");
+        toast.error("Please upload an image under 2MB");
         return;
       } else {
         const form = new FormData();
@@ -412,87 +369,81 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-4xl mx-auto px-1 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-card/40 p-5 rounded-3xl border border-border/60">
+      <div className="space-y-6 max-w-3xl">
+        {/* Unified Page Header (no nested card wrapper) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-foreground font-display tracking-tight">
-              Account Settings
-            </h1>
-            <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-              Manage your account preferences and security
+            <h1 className="pw-page-title">Settings</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage your profile, notifications, PIN, and security preferences.
             </p>
           </div>
-          <Badge className="bg-green-500/10 border border-green-500/25 text-primary dark:text-green-400 w-fit rounded-xl px-3.5 py-1.5 flex items-center font-bold text-[11px] sm:text-xs uppercase tracking-wider">
-            <Shield className="h-4 w-4 mr-2" />
-            Verified Account
-          </Badge>
+          <span className="pw-chip-brand w-fit">
+            <Shield className="h-3.5 w-3.5" />
+            <span>Verified Account</span>
+          </span>
         </div>
 
-        {/* Settings Tabs */}
+        {/* Sentence-case Apple Segmented Tabs */}
         <Tabs defaultValue="profile" className="space-y-5">
-          <TabsList className="flex w-full overflow-x-auto overflow-y-hidden justify-start sm:grid sm:grid-cols-4 bg-card/60 p-[.05rem] rounded-2xl border border-border gap-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x">
+          <TabsList className="pw-segmented grid grid-cols-4 w-full h-auto gap-0.5 sm:gap-1">
             <TabsTrigger
               value="profile"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="min-h-9 px-1 sm:px-3 rounded-pill text-[11px] sm:text-xs font-semibold text-muted-foreground data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm whitespace-nowrap truncate"
             >
               Profile
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="min-h-9 px-1 sm:px-3 rounded-pill text-[11px] sm:text-xs font-semibold text-muted-foreground data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm whitespace-nowrap truncate"
             >
               Notifications
             </TabsTrigger>
             <TabsTrigger
               value="security"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="min-h-9 px-1 sm:px-3 rounded-pill text-[11px] sm:text-xs font-semibold text-muted-foreground data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm whitespace-nowrap truncate"
             >
               Security
             </TabsTrigger>
             <TabsTrigger
               value="preferences"
-              className="flex-1 sm:flex-none py-2.5 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-muted-foreground data-[state=active]:bg-green-500/10 data-[state=active]:text-primary dark:text-green-400 data-[state=active]:border data-[state=active]:border-green-500/20 transition-all cursor-pointer snap-center whitespace-nowrap"
+              className="min-h-9 px-1 sm:px-3 rounded-pill text-[11px] sm:text-xs font-semibold text-muted-foreground data-[state=active]:bg-brand-tint data-[state=active]:text-brand-400 data-[state=active]:shadow-sm whitespace-nowrap truncate"
             >
               Preferences
             </TabsTrigger>
           </TabsList>
 
-          {/* Profile Tab */}
-          <TabsContent
-            value="profile"
-            className="space-y-5 animate-in fade-in-50 duration-200"
-          >
-            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
-                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
-                  Profile Information
-                </CardTitle>
-                <CardDescription className="text-muted-foreground text-xs mt-1">
-                  Update your personal information and profile details
+          {/* PROFILE TAB (single card level) */}
+          <TabsContent value="profile" className="space-y-6 mt-0">
+            <Card>
+              <CardHeader className="border-b border-border pb-4">
+                <CardTitle>Profile Information</CardTitle>
+                <CardDescription>
+                  Update your personal details and profile photo
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-5 sm:p-6 space-y-6">
-                {/* Profile Picture Profile Widget */}
-                <div className="flex flex-col sm:flex-row items-center gap-5 sm:gap-6 bg-card/50 p-4 sm:p-5 rounded-2xl border border-border/70">
-                  <div className="relative w-20 h-20 bg-green-500/5 rounded-full flex items-center justify-center border border-green-500/15 shadow-inner shrink-0">
+              <CardContent className="p-4 sm:p-5 space-y-5">
+                {/* Profile Photo Row (no nested card) */}
+                <div className="flex items-center gap-4 pb-5 border-b border-border">
+                  <div className="relative w-16 h-16 bg-brand-tint rounded-pill flex items-center justify-center border border-brand-400/25 shrink-0 overflow-hidden">
                     {uploading && (
-                      <div className="absolute inset-0 z-50 m-auto w-6 h-6 rounded-full animate-spin border-4 border-t-muted-foreground border-r-transparent border-b-zinc-400 border-l-transparent"></div>
+                      <div className="absolute inset-0 z-10 m-auto w-6 h-6 rounded-full animate-spin border-2 border-brand-400 border-t-transparent" />
                     )}
                     {userPhoto ? (
                       <img
                         src={userPhoto}
-                        className="h-full w-full rounded-full object-cover"
-                        alt="Profile DP"
+                        className="h-full w-full object-cover"
+                        alt="Profile photo"
                       />
                     ) : (
-                      <User className="h-10 w-10 text-primary dark:text-green-400" />
+                      <User className="h-7 w-7 text-brand-400" />
                     )}
                   </div>
-                  <div className="flex flex-col items-center sm:items-start gap-2.5 w-full">
+                  <div className="space-y-1.5">
                     <Button
+                      type="button"
                       variant="outline"
-                      className="border-border text-foreground hover:text-foreground hover:bg-muted bg-transparent rounded-xl h-10 w-full sm:w-auto text-xs font-bold"
+                      size="sm"
                       onClick={handleButtonClick}
                     >
                       <input
@@ -502,22 +453,19 @@ export default function SettingsPage() {
                         accept="image/*"
                         className="hidden"
                       />
-                      <Camera className="h-4 w-4 mr-2 text-primary dark:text-green-400" />
-                      Change Photo
+                      <Camera className="h-4 w-4 text-brand-400" />
+                      <span>Change Photo</span>
                     </Button>
-                    <p className="text-[11px] text-muted-foreground text-center sm:text-left">
-                      JPG, PNG or GIF. Max size 2MB.
+                    <p className="text-caption text-muted-foreground">
+                      JPG, PNG, or GIF up to 2MB
                     </p>
                   </div>
                 </div>
 
-                {/* Personal Information Form Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                {/* Form Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="firstName"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
+                    <Label htmlFor="firstName" className="pw-label block">
                       First Name
                     </Label>
                     <Input
@@ -527,15 +475,12 @@ export default function SettingsPage() {
                         setProfile({ ...profile, firstName: e.target.value })
                       }
                       readOnly
-                      className="bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
+                      className="bg-muted/50 text-muted-foreground cursor-not-allowed"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="lastName"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
+                    <Label htmlFor="lastName" className="pw-label block">
                       Last Name
                     </Label>
                     <Input
@@ -545,19 +490,16 @@ export default function SettingsPage() {
                         setProfile({ ...profile, lastName: e.target.value })
                       }
                       readOnly
-                      className="bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
+                      className="bg-muted/50 text-muted-foreground cursor-not-allowed"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="email"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
+                    <Label htmlFor="email" className="pw-label block">
                       Email Address
                     </Label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                       <Input
                         id="email"
                         type="email"
@@ -566,65 +508,55 @@ export default function SettingsPage() {
                           setProfile({ ...profile, email: e.target.value })
                         }
                         readOnly
-                        className="pl-10 bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
+                        className="pl-10 bg-muted/50 text-muted-foreground cursor-not-allowed"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="phone"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
+                    <Label htmlFor="phone" className="pw-label block">
                       Phone Number
                     </Label>
                     <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                       <Input
                         id="phone"
+                        type="tel"
+                        inputMode="numeric"
                         value={profile.phone}
                         onChange={(e) =>
                           setProfile({ ...profile, phone: e.target.value })
                         }
                         readOnly
-                        className="pl-10 bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
+                        className="pl-10 pw-num bg-muted/50 text-muted-foreground cursor-not-allowed"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="dateOfBirth"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
+                    <Label htmlFor="dateOfBirth" className="pw-label block">
                       Date of Birth
                     </Label>
                     <div className="relative">
-                      <Calendar className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                      <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                       <Input
                         id="dateOfBirth"
                         type="date"
                         value={profile.dateOfBirth}
                         onChange={(e) =>
-                          setProfile({
-                            ...profile,
-                            dateOfBirth: e.target.value,
-                          })
+                          setProfile({ ...profile, dateOfBirth: e.target.value })
                         }
-                        className="pl-10 bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
+                        className="pl-10"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label
-                      htmlFor="location"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
+                    <Label htmlFor="location" className="pw-label block">
                       Location
                     </Label>
                     <div className="relative">
-                      <MapPin className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                      <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                       <Input
                         id="location"
                         value={profile.location}
@@ -632,153 +564,123 @@ export default function SettingsPage() {
                           setProfile({ ...profile, location: e.target.value })
                         }
                         readOnly
-                        className="pl-10 bg-muted/30 border-border text-muted-foreground rounded-xl h-11 sm:h-12 text-sm cursor-not-allowed focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border"
+                        className="pl-10 bg-muted/50 text-muted-foreground cursor-not-allowed"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end pt-1">
                   <Button
+                    type="button"
                     onClick={handleSaveProfile}
-                    className="bg-green-500/20 hover:bg-green-500/30 text-primary dark:text-green-400 border border-green-500/20 cursor-not-allowed h-11 px-6 rounded-xl w-full sm:w-auto font-bold text-xs uppercase tracking-wider"
-                    disabled={true}
+                    disabled
+                    className="w-full sm:w-auto"
                   >
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Changes
+                    <Save className="h-4 w-4" />
+                    <span>Save Changes</span>
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Change Password */}
             {updatePasswordVisibilty && (
-              <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
-                <CardHeader className="p-5 sm:p-6 border-b border-border/60">
-                  <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
-                    Change Password
-                  </CardTitle>
-                  <CardDescription className="text-muted-foreground text-xs mt-1">
+              <Card>
+                <CardHeader className="border-b border-border pb-4">
+                  <CardTitle>Change Password</CardTitle>
+                  <CardDescription>
                     Update your password to keep your account secure
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="p-5 sm:p-6 space-y-4">
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="currentPassword"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
-                      Current Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="currentPassword"
-                        name="currentPassword"
-                        value={credentialSet.currentPassword}
-                        onChange={controlledInput}
-                        type={showCurrentPassword ? "text" : "password"}
-                        className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          setShowCurrentPassword(!showCurrentPassword)
-                        }
-                      >
-                        {showCurrentPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
+                <CardContent className="p-4 sm:p-5 space-y-4">
+                  <div className="max-w-md space-y-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="currentPassword" className="pw-label block">
+                        Current Password
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="currentPassword"
+                          name="currentPassword"
+                          value={credentialSet.currentPassword}
+                          onChange={controlledInput}
+                          type={showCurrentPassword ? "text" : "password"}
+                          className="pr-12"
+                        />
+                        <button
+                          type="button"
+                          aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+                          className="pw-tap absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        >
+                          {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="newPassword" className="pw-label block">
+                        New Password
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="newPassword"
+                          name="newPassword"
+                          value={credentialSet.newPassword}
+                          type={showNewPassword ? "text" : "password"}
+                          onChange={controlledInput}
+                          className="pr-12"
+                        />
+                        <button
+                          type="button"
+                          aria-label={showNewPassword ? "Hide password" : "Show password"}
+                          className="pw-tap absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                        >
+                          {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="confirmPassword" className="pw-label block">
+                        Confirm New Password
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="confirmPassword"
+                          name="confirmPassword"
+                          value={credentialSet.confirmPassword}
+                          type={showConfirmPassword ? "text" : "password"}
+                          onChange={controlledInput}
+                          className="pr-12"
+                        />
+                        <button
+                          type="button"
+                          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                          className="pw-tap absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground inline-flex items-center justify-center"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="newPassword"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
-                      New Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="newPassword"
-                        name="newPassword"
-                        value={credentialSet.newPassword}
-                        type={showNewPassword ? "text" : "password"}
-                        onChange={controlledInput}
-                        className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                      >
-                        {showNewPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="confirmPassword"
-                      className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider"
-                    >
-                      Confirm New Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        value={credentialSet.confirmPassword}
-                        type={showConfirmPassword ? "text" : "password"}
-                        onChange={controlledInput}
-                        className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 text-sm pr-11 focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          setShowConfirmPassword(!showConfirmPassword)
-                        }
-                      >
-                        {showConfirmPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-2">
+                  <div className="flex justify-end pt-1">
                     <Button
                       type="button"
-                      className="bg-green-500 hover:bg-green-600 text-black h-11 px-6 rounded-xl w-full sm:w-auto font-bold text-xs uppercase tracking-wider"
-                      onClick={() => {
-                        setIsModalOpen(true);
-                      }}
+                      onClick={() => setIsModalOpen(true)}
                       disabled={
                         buttonLoading ||
                         !credentialSet.currentPassword ||
                         !credentialSet.newPassword ||
                         !credentialSet.confirmPassword
                       }
+                      className="w-full sm:w-auto"
                     >
-                      <Lock className="h-4 w-4 mr-2" />
-                      Update Password
+                      <Lock className="h-4 w-4" />
+                      <span>Update Password</span>
                     </Button>
                   </div>
                 </CardContent>
@@ -786,211 +688,177 @@ export default function SettingsPage() {
             )}
           </TabsContent>
 
-          {/* Notifications Tab */}
-          <TabsContent
-            value="notifications"
-            className="space-y-5 animate-in fade-in-50 duration-200"
-          >
-            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
-                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
-                  Notification Preferences
-                </CardTitle>
-                <CardDescription className="text-muted-foreground text-xs mt-1">
-                  Choose how you want to receive notifications
+          {/* NOTIFICATIONS TAB (single card level, flat divide-y rows) */}
+          <TabsContent value="notifications" className="mt-0">
+            <Card>
+              <CardHeader className="border-b border-border pb-4">
+                <CardTitle>Notification Preferences</CardTitle>
+                <CardDescription>
+                  Choose how you want to receive PayWaka updates
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-5 sm:p-6 space-y-6">
-                <div className="space-y-3.5">
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400 shrink-0">
-                        <Mail className="h-4.5 w-4.5" />
+              <CardContent className="p-4 sm:p-5 space-y-5">
+                <div className="divide-y divide-border">
+                  <div className="flex items-center justify-between gap-3 py-3.5 first:pt-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="pw-tile-neutral h-9 w-9">
+                        <Mail className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <Label className="text-sm font-bold text-foreground block">
                           Email Notifications
                         </Label>
-                        <p className="text-xs text-muted-foreground truncate">
-                          Receive notifications via email
+                        <p className="text-caption text-muted-foreground truncate">
+                          Receipts and account alerts via email
                         </p>
                       </div>
                     </div>
                     <Switch
                       checked={notifications.email}
-                      onCheckedChange={async (checked) => {
-                        setNotifications((prev) => ({
-                          ...prev,
-                          email: checked,
-                        }));
-                      }}
+                      onCheckedChange={(checked) =>
+                        setNotifications((prev) => ({ ...prev, email: checked }))
+                      }
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-primary dark:text-green-400 shrink-0">
-                        <Smartphone className="h-4.5 w-4.5" />
+                  <div className="flex items-center justify-between gap-3 py-3.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="pw-tile h-9 w-9">
+                        <Smartphone className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <Label className="text-sm font-bold text-foreground block">
                           Push Notifications
                         </Label>
-                        <p className="text-xs text-muted-foreground truncate">
-                          Receive push notifications on your device
+                        <p className="text-caption text-muted-foreground truncate">
+                          Instant alerts on your device
                         </p>
                       </div>
                     </div>
                     <Switch
                       checked={notifications.push}
-                      onCheckedChange={(checked) => {
-                        setNotifications((prev) => ({
-                          ...prev,
-                          push: checked,
-                        }));
-                      }}
+                      onCheckedChange={(checked) =>
+                        setNotifications((prev) => ({ ...prev, push: checked }))
+                      }
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-400 shrink-0">
-                        <Phone className="h-4.5 w-4.5" />
+                  <div className="flex items-center justify-between gap-3 py-3.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="pw-tile-neutral h-9 w-9">
+                        <Phone className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <Label className="text-sm font-bold text-foreground block">
                           SMS Notifications
                         </Label>
-                        <p className="text-xs text-muted-foreground truncate">
-                          Receive important updates via SMS
+                        <p className="text-caption text-muted-foreground truncate">
+                          Critical transaction alerts via SMS
                         </p>
                       </div>
                     </div>
                     <Switch
                       checked={notifications.sms}
-                      onCheckedChange={(checked) => {
-                        setNotifications((prev) => ({
-                          ...prev,
-                          sms: checked,
-                        }));
-                      }}
+                      onCheckedChange={(checked) =>
+                        setNotifications((prev) => ({ ...prev, sms: checked }))
+                      }
                     />
                   </div>
                 </div>
 
-                <div className="border-t border-border/60 pt-6">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-4">
-                    Notification Types
-                  </h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0 pr-4">
-                        <Label className="text-sm font-bold text-foreground block">
+                <div className="border-t border-border pt-4 space-y-3">
+                  <span className="pw-label block">NOTIFICATION TYPES</span>
+                  <div className="divide-y divide-border">
+                    <div className="flex items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <Label className="text-sm font-semibold text-foreground block">
                           Marketing & Promotions
                         </Label>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          Special offers and promotional content
+                        <p className="text-caption text-muted-foreground">
+                          Special offers and cashback promos
                         </p>
                       </div>
                       <Switch
                         checked={notifications.marketing}
-                        onCheckedChange={(checked) => {
-                          setNotifications((prev) => ({
-                            ...prev,
-                            marketing: checked,
-                          }));
-                        }}
+                        onCheckedChange={(checked) =>
+                          setNotifications((prev) => ({ ...prev, marketing: checked }))
+                        }
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0 pr-4">
-                        <Label className="text-sm font-bold text-foreground block">
+                    <div className="flex items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <Label className="text-sm font-semibold text-foreground block">
                           Survey Invitations
                         </Label>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
+                        <p className="text-caption text-muted-foreground">
                           New survey opportunities
                         </p>
                       </div>
                       <Switch
                         checked={notifications.surveys}
-                        onCheckedChange={(checked) => {
-                          setNotifications((prev) => ({
-                            ...prev,
-                            surveys: checked,
-                          }));
-                        }}
+                        onCheckedChange={(checked) =>
+                          setNotifications((prev) => ({ ...prev, surveys: checked }))
+                        }
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0 pr-4">
-                        <Label className="text-sm font-bold text-foreground block">
+                    <div className="flex items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <Label className="text-sm font-semibold text-foreground block">
                           Rewards & Points
                         </Label>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          Point earnings and reward updates
+                        <p className="text-caption text-muted-foreground">
+                          Point earnings and streak updates
                         </p>
                       </div>
                       <Switch
                         checked={notifications.rewards}
-                        onCheckedChange={(checked) => {
-                          setNotifications((prev) => ({
-                            ...prev,
-                            rewards: checked,
-                          }));
-                        }}
+                        onCheckedChange={(checked) =>
+                          setNotifications((prev) => ({ ...prev, rewards: checked }))
+                        }
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end pt-1">
                   <Button
-                    onClick={() => handleUserPref(false)}
+                    type="button"
+                    onClick={() => handleUserPref(true)}
                     disabled={!hasNotificationChanges || isSaving}
-                    className={`flex items-center justify-center gap-2 h-11 px-6 rounded-xl font-bold text-xs uppercase tracking-wider transition-all w-full sm:w-auto
-                      ${
-                        hasNotificationChanges && !isSaving
-                          ? "bg-green-500 text-black cursor-pointer hover:bg-green-400"
-                          : "bg-green-500/10 text-green-500/40 border border-green-500/5 cursor-not-allowed"
-                      }`}
+                    className="w-full sm:w-auto"
                   >
-                    <Bell className="h-4 w-4 mr-2" />
-                    {isSaving ? "Saving..." : "Save Notification Settings"}
+                    <Bell className="h-4 w-4" />
+                    <span>{isSaving ? "Saving..." : "Save Notification Settings"}</span>
                   </Button>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Security Tab */}
-          <TabsContent
-            value="security"
-            className="space-y-5 animate-in fade-in-50 duration-200"
-          >
-            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
-                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
-                  Security Settings
-                </CardTitle>
-                <CardDescription className="text-muted-foreground text-xs mt-1">
-                  Manage your account security and privacy
+          {/* SECURITY TAB (single card level, flat divide-y rows) */}
+          <TabsContent value="security" className="mt-0">
+            <Card>
+              <CardHeader className="border-b border-border pb-4">
+                <CardTitle>Security Settings</CardTitle>
+                <CardDescription>
+                  Manage authentication, Transaction PIN, and session timeout
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-5 sm:p-6 space-y-6">
-                <div className="space-y-3.5">
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl text-primary dark:text-green-400 shrink-0">
-                        <Shield className="h-4.5 w-4.5" />
+              <CardContent className="p-4 sm:p-5 space-y-5">
+                <div className="divide-y divide-border">
+                  <div className="flex items-center justify-between gap-3 py-3.5 first:pt-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="pw-tile h-9 w-9">
+                        <Shield className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <Label className="text-sm font-bold text-foreground block">
                           Two-Factor Authentication
                         </Label>
-                        <p className="text-xs text-muted-foreground truncate">
-                          Add an extra layer of security to your account
+                        <p className="text-caption text-muted-foreground truncate">
+                          Protect logins with an authenticator app
                         </p>
                       </div>
                     </div>
@@ -1000,45 +868,38 @@ export default function SettingsPage() {
                         if (!checked) {
                           set2FADisable(true);
                         }
-                        setSecurity((prev) => ({
-                          ...prev,
-                          twoFactor: checked,
-                        }));
+                        setSecurity((prev) => ({ ...prev, twoFactor: checked }));
                         setIs2FAModalOpen(checked);
                       }}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400 shrink-0">
-                        <Bell className="h-4.5 w-4.5" />
+                  <div className="flex items-center justify-between gap-3 py-3.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="pw-tile-neutral h-9 w-9">
+                        <Bell className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <Label className="text-sm font-bold text-foreground block">
                           Login Alerts
                         </Label>
-                        <p className="text-xs text-muted-foreground truncate">
-                          Get notified of new login attempts
+                        <p className="text-caption text-muted-foreground truncate">
+                          Get notified of new sign-ins
                         </p>
                       </div>
                     </div>
                     <Switch
                       checked={security.loginAlerts}
                       onCheckedChange={(checked) =>
-                        setSecurity((prev) => ({
-                          ...prev,
-                          loginAlerts: checked,
-                        }))
+                        setSecurity((prev) => ({ ...prev, loginAlerts: checked }))
                       }
                     />
                   </div>
 
-                  {/* Transaction PIN Management Card */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-card/40 border border-border/60 hover:bg-muted/10 transition-colors gap-3.5">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-500 shrink-0">
-                        <KeyRound className="h-4.5 w-4.5" />
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-panel bg-warning/10 border border-warning/25 text-warning inline-flex items-center justify-center shrink-0">
+                        <KeyRound className="h-4 w-4" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -1046,17 +907,13 @@ export default function SettingsPage() {
                             Transaction PIN
                           </Label>
                           {userData?.hasTransactionPin ? (
-                            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold px-2 py-0.5">
-                              Active
-                            </Badge>
+                            <ReceiptStatusPill status="success" label="ACTIVE" className="text-[9px] px-2 py-0.5" />
                           ) : (
-                            <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] font-bold px-2 py-0.5">
-                              Not Set
-                            </Badge>
+                            <ReceiptStatusPill status="pending" label="NOT SET" className="text-[9px] px-2 py-0.5" />
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          4-digit secret PIN required to authorize every purchase
+                        <p className="text-caption text-muted-foreground truncate">
+                          4-digit PIN required to authorize purchases
                         </p>
                       </div>
                     </div>
@@ -1068,7 +925,6 @@ export default function SettingsPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => setIsChangePinOpen(true)}
-                            className="h-9 px-3.5 rounded-xl text-xs font-bold border-border/80 hover:bg-muted/50"
                           >
                             Change PIN
                           </Button>
@@ -1077,7 +933,6 @@ export default function SettingsPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => setIsResetPinOpen(true)}
-                            className="h-9 px-3 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted/40"
                           >
                             Reset PIN
                           </Button>
@@ -1087,7 +942,6 @@ export default function SettingsPage() {
                           type="button"
                           size="sm"
                           onClick={() => setIsSetupPinOpen(true)}
-                          className="h-9 px-3.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs font-bold shadow-sm"
                         >
                           Create PIN
                         </Button>
@@ -1096,217 +950,115 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2 border-t border-border/60 pt-6">
-                  <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block mb-1">
-                    Session Timeout
-                  </Label>
+                <div className="space-y-2 border-t border-border pt-4 max-w-sm">
+                  <Label className="pw-label block">Session Timeout</Label>
                   <Select
                     value={security.sessionTimeout}
                     onValueChange={(value) => {
                       setSecurity({ ...security, sessionTimeout: value });
-                      console.log("session timeout change", value);
                     }}
                   >
-                    <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
-                      <SelectValue placeholder="Select Timeout" />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select timeout" />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border text-foreground">
-                      <SelectItem
-                        value="15min"
-                        className="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        15 minutes
-                      </SelectItem>
-                      <SelectItem
-                        value="30min"
-                        className="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        30 minutes
-                      </SelectItem>
-                      <SelectItem
-                        value="0.5min"
-                        className="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        0.5 minutes
-                      </SelectItem>
-                      <SelectItem
-                        value="1hour"
-                        className="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        1 hour
-                      </SelectItem>
-                      <SelectItem
-                        value="never"
-                        className="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        Never
-                      </SelectItem>
+                      <SelectItem value="15min" className="min-h-11">15 minutes</SelectItem>
+                      <SelectItem value="30min" className="min-h-11">30 minutes</SelectItem>
+                      <SelectItem value="0.5min" className="min-h-11">0.5 minutes</SelectItem>
+                      <SelectItem value="1hour" className="min-h-11">1 hour</SelectItem>
+                      <SelectItem value="never" className="min-h-11">Never</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Automatically log out after this period of inactivity
+                  <p className="text-caption text-muted-foreground">
+                    Automatically lock your session after inactivity
                   </p>
                 </div>
 
-                <div className="flex justify-end pt-2">
-                  <button
+                <div className="flex justify-end pt-1">
+                  <Button
+                    type="button"
                     onClick={() => handleUserPref(false)}
                     disabled={!hasSecurityChanges || isSaving}
-                    className={`flex items-center justify-center gap-2 h-11 px-6 rounded-xl font-bold text-xs uppercase tracking-wider transition-all w-full sm:w-auto
-                      ${
-                        hasSecurityChanges && !isSaving
-                          ? "bg-green-500 text-black cursor-pointer hover:bg-green-400"
-                          : "bg-green-500/10 text-green-500/40 border border-green-500/5 cursor-not-allowed"
-                      }`}
+                    className="w-full sm:w-auto"
                   >
-                    <Lock className="h-4 w-4 mr-2" />
-                    {isSaving ? "Saving..." : "Save Security Settings"}
-                  </button>
+                    <Lock className="h-4 w-4" />
+                    <span>{isSaving ? "Saving..." : "Save Security Settings"}</span>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Preferences Tab */}
-          <TabsContent
-            value="preferences"
-            className="space-y-5 animate-in fade-in-50 duration-200"
-          >
-            <Card className="bg-card/45 border-border/80 rounded-3xl overflow-hidden shadow-2xl">
-              <CardHeader className="p-5 sm:p-6 border-b border-border/60">
-                <CardTitle className="text-foreground text-lg sm:text-xl font-black font-display tracking-tight">
-                  App Preferences
-                </CardTitle>
-                <CardDescription className="text-muted-foreground text-xs mt-1">
-                  Customize your app experience
-                </CardDescription>
+          {/* PREFERENCES TAB */}
+          <TabsContent value="preferences" className="mt-0">
+            <Card>
+              <CardHeader className="border-b border-border pb-4">
+                <CardTitle>App Preferences</CardTitle>
+                <CardDescription>Customize language, currency, and theme</CardDescription>
               </CardHeader>
-              <CardContent className="p-5 sm:p-6 space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+              <CardContent className="p-4 sm:p-5 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
-                      Language
-                    </Label>
+                    <Label className="pw-label block">Language</Label>
                     <Select
                       value={preferences.language}
                       onValueChange={(value) =>
                         setPreferences({ ...preferences, language: value })
                       }
                     >
-                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border text-foreground">
-                        <SelectItem
-                          value="en"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          English
-                        </SelectItem>
-                        <SelectItem
-                          value="yo"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Yoruba
-                        </SelectItem>
-                        <SelectItem
-                          value="ig"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Igbo
-                        </SelectItem>
-                        <SelectItem
-                          value="ha"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Hausa
-                        </SelectItem>
+                        <SelectItem value="en" className="min-h-11">English</SelectItem>
+                        <SelectItem value="yo" className="min-h-11">Yoruba</SelectItem>
+                        <SelectItem value="ig" className="min-h-11">Igbo</SelectItem>
+                        <SelectItem value="ha" className="min-h-11">Hausa</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
-                      Currency
-                    </Label>
+                    <Label className="pw-label block">Currency</Label>
                     <Select
                       value={preferences.currency}
                       onValueChange={(value) =>
                         setPreferences({ ...preferences, currency: value })
                       }
                     >
-                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border text-foreground">
-                        <SelectItem
-                          value="NGN"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Nigerian Naira (₦)
-                        </SelectItem>
-                        <SelectItem
-                          value="USD"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          US Dollar ($)
-                        </SelectItem>
-                        <SelectItem
-                          value="EUR"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Euro (€)
-                        </SelectItem>
-                        <SelectItem
-                          value="GBP"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          British Pound (£)
-                        </SelectItem>
+                        <SelectItem value="NGN" className="min-h-11">Nigerian Naira (₦)</SelectItem>
+                        <SelectItem value="USD" className="min-h-11">US Dollar ($)</SelectItem>
+                        <SelectItem value="EUR" className="min-h-11">Euro (€)</SelectItem>
+                        <SelectItem value="GBP" className="min-h-11">British Pound (£)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
-                      Timezone
-                    </Label>
+                    <Label className="pw-label block">Timezone</Label>
                     <Select
                       value={preferences.timezone}
                       onValueChange={(value) =>
                         setPreferences({ ...preferences, timezone: value })
                       }
                     >
-                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border text-foreground">
-                        <SelectItem
-                          value="Africa/Lagos"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Lagos (WAT)
-                        </SelectItem>
-                        <SelectItem
-                          value="Africa/Abuja"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Abuja (WAT)
-                        </SelectItem>
-                        <SelectItem
-                          value="UTC"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          UTC
-                        </SelectItem>
+                        <SelectItem value="Africa/Lagos" className="min-h-11">Lagos (WAT)</SelectItem>
+                        <SelectItem value="Africa/Abuja" className="min-h-11">Abuja (WAT)</SelectItem>
+                        <SelectItem value="UTC" className="min-h-11">UTC</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-[10px] sm:text-[11px] font-black uppercase tracking-wider block">
-                      Theme
-                    </Label>
+                    <Label className="pw-label block">Theme</Label>
                     <Select
                       value={preferences.theme}
                       onValueChange={(value) => {
@@ -1314,7 +1066,6 @@ export default function SettingsPage() {
                           const media = window.matchMedia(
                             "(prefers-color-scheme: dark)",
                           ).matches;
-                          console.log("media", media);
                           setPreferences({ ...preferences, theme: value });
                           return setTheme(media ? "dark" : "light");
                         }
@@ -1322,40 +1073,26 @@ export default function SettingsPage() {
                         return setPreferences({ ...preferences, theme: value });
                       }}
                     >
-                      <SelectTrigger className="bg-card/60 border-border text-foreground rounded-xl h-11 sm:h-12 focus:border-green-500">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border text-foreground">
-                        <SelectItem
-                          value="light"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Light
-                        </SelectItem>
-                        <SelectItem
-                          value="dark"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          Dark
-                        </SelectItem>
-                        <SelectItem
-                          value="system"
-                          className="text-foreground hover:bg-muted"
-                        >
-                          System
-                        </SelectItem>
+                        <SelectItem value="light" className="min-h-11">Light</SelectItem>
+                        <SelectItem value="dark" className="min-h-11">Dark</SelectItem>
+                        <SelectItem value="system" className="min-h-11">System</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end pt-1">
                   <Button
+                    type="button"
                     onClick={handleSavePreferences}
-                    className="bg-green-500 hover:bg-green-600 text-black h-11 px-6 rounded-xl w-full sm:w-auto font-bold text-xs uppercase tracking-wider"
+                    className="w-full sm:w-auto"
                   >
-                    <Globe className="h-4 w-4 mr-2" />
-                    Save Preferences
+                    <Globe className="h-4 w-4" />
+                    <span>Save Preferences</span>
                   </Button>
                 </div>
               </CardContent>
@@ -1363,7 +1100,6 @@ export default function SettingsPage() {
           </TabsContent>
         </Tabs>
 
-        {/* Password Reset Modal */}
         <PasswordResetModal
           isOpen={isModalOpen}
           onConfirm={() =>
@@ -1376,7 +1112,6 @@ export default function SettingsPage() {
           userEmail={profile.email}
         />
 
-        {/* 2FA Setup Modal */}
         {is2FAModalOpen && (
           <TwoFactorSetupModal
             isOpen={is2FAModalOpen}
@@ -1405,7 +1140,6 @@ export default function SettingsPage() {
           />
         )}
 
-        {/* Disable 2FA Modal */}
         {user && twoFADisable && (
           <Disable2FA
             user={user}
@@ -1429,20 +1163,17 @@ export default function SettingsPage() {
           />
         )}
 
-        {/* Change Transaction PIN Modal */}
         <ChangeTransactionPinModal
           isOpen={isChangePinOpen}
           onClose={() => setIsChangePinOpen(false)}
         />
 
-        {/* Reset Transaction PIN Modal */}
         <ResetTransactionPinModal
           isOpen={isResetPinOpen}
           onClose={() => setIsResetPinOpen(false)}
           onSuccess={() => setIsResetPinOpen(false)}
         />
 
-        {/* Create Transaction PIN Modal */}
         <TransactionPinSetupModal
           isOpen={isSetupPinOpen}
           onClose={() => setIsSetupPinOpen(false)}

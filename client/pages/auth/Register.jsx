@@ -42,17 +42,7 @@ import { toast, Toaster } from "sonner";
 
 // For navigation
 import { Link, useNavigate, useParams } from "react-router-dom";
-
-// Regular img tag instead of next/image
-const Logo = () => (
-  <img
-    src="/logo.svg"
-    alt="Paywaka Logo"
-    width={120}
-    height={120}
-    className="rounded-full"
-  />
-);
+import Navbar from "@/components/Navbar";
 
 // OAuth provider icons
 const GoogleIcon = () => (
@@ -312,40 +302,31 @@ export default function RegisterPage() {
   };
   return (
     <div
-      className={`min-h-screen bg-background flex items-center justify-center p-4 ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
+      className={`min-h-screen pw-app-canvas flex items-center justify-center pt-20 pb-8 px-4 ${isLoading ? "h-screen overflow-hidden" : appContext.spinner ? "h-screen overflow-hidden" : ""}`}
     >
+      <Navbar />
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-3 mb-6">
-            <Logo />
-            <span className="text-2xl font-bold text-foreground">
-              Pay
-              <span className="text-green-600 dark:text-green-400">waka</span>
-            </span>
-          </Link>
-        </div>
-
-        <Card className="bg-card border-border">
-          <CardHeader className="text-center">
-            <CardTitle className="text-foreground">Create Account</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Join thousands earning with Paywaka
+        <Card className="pw-glass-hero">
+          <CardHeader className="text-center p-5 pb-3">
+            <CardTitle className="pw-page-title text-foreground">Create Account</CardTitle>
+            <CardDescription className="text-xs sm:text-sm text-muted-foreground">
+              Join thousands earning with PayWaka
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="p-5 pt-2 space-y-5">
             {/* OAuth Buttons */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border hover:bg-accent"
+                className="w-full h-10 text-sm"
                 onClick={() =>
                   handleOAuthSignup(new GoogleAuthProvider(), "Google")
                 }
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "Google" ? (
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <GoogleIcon />
                 )}
@@ -355,12 +336,12 @@ export default function RegisterPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border hover:bg-accent"
+                className="w-full h-10 text-sm"
                 onClick={() => handleOAuthSignup("facebook")}
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "facebook" ? (
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <FacebookIcon />
                 )}
@@ -370,13 +351,12 @@ export default function RegisterPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="w-full h-11 border-border hover:bg-accent"
+                className="w-full h-10 text-sm"
                 onClick={() => handleOAuthSignup("twitter")}
-                onPointer
                 disabled={oauthLoading !== null}
               >
                 {oauthLoading === "twitter" ? (
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <XIcon />
                 )}
@@ -389,7 +369,7 @@ export default function RegisterPage() {
                 <Separator className="w-full" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">
+                <span className="bg-card px-3 rounded-pill pw-label text-muted-foreground">
                   Or continue with email
                 </span>
               </div>
@@ -397,26 +377,26 @@ export default function RegisterPage() {
 
             {/* Email/Password Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName" className="text-foreground">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="first-name" className="pw-label block">
                     First Name
                   </Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                     <Input
                       id="first-name"
                       type="text"
                       value={field["first-name"]}
                       onChange={(e) => controlledInput(e)}
                       placeholder="John"
-                      className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                      className="pl-10"
                       required
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName" className="text-foreground">
+                <div className="space-y-1.5">
+                  <Label htmlFor="last-name" className="pw-label block">
                     Last Name
                   </Label>
                   <Input
@@ -425,121 +405,121 @@ export default function RegisterPage() {
                     value={field["last-name"]}
                     onChange={(e) => controlledInput(e)}
                     placeholder="Doe"
-                    className="bg-background border-border text-foreground placeholder:text-muted-foreground"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="pw-label block">
                   Email
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="email"
                     value={field.email}
                     onChange={(e) => controlledInput(e)}
                     type="email"
                     placeholder="john@example.com"
-                    className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="username" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="userName" className="pw-label block">
                   Username
                 </Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="userName"
                     value={field["userName"]}
                     onChange={(e) => controlledInput(e)}
-                    type="username"
+                    type="text"
                     placeholder="swhavy"
-                    className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="gender" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="gender" className="pw-label block">
                   Gender
                 </Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="gender"
                     value={field["gender"]}
                     onChange={(e) => controlledInput(e)}
-                    type="gender"
+                    type="text"
                     placeholder="female/male"
-                    className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="phone" className="pw-label block">
                   Phone Number
                 </Label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="phone"
                     value={field.phone}
                     onChange={(e) => controlledInput(e)}
                     type="tel"
                     placeholder="+234 800 000 0000"
-                    className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10 pw-code"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="refLink" className="pw-label block">
                   Referral code
                 </Label>
                 <div className="relative">
-                  <LinkIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <LinkIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="refLink"
                     value={field.refLink}
                     onChange={(e) => controlledInput(e)}
                     disabled
-                    type="tel"
-                    placeholder="the code of the person that referred you"
-                    className="pl-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    type="text"
+                    placeholder="Optional referral code"
+                    className="pl-10 pw-code"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="password" className="pw-label block">
                   Password
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="password"
                     value={field.password}
                     onChange={(e) => controlledInput(e)}
                     type={showPassword ? "text" : "password"}
                     placeholder="Create a strong password"
-                    className="pl-10 pr-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10 pr-12"
                     required
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                     className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                     onClick={() => setShowPassword(!showPassword)}
                   >
@@ -552,25 +532,30 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-foreground">
+              <div className="space-y-1.5">
+                <Label htmlFor="cpassword" className="pw-label block">
                   Confirm Password
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4 pointer-events-none" />
                   <Input
                     id="cpassword"
                     value={field.cpassword}
                     onChange={(e) => controlledInput(e)}
                     type={showConfirmPassword ? "text" : "password"}
                     placeholder="Confirm your password"
-                    className="pl-10 pr-10 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                    className="pl-10 pr-12"
                     required
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide confirm password"
+                        : "Show confirm password"
+                    }
                     className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   >
@@ -587,7 +572,7 @@ export default function RegisterPage() {
                 <input
                   id="terms"
                   type="checkbox"
-                  className="rounded border-border text-green-600 focus:ring-green-500"
+                  className="rounded border-border text-brand-500 focus:ring-brand-500"
                   required
                 />
                 <Label
@@ -597,14 +582,14 @@ export default function RegisterPage() {
                   I agree to the{" "}
                   <Link
                     to="/terms"
-                    className="text-green-600 dark:text-green-400 hover:underline"
+                    className="text-brand-600 dark:text-brand-400 font-semibold hover:underline"
                   >
                     Terms of Service
                   </Link>{" "}
                   and{" "}
                   <Link
                     to="/privacy"
-                    className="text-green-600 dark:text-green-400 hover:underline"
+                    className="text-brand-600 dark:text-brand-400 font-semibold hover:underline"
                   >
                     Privacy Policy
                   </Link>
@@ -613,7 +598,7 @@ export default function RegisterPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-foreground"
+                className="w-full h-11"
                 disabled={isLoading || oauthLoading !== null}
               >
                 {isLoading ? "Creating account..." : "Create Account"}
@@ -621,11 +606,11 @@ export default function RegisterPage() {
             </form>
 
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs sm:text-sm text-muted-foreground">
                 Already have an account?{" "}
                 <Link
                   to="/auth/login"
-                  className="text-green-600 dark:text-green-400 hover:underline"
+                  className="text-brand-600 dark:text-brand-400 font-semibold hover:underline"
                 >
                   Sign in
                 </Link>
@@ -636,18 +621,16 @@ export default function RegisterPage() {
       </div>
       {/*  <Toaster position="top-center" richColors /> */}
       {verifiedEmail && (
-        <div className="h-1/2">
-          <FeedbackAlert
-            isOpen={verifiedEmail}
-            isClose={() => setVerifiedEmail((prev) => (prev = false))}
-            message={{
-              status: true,
-              statusMsg: "Email Verification Link Sent",
-              message:
-                "A verification link has been sent to your email. Please verify your email to complete the registration process.",
-            }}
-          />
-        </div>
+        <FeedbackAlert
+          isOpen={verifiedEmail}
+          isClose={() => setVerifiedEmail(false)}
+          message={{
+            status: true,
+            statusMsg: "Email Verification Link Sent",
+            message:
+              "A verification link has been sent to your email. Please verify your email to complete the registration process.",
+          }}
+        />
       )}
     </div>
   );
